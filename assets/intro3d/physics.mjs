@@ -236,11 +236,13 @@ export function simulate(bodies, opts) {
       if (B) { B.p[0] -= c.n[0] * k * wb; B.p[1] -= c.n[1] * k * wb; B.p[2] -= c.n[2] * k * wb; }
     }
     // Felt drags at anything resting on it (a die on cloth stops quickly);
-    // a body barely moving for a moment goes to sleep.
+    // a body barely moving for a moment goes to sleep. Resting means held
+    // up: by the felt, or by another body underneath it (the contact's
+    // normal pointing up) - not merely touching another body in the air.
     for (let i = 0; i < n; i++) {
       const b = bodies[i];
       if (!b.active || b.sleep) continue;
-      const onFelt = contacts.some(c => c.a === i && (c.kind === 'felt' || c.kind === 'body'));
+      const onFelt = contacts.some(c => c.a === i && (c.kind === 'felt' || (c.kind === 'body' && c.n[1] > 0.6)));
       if (onFelt) {
         const k = Math.exp(-1.3 * STEP), kl = Math.exp(-0.5 * STEP);
         b.w[0] *= k; b.w[1] *= Math.exp(-6 * STEP); b.w[2] *= k;

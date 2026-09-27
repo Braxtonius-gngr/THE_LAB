@@ -36,7 +36,8 @@ const asset = f => new URL(f, HERE).href;
 
 export const TIERS = ['standard', 'hardways', 'vault', 'edge'];
 export const TIER_NAMES = { standard: 'Standard Drop', hardways: 'The Hardways', vault: 'The Vault Pull', edge: 'The Defiant Edge' };
-export const TIER_ODDS = { standard: '9 in 10', hardways: '1 in 12', vault: '1 in 53', edge: '1 in 1,000' };
+// (as the draw below gives them: 90%, 8%, 1.9%, 0.1%)
+export const TIER_ODDS = { standard: '90%', hardways: '8%', vault: '1.9%', edge: '0.1%' };
 // The rarity draw, exactly as specified: [0, 0.9) standard, [0.9, 0.98)
 // hardways, [0.98, 0.999) vault, [0.999, 1) edge.
 export function pickTier(r) {
@@ -857,8 +858,22 @@ export async function createIntro(opts) {
   const camera = new THREE.PerspectiveCamera(36, 1, 0.5, 3000);
   const Rrel = W.real(P.RELEASE.t), Rwall = plan.wallReal, Rrest = plan.restReal;
   const endPos = plan.rest;
-  const sep = Math.hypot(endPos[0].p[0] - endPos[1].p[0], endPos[0].p[2] - endPos[1].p[2]);
-  const D = Math.min(62, Math.max(34, 24 + sep * 1.7));
+  // Framing the dice at rest: the camera turns (up to 18 degrees either
+  // way) so the gap between them runs up the screen rather than across it
+  // - a phone is tall and narrow - and stands back only as far as that
+  // needs, for this screen's shape.
+  const aspect = (host.clientWidth || window.innerWidth) / (host.clientHeight || window.innerHeight);
+  const tanV = Math.tan(((aspect < 0.62 ? 42 : 34) * DEG) / 2), tanH = tanV * aspect;
+  const gap = [endPos[1].p[0] - endPos[0].p[0], endPos[1].p[2] - endPos[0].p[2]];
+  const needFor = az => {
+    const a = az * DEG, el = 50 * DEG;
+    const lat = Math.abs(gap[0] * Math.cos(a) - gap[1] * Math.sin(a));
+    const dep = Math.abs(gap[0] * Math.sin(a) + gap[1] * Math.cos(a));
+    return Math.max((lat / 2 + 4.5) / tanH, (dep * Math.sin(el) / 2 + 5) / tanV);
+  };
+  let dAz = 0;
+  for (let d = -18; d <= 18; d += 1.5) if (needFor(-32 + d) < needFor(-32 + dAz) - 0.5) dAz = d;
+  const D = Math.min(115, Math.max(34, needFor(-32 + dAz)));
   const keys = [
     [0, -34, 12, 38, 1.5],
     [1.2, -30, 13, 34, 1.5],
@@ -871,16 +886,17 @@ export async function createIntro(opts) {
   // slow motion has fully eased off, so each is kept after the last)
   const pushKey = k => { const prev = keys[keys.length - 1]; k[0] = Math.max(k[0], prev[0] + 0.3); keys.push(k); };
   pushKey([Math.min(W.slowEnd, Rrest - 0.2), -44, 26, 30, 1]);
+  const turnFrom = keys.length;
   pushKey([Rrest + 0.25, -30, 48, D, D * 0.14]);
   if (plan.stick) {
     const T = plan.stick.hp.T;
-    pushKey([R2(T.approach[0]), -32, 52, D * 0.86, D * 0.12]);
+    pushKey([R2(T.approach[0]), -32, 52, D * 0.96, D * 0.12]);
     pushKey([R2(T.pull[0]), -35, 56, D * 1.08, D * 0.16]);
     pushKey([R2(T.pull[1]), -38, 62, D * 1.26, D * 0.24]);
     pushKey([R2(plan.endW) + 2, -39, 63, D * 1.3, D * 0.25]);
   } else if (plan.vault) {
     const Bm = R2(plan.vault.boom);
-    pushKey([Bm - 0.3, -32, 40, D * 0.7, D * 0.1]);
+    pushKey([Bm - 0.3, -32, 40, D * 0.9, D * 0.1]);
     pushKey([Bm + 0.35, -33, 38, D * 0.95, D * 0.12]);
     pushKey([Bm + 1.5, -34, 42, D * 1.15, D * 0.14]);
     pushKey([Bm + 3.4, -34, 16, D * 1.4, 24]);
@@ -891,6 +907,7 @@ export async function createIntro(opts) {
     pushKey([Fd + 0.7, -38, 20, 20, 2.2]);
     pushKey([R2(plan.endW) + 2, -54, 16, 17, 2.6]);
   }
+  for (let k = turnFrom; k < keys.length; k++) keys[k][1] += dAz;
   const centroid = w => { const a = dicePose(plan, 0, w).p, b = dicePose(plan, 1, w).p; return mix3(a, b, 0.5); };
   const cupAim = t => { const c = cupAt(t); return [c.p[0], c.p[1] + 1, c.p[2]]; };
   const aimRaw = t => {
@@ -921,12 +938,14 @@ export async function createIntro(opts) {
       const wv = W.world(t);
       if (wv > P.RELEASE.t) {
         const back = [e[0] - A[0], e[1] - A[1], e[2] - A[2]], bl = Math.hypot(...back) || 1;
-        for (let i = 0; i < 2; i++) {
-          const d = dicePose(plan, i, wv).p;
+        // (and every plaque of the Vault Pull, once it is in the air)
+        const near = [0, 1].map(i => [dicePose(plan, i, wv).p, 22]);
+        if (plan.vault && wv > plan.vault.boom) plan.vault.kinds.forEach((_, i) => near.push([P.poseAt(plan.vault.run, i, wv).p, 30]));
+        for (const [d, keep] of near) {
           for (let it = 0; it < 4; it++) {
             const gap = Math.hypot(e[0] - d[0], e[1] - d[1], e[2] - d[2]);
-            if (gap >= 22) break;
-            const push = 22 - gap + 0.5;
+            if (gap >= keep) break;
+            const push = keep - gap + 0.5;
             e[0] += (back[0] / bl) * push; e[1] += (back[1] / bl) * push; e[2] += (back[2] / bl) * push;
           }
         }
@@ -1156,7 +1175,11 @@ export async function createIntro(opts) {
         // Over the higher of the two dice on screen, clear of both.
         const s = [0, 1].map(i => { const d = dicePose(plan, i, w).p; return project([d[0], d[1] + 2.5, d[2]]); }).sort((a, b) => a[1] - b[1])[0];
         const grow = 1.12 - 0.12 * smoother((w - cw) / 0.8);
-        call.style.transform = `translate(${s[0].toFixed(1)}px,${(s[1] - 56).toFixed(1)}px) translate(-50%,-50%) scale(${grow.toFixed(3)})`;
+        // (kept whole on screen, whatever the dice's spread)
+        const half = (call.offsetWidth * grow) / 2 + 12, W0 = host.clientWidth;
+        const cx = half * 2 < W0 ? Math.min(Math.max(s[0], half), W0 - half) : W0 / 2;
+        const cy = Math.max(s[1] - 56, call.offsetHeight + 16);
+        call.style.transform = `translate(${cx.toFixed(1)}px,${cy.toFixed(1)}px) translate(-50%,-50%) scale(${grow.toFixed(3)})`;
         call.style.setProperty('--shine', `${(-60 + 220 * clamp01((w - cw - 0.1) / 1.2)).toFixed(1)}%`);
       }
     }
