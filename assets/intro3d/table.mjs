@@ -59,13 +59,13 @@ const LAYOUT = {
     view: [{ eye: [0, 54, -22], aim: [0, 0, 21], fov: 50 }, { eye: [0, 46, -24], aim: [0, 0, 25], fov: 40 }],
     z0: 16.5, rail: { y: 7.2, z: -4.2, tilt: 28 }, shoe: [-16, 55], discard: [16, 55],
     // the phone at rest: [x, y] in the view (-1..1), and its distance, cm
-    // (nearer than the rail's panel, which it must stay in front of)
+    // (it rides in a layer of its own, over the table's)
     phone: [0.8, -1.24, 40]
   },
   craps: {
     view: [{ eye: [0, 60, -20], aim: [0, 0, 36], fov: 50 }, { eye: [0, 54, -22], aim: [0, 0, 40], fov: 40 }],
     z0: 25, rail: { y: 26.4, z: -4.4, tilt: 34, scale: 54 }, shoe: [-17, 50], discard: [17, 50],
-    phone: [0.8, -1.18, 32]
+    phone: [0.8, -1.24, 40]
   }
 };
 // The shot's timings (seconds from the tap).
@@ -623,14 +623,21 @@ export async function prepareTable(opts) {
     const cssSeat = new THREE.Group();
     cssSeat.position.copy(seat.position); cssSeat.quaternion.copy(seat.quaternion);
     cssScene.add(cssSeat);
+    // The phone has a layer of its own over the table's: it's in your hand,
+    // in front of everything on the table, whatever the depths say.
+    const phoneCss = new CSS3DRenderer();
+    phoneCss.domElement.className = 'r3t-css r3t-css-phone';
+    const phoneScene = new THREE.Scene();
     const size = () => {
       world.size();
       const w = world.host.clientWidth || window.innerWidth, h = world.host.clientHeight || window.innerHeight;
       css.setSize(w, h);
+      phoneCss.setSize(w, h);
       return w / h;
     };
     let aspect = size();
     stageEl.appendChild(css.domElement);
+    css.domElement.appendChild(phoneCss.domElement);
 
     // Where the camera sits, and what it looks at, in the seat's frame.
     const seatView = () => {
@@ -713,7 +720,7 @@ export async function prepareTable(opts) {
     // phone's transform each frame - see placePhone)
     const phoneObj = new CSS3DObject(phoneEl);
     phoneObj.scale.setScalar(1 / 55);
-    cssScene.add(phoneObj);
+    phoneScene.add(phoneObj);
 
     css.domElement.appendChild(ui);
     css.domElement.classList.add('r3t-hide');
@@ -855,6 +862,7 @@ export async function prepareTable(opts) {
     const draw = () => {
       if (world.composer) world.composer.render(); else renderer.render(scene, camera);
       css.render(cssScene, camera);
+      phoneCss.render(phoneScene, camera);
     };
     const busyUntil = () => Math.max(settleAt, phoneT0 + 0.6, ...[...lift.values()].map(L => L[3] + 0.4));
     const loop = now => {
