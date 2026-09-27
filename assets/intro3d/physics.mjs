@@ -17,6 +17,9 @@
 export const G = 981;
 export const DIE = 1.9;               // casino die edge, cm
 export const DIE_ROUND = 0.2;         // radius of its rounded edges, cm
+// A strike must land on the rubber, not the rail above it: the die's
+// centre at least this far below the wall's top (a die is 1.9 cm).
+const P_WALL_MARGIN = 1.1;
 export const TABLE = {
   wallZ: -70,                         // back wall (rubber pyramids), facing +z
   wallTop: 17,                        // its height; the padded rail sits on top
@@ -432,11 +435,15 @@ export function simThrow(seed, opts) {
 }
 // Throws drawn from the session's seed until one passes the checks (and
 // `extra`, the caller's own, e.g. that the stick can reach both dice).
+// Gives up after `tries` throws or `budgetMs` of work, whichever comes
+// first; the caller must check `score.ok` (the best failure is returned
+// only so it can be reported).
 export function throwDice(seed, opts) {
-  const o = Object.assign({ tries: 60, extra: null }, opts || {});
+  const o = Object.assign({ tries: 60, extra: null, budgetMs: Infinity }, opts || {});
   const r = rng(seed);
+  const start = Date.now();
   let best = null;
-  for (let attempt = 0; attempt < o.tries; attempt++) {
+  for (let attempt = 0; attempt < o.tries && (attempt === 0 || Date.now() - start < o.budgetMs); attempt++) {
     const run = simThrow(Math.floor(r() * 4294967296));
     const score = judge(run);
     if (o.extra) { const why = o.extra(run); if (why) { score.ok = false; score.why.push(why); } else score.score += 2; }
@@ -451,7 +458,7 @@ function judge(run) {
   const dice = run.bodies;
   run.firstHit.forEach((h, i) => {
     if (!h || h.kind !== 'wall') why.push(`die ${i} first hit ${h ? h.kind : 'nothing'}`); else score += 2;
-    if (h && h.kind === 'wall' && (h.pt[1] < 1.5 || h.pt[1] > TABLE.wallTop - 3)) why.push(`die ${i} wall hit at y ${h.pt[1].toFixed(1)}`); else score += 1;
+    if (h && h.kind === 'wall' && (h.pt[1] < 1.5 || h.pt[1] > TABLE.wallTop - P_WALL_MARGIN)) why.push(`die ${i} wall hit at y ${h.pt[1].toFixed(1)}`); else score += 1;
   });
   const rest = run.restAt;
   if (rest.some(r => r == null)) { why.push('not at rest'); score -= 5; }
@@ -462,7 +469,7 @@ function judge(run) {
     if (p[2] < TABLE.wallZ + 3 || p[2] > -8 || Math.abs(p[0]) > 24) why.push(`die ${i} rests at ${p[0].toFixed(0)},${p[2].toFixed(0)}`); else score += 1;
   });
   const sep = Math.hypot(end[0][0] - end[1][0], end[0][2] - end[1][2]);
-  if (sep < 3.2 || sep > 22) why.push(`dice ${sep.toFixed(1)} cm apart`); else score += 1;
+  if (sep < 3.2 || sep > 26) why.push(`dice ${sep.toFixed(1)} cm apart`); else score += 1;
   dice.forEach((d, i) => {
     const up = upAxis(d.q);
     if (up.align < 0.995) why.push(`die ${i} cocked (${up.align.toFixed(3)})`); else score += 1;

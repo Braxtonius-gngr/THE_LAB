@@ -217,12 +217,15 @@ export function makePlan(tier, seed) {
   const R = P.rng((seed ^ 0x9e3779b9) >>> 0);
   const wantsStick = tier === 'standard' || tier === 'hardways';
   const best = P.throwDice(seed, {
-    tries: 70,
+    tries: 200, budgetMs: 2500,
     extra: wantsStick ? run => {
       const rest = run.bodies.map(b => ({ p: b.p, q: b.q }));
       return stickLine(rest) ? null : 'stick cannot take both dice';
     } : null
   });
+  // No throw passed every check within the budget: never play one that
+  // did not. The caller shows the CSS intro instead.
+  if (!best.score.ok) throw new Error(`no valid throw for seed ${seed}: ${best.score.why.join('; ')}`);
   let run = best.run;
   const restPose = () => run.bodies.map(b => ({ p: b.p.slice(), q: b.q.slice() }));
   const wallW = Math.min(...run.firstHit.map(h => (h ? h.t : 9)));
