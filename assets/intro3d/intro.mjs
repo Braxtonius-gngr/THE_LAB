@@ -604,8 +604,32 @@ class Sound {
 }
 
 // ------------------------------------------------------------- the intro
+// Everything the shot takes hold of (the WebGL context, the sound, its
+// elements, its listeners) is registered for undoing as it is made. If the
+// setup throws at any point, or opts.signal aborts it while it is still
+// loading, all of it is given back before the promise rejects: browsers
+// allow only a few live contexts, and a half-built shot must never stay
+// painted over the CSS intro that replaces it.
 export async function createIntro(opts) {
-  const o = Object.assign({ host: null, controlsHost: null, tier: 'standard', seed: 1, onReveal: null, onEnd: null, sound: true, onSoundChange: null, quality: 'auto' }, opts);
+  const undo = [];
+  let torn = false;
+  const teardown = () => {
+    if (torn) return;
+    torn = true;
+    while (undo.length) { try { undo.pop()(); } catch (e) { /* keep going */ } }
+  };
+  try {
+    return await buildIntro(opts, undo, teardown);
+  } catch (err) {
+    teardown();
+    throw err;
+  }
+}
+
+async function buildIntro(opts, undo, teardown) {
+  const o = Object.assign({ host: null, controlsHost: null, tier: 'standard', seed: 1, onReveal: null, onEnd: null, sound: true, onSoundChange: null, quality: 'auto', signal: null, motionOff: null }, opts);
+  const checkAbort = () => { if (o.signal && o.signal.aborted) throw new Error('intro cancelled'); };
+  checkAbort();
   const host = o.host;
   const tier = TIERS.includes(o.tier) ? o.tier : 'standard';
 
@@ -640,25 +664,23 @@ export async function createIntro(opts) {
   const canvas = renderer.domElement;
   canvas.className = 'r3-canvas';
   canvas.setAttribute('aria-hidden', 'true');
-
-  // If the base set fails to load (or the plan throws), the context is
-  // given back before the error goes up: browsers allow only a few live.
-  let feltN, rubberN, leatherN, walnut, gunmetal, badge, plan;
-  try {
-    [feltN, rubberN, leatherN, walnut, gunmetal, badge] = await Promise.all([
-      tex('felt-normal.jpg', false, [9, 13]),
-      tex('rubber-normal.jpg', false, [14.4, 2.36]),
-      tex('leather-normal.jpg', false, [5, 2]),
-      tex('walnut.jpg', true, [1, 1]),
-      tex('gunmetal.jpg', true),
-      tex('badge.png', true)
-    ]);
-    plan = makePlan(tier, o.seed);
-  } catch (err) {
+  undo.push(() => {
     renderer.dispose();
     try { renderer.forceContextLoss(); } catch (e) { /* already gone */ }
-    throw err;
-  }
+    canvas.remove();
+  });
+
+  const [feltN, rubberN, leatherN, walnut, gunmetal, badge] = await Promise.all([
+    tex('felt-normal.jpg', false, [9, 13]),
+    tex('rubber-normal.jpg', false, [14.4, 2.36]),
+    tex('leather-normal.jpg', false, [5, 2]),
+    tex('walnut.jpg', true, [1, 1]),
+    tex('gunmetal.jpg', true),
+    tex('badge.png', true)
+  ]);
+  checkAbort();
+  const plan = makePlan(tier, o.seed);
+  checkAbort();
   const W = plan.warp;
 
   // ---- The set.
@@ -801,6 +823,7 @@ export async function createIntro(opts) {
   let vault = null;
   if (plan.vault) {
     await Promise.all(rareLoads);
+    checkAbort();
     const faceMat = t => new THREE.MeshPhysicalMaterial({ map: t || null, color: t ? 0xcfc9bc : 0xcfc6b4, roughness: 0.3, clearcoat: 0.7, clearcoatRoughness: 0.12, envMapIntensity: 0.6 });
     const edge25 = new THREE.MeshPhysicalMaterial({ color: 0xb8ad94, roughness: 0.3, clearcoat: 0.7, envMapIntensity: 0.6 });
     const edge100 = new THREE.MeshPhysicalMaterial({ color: 0x15151a, roughness: 0.25, clearcoat: 1 });
@@ -981,6 +1004,8 @@ export async function createIntro(opts) {
   // ---- Sound.
   let sound = null;
   try { sound = o.sound ? new Sound() : null; } catch (e) { sound = null; }
+  // (read when undone: the speaker can make one later)
+  undo.push(() => { if (sound && sound.ctx) sound.ctx.close().catch(() => {}); });
   if (sound && sound.ctx) {
     if (rare.clackBytes) sound.ctx.decodeAudioData(rare.clackBytes.slice(0)).then(b => { sound.clack = b; }).catch(() => {});
     try { sound.ctx.resume(); } catch (e) { /* needs a tap */ }
@@ -1006,6 +1031,7 @@ export async function createIntro(opts) {
   const flashEl = document.createElement('div');
   flashEl.className = 'r3-flash';
   host.append(canvas, flashEl, call, badgeEl);
+  undo.push(() => [flashEl, call, badgeEl].forEach(el => el.remove()));
 
   // ---- Post: bloom on the brightest glints.
   let composer = null, bloom = null;
@@ -1225,6 +1251,9 @@ export async function createIntro(opts) {
   };
   const loop = now => {
     if (!playing) return;
+    // Reduced motion switched on mid-shot (in the app or the system): the
+    // finished frame, at once, as when it was on from the start.
+    if (o.motionOff && o.motionOff()) { playing = false; if (o.onEnd) o.onEnd(); return; }
     const raw = last ? (now - last) / 1000 : 1 / 60;
     last = now;
     // Time runs with the clock (a slow device drops frames rather than
@@ -1257,6 +1286,11 @@ export async function createIntro(opts) {
   let resumed = false;
   const onVisibility = () => { if (document.hidden) resumed = true; };
   document.addEventListener('visibilitychange', onVisibility);
+  undo.push(() => {
+    playing = false; cancelAnimationFrame(raf);
+    window.removeEventListener('resize', onResize);
+    document.removeEventListener('visibilitychange', onVisibility);
+  });
 
   // The speaker: sound on or off, without skipping the shot.
   const soundBtn = document.createElement('button');
@@ -1291,25 +1325,19 @@ export async function createIntro(opts) {
   // Outside the scene's aria-hidden layer, so assistive technology can
   // find it (the canvas and overlays stay hidden, as decoration).
   (o.controlsHost || host).appendChild(soundBtn);
+  undo.push(() => soundBtn.remove());
   if (sound && sound.ctx) sound.ctx.onstatechange = paintBtn;
 
   // Shaders compiled up front (in parallel where the driver can), so the
   // shot does not hitch on its first frames.
   try { await renderer.compileAsync(scene, camera); } catch (e) { /* compiled on first draw */ }
+  checkAbort();
   render(0);
   return {
     plan: { tier, seed: o.seed, revealReal: plan.revealReal, totalReal: plan.totalReal, restReal: plan.restReal, wallReal: plan.wallReal, values: plan.values, call: plan.call, throwOk: plan.throwOk, why: plan.why },
     play() { playing = true; last = 0; raf = requestAnimationFrame(loop); },
     seek(time) { playing = false; cancelAnimationFrame(raf); t = Math.max(0, Math.min(plan.totalReal, time)); render(t); },
     finish() { playing = false; cancelAnimationFrame(raf); t = plan.totalReal; render(t); soundBtn.hidden = true; if (sound && sound.bed) sound.cut(sound.ctx.currentTime); },
-    dispose() {
-      playing = false; cancelAnimationFrame(raf);
-      window.removeEventListener('resize', onResize);
-      document.removeEventListener('visibilitychange', onVisibility);
-      if (sound && sound.ctx) sound.ctx.close().catch(() => {});
-      renderer.dispose();
-      try { renderer.forceContextLoss(); } catch (e) { /* already gone */ }
-      [canvas, flashEl, call, badgeEl, soundBtn].forEach(el => el.remove());
-    }
+    dispose: teardown
   };
 }
