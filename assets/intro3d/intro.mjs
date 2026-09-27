@@ -1077,10 +1077,13 @@ async function buildIntro(opts, undo, teardown) {
       }
       return s;
     };
+    // (never reaching back into the cup's shot: it fades in over the last
+    // 0.3 s before the strike window opens)
+    const fence = k => smoother((k * CAM_DT - (Rwall - 0.5)) / 0.3);
     const ease = arr => {
       const hold = Math.round(0.3 / CAM_DT), soft = Math.round(0.18 / CAM_DT);
       const held = arr.map((_, k) => { let m = 0; for (let j = Math.max(0, k - hold); j <= Math.min(camN - 1, k + hold); j++) m = Math.max(m, arr[j]); return m; });
-      return held.map((_, k) => { let a = 0, n = 0; for (let j = -2 * soft; j <= 2 * soft; j++) { const i = k + j; if (i < 0 || i >= camN) continue; const g = Math.exp(-(j * j) / (2 * soft * soft)); a += held[i] * g; n += g; } return a / n; });
+      return held.map((_, k) => { let a = 0, n = 0; for (let j = -2 * soft; j <= 2 * soft; j++) { const i = k + j; if (i < 0 || i >= camN) continue; const g = Math.exp(-(j * j) / (2 * soft * soft)); a += held[i] * g; n += g; } return (a / n) * fence(k); });
     };
     // 1. the lean, where pulling back PULL cm would not be enough. It
     // follows one die for the whole strike (the one nearer the lens over
@@ -1219,7 +1222,7 @@ async function buildIntro(opts, undo, teardown) {
     const back = new THREE.Vector3(eye[0] - aim[0], eye[1] - aim[1], eye[2] - aim[2]).normalize();
     lensLight.position.set(eye[0] + back.x * 18, eye[1] + back.y * 18 + 14, eye[2] + back.z * 18);
     lensLight.target.position.set(aim[0], aim[1], aim[2]);
-    lensLight.intensity = 0.6 + 1.7 * gleam;
+    lensLight.intensity = 0.5 + 1.0 * gleam;
     // Cup.
     const cp = cupAt(Math.min(w, 5));
     setPose(cup, cp.p, cp.q);
@@ -1353,7 +1356,7 @@ async function buildIntro(opts, undo, teardown) {
     badgeEl.style.opacity = tier === 'standard' ? '0' : smoother((w - plan.callW - 0.2) / 0.6).toFixed(3);
     // Render.
     if (composer) {
-      bloom.strength = 0.32 + 0.5 * gleam + (plan.vault ? 1.4 * Math.max(0, 1 - Math.max(0, burst) / 0.6) * (burst > 0 ? 1 : 0) : 0);
+      bloom.strength = 0.3 + 0.22 * gleam + (plan.vault ? 1.4 * Math.max(0, 1 - Math.max(0, burst) / 0.6) * (burst > 0 ? 1 : 0) : 0);
       composer.render();
     } else renderer.render(scene, camera);
     return { w, rate };
