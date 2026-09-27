@@ -385,8 +385,7 @@ function roundedBox(h, r, nFlat, nBand, opt = {}) {
         if (sink) { Q[a] -= s * sink; }
       }
       pos.push(...Q); nor.push(...n);
-      // (mirrored on the far faces, so print reads the right way round)
-      uvs.push(0.5 + (s > 0 ? 1 : -1) * U[i] / (2 * h[b]), 0.5 + V[j] / (2 * h[c]));
+      uvs.push(...(opt.uv ? opt.uv(fi, Q) : [0.5 + U[i] / (2 * h[b]), 0.5 + V[j] / (2 * h[c])]));
     }
     const nu = U.length;
     for (let j = 0; j < V.length - 1; j++) for (let i = 0; i < nu - 1; i++) {
@@ -791,7 +790,12 @@ export async function createIntro(opts) {
     const faceMat = t => new THREE.MeshPhysicalMaterial({ map: t || null, color: t ? 0xcfc9bc : 0xcfc6b4, roughness: 0.3, clearcoat: 0.7, clearcoatRoughness: 0.12, envMapIntensity: 0.6 });
     const edge25 = new THREE.MeshPhysicalMaterial({ color: 0xb8ad94, roughness: 0.3, clearcoat: 0.7, envMapIntensity: 0.6 });
     const edge100 = new THREE.MeshPhysicalMaterial({ color: 0x15151a, roughness: 0.25, clearcoat: 1 });
-    const geo = roundedBox([4, 0.3, 2.5], 0.22, 6, 3, { group: fi => (fi === 2 ? 1 : fi === 3 ? 2 : 0) });
+    // Print on both faces reads along the plaque's length, the right way
+    // round from outside (x along the text, -z up it; mirrored underneath).
+    const geo = roundedBox([4, 0.3, 2.5], 0.22, 6, 3, {
+      group: fi => (fi === 2 ? 1 : fi === 3 ? 2 : 0),
+      uv: (fi, Q) => [0.5 + (fi === 3 ? -1 : 1) * Q[0] / 8, 0.5 - Q[2] / 5]
+    });
     const m25 = [edge25, faceMat(rare.p25), faceMat(rare.p25)], m100 = [edge100, faceMat(rare.p100), faceMat(rare.p100)];
     const plaques = plan.vault.kinds.map(k => { const m = new THREE.Mesh(geo, k === '100k' ? m100 : m25); m.castShadow = true; m.visible = false; scene.add(m); return m; });
     const scorchTex = canvasTexture(256, (g, n) => {
