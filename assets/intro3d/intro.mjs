@@ -57,6 +57,12 @@ const PENDANT = 3.5, ENV_LEVEL = 0.95, RIM = 2.4;
 // The gold filigree band: its width, its repeat along its length (the
 // texture is 8:1), and how far in from the walls it is inlaid in the felt.
 const TRIM = { w: 2.4, tile: 19.2, inset: 2.2 };
+// After the shot the camera floats on for FLOAT seconds, rising toward a
+// ceiling (eye height CEIL cm above the felt) that it eases into.
+const FLOAT = 36, CEIL = 145;
+// The room: the floor 82 cm under the felt, the lamps' height, the fog, and
+// the far tables' light pools ([x, z, radius]).
+const ROOM = { floor: -82, lamp: 172, fog: 0.0019, far: [[-340, -300, 150], [390, -430, 170], [-560, 120, 160], [620, 60, 150], [120, -720, 190], [-260, 520, 150]] };
 // Catmull-Rom through keys [t, v1, v2, ...]: smooth velocity through every key.
 function spline(keys, t) {
   const n = keys.length;
@@ -154,7 +160,14 @@ function makeWarp(wallW) {
 // the dice, sets the hook down beyond them and draws them back to himself.
 // The hook is a moving body in the physics, so the dice are pushed by it -
 // sliding, bumping each other - rather than carried.
-const HOOK = { rc: 4.2, cap: 0.28, lift: 3.8, pull: 32 };
+const HOOK = { rc: 4.2, cap: 0.28, lift: 3.8, pull: 32, glide: 3.2 };
+// The shaft leans 11 degrees off the felt, and stands steeper as the hook
+// comes toward the rail, so it always clears the cushion (SHAFT.clear cm
+// above the felt); the glide after the draw stops where the shaft would
+// have to stand steeper than SHAFT.maxLean.
+const SHAFT = { len: 160, lean: 11, clear: 27, maxLean: 55 };
+// Where the shaft leaves the hook, in the hook's frame (across, up, along).
+const HOOK_ATTACH = [-HOOK.rc - 0.35, 0.2, HOOK.rc + 3.2];
 function hookCurve() {
   // In the hook's own frame: a across, b along the pull (toward the
   // stickman); the foot of the J at the origin.
@@ -198,17 +211,57 @@ function hookFoot(line, rest) {
   }
   return foot - 0.35;
 }
-function makeHookPath(line, foot, s0) {
+function makeHookPath(line, foot, s0, draw, reach) {
   const T = { approach: [s0, s0 + 1.05], set: [s0 + 1.05, s0 + 1.4], pull: [s0 + 1.5, s0 + 3.7] };
+  // After the draw the stick keeps coming - slowly, drawing the dice on
+  // toward the stickman - and eases to rest `reach` cm further on. The
+  // glide starts under the draw, so the stick never stops and restarts.
+  const T1 = T.pull[1] - T.pull[0];
+  const vg = reach > 0.5 ? Math.min(HOOK.glide, reach / (T1 * 0.5 + 3)) : 0;
+  const g1 = vg * T1 * 0.5, gr = Math.max(0, reach - g1);
+  const glideAt = x => {
+    if (vg === 0 || x <= 0) return 0;
+    if (x <= T1) { const s = x / T1; return vg * T1 * (Math.pow(s, 6) - 3 * Math.pow(s, 5) + 2.5 * Math.pow(s, 4)); }
+    return g1 + (gr > 0.01 ? gr * (1 - Math.exp(-((x - T1) * vg) / gr)) : 0);
+  };
   const at = t => {
     if (t <= T.approach[0]) return { u: foot + 70, h: HOOK.lift, on: false };
     if (t <= T.approach[1]) { const k = easeOut((t - T.approach[0]) / (T.approach[1] - T.approach[0]), 2.2); return { u: lerp(foot + 70, foot - 1.4, k), h: HOOK.lift, on: true }; }
     if (t <= T.set[1]) { const k = smoother((t - T.set[0]) / (T.set[1] - T.set[0])); return { u: lerp(foot - 1.4, foot, k), h: HOOK.lift * (1 - k), on: true }; }
     if (t <= T.pull[0]) return { u: foot, h: 0, on: true };
-    const k = smoother((t - T.pull[0]) / (T.pull[1] - T.pull[0]));
-    return { u: foot + HOOK.pull * k, h: 0, on: true };
+    const k = smoother((t - T.pull[0]) / T1);
+    return { u: foot + draw * k + glideAt(t - T.pull[0]), h: 0, on: true };
   };
-  return { line, foot, T, at, curve: hookCurve() };
+  return { line, foot, T, at, curve: hookCurve(), glide: { vg, reach } };
+}
+// The shaft's foot in the world for a hook at u, and the run (along the
+// pull, cm) from there to the nearest rail it has to rise over.
+function shaftFoot(line, u) {
+  const { U, X, sc } = line, a = HOOK_ATTACH;
+  return [X[0] * (sc + a[0]) + U[0] * (u + a[2]), HOOK.cap + a[1], X[2] * (sc + a[0]) + U[2] * (u + a[2])];
+}
+function runToRail(line, u) {
+  const f = shaftFoot(line, u), U = line.U;
+  let run = Infinity;
+  if (U[0] > 0.05) run = Math.min(run, (P.TABLE.sideX - f[0]) / U[0]);
+  if (U[0] < -0.05) run = Math.min(run, (-P.TABLE.sideX - f[0]) / U[0]);
+  if (U[2] > 0.05) run = Math.min(run, (P.TABLE.nearZ - f[2]) / U[2]);
+  if (U[2] < -0.05) run = Math.min(run, (P.TABLE.wallZ - f[2]) / U[2]);
+  return run;
+}
+// The lean the shaft needs at a hook position to clear the rail ahead.
+function shaftLean(line, u) {
+  const run = runToRail(line, u);
+  return Math.max(SHAFT.lean * DEG, Math.atan2(SHAFT.clear - HOOK.cap, Math.max(run, 1)));
+}
+// The draw (at most HOOK.pull) and how much further the glide may take the
+// hook after it: until the shaft would need more than SHAFT.maxLean to
+// clear the rail. Near a rail the draw is shortened, so there is always
+// some way left to glide.
+function hookRun(line, foot) {
+  const need = (SHAFT.clear - HOOK.cap) / Math.tan(SHAFT.maxLean * DEG);
+  const draw = Math.max(10, Math.min(HOOK.pull, runToRail(line, foot) - need - 8));
+  return { draw, reach: Math.max(0, Math.min(40, runToRail(line, foot + draw) - need)) };
 }
 function hookWorld(hp, st) {
   const { U, X, sc } = hp.line;
@@ -300,18 +353,23 @@ function planFromThrow(tier, seed, best) {
   if (wantsStick) {
     const line = stickLine(rest) || { U: [1, 0, 0], X: [0, 0, 1], sc: (rest[0].p[2] + rest[1].p[2]) / 2 };
     const s0 = restW + 1.2;
-    const hp = makeHookPath(line, hookFoot(line, rest), s0);
+    const foot = hookFoot(line, rest);
+    const run = hookRun(line, foot);
+    const hp = makeHookPath(line, foot, s0, run.draw, run.reach);
+    // (the physics runs a second on past the draw, the hook still pushing,
+    // so the dice are already gliding with it when the recording ends)
+    const simEnd = hp.T.pull[1] + 1.0;
     const dice = P.makeDice();
     dice.forEach((d, i) => { d.p = rest[i].p.slice(); d.q = rest[i].q.slice(); d.sleep = true; });
     const pts = hp.curve;
     const kin = t => {
       const st = hp.at(t);
-      if (!st.on || st.h > 1.2 || t > hp.T.pull[1] + 0.25) return null;
+      if (!st.on || st.h > 1.2 || t > simEnd) return null;
       const a = hookWorld(hp, st), b = hookWorld(hp, hp.at(t + 0.004));
       const v = [(b.O[0] - a.O[0]) / 0.004, (b.O[1] - a.O[1]) / 0.004, (b.O[2] - a.O[2]) / 0.004];
       return { r: HOOK.cap, v, pts: pts.map(([x, u]) => [a.O[0] + a.X[0] * x + a.U[0] * u, a.O[1], a.O[2] + a.X[2] * x + a.U[2] * u]) };
     };
-    plan.stick = { hp, run: P.simulate(dice, { t0: restW, duration: hp.T.pull[1] + 1.0 - restW, rand: R, kinematic: kin }) };
+    plan.stick = { hp, simEnd, run: P.simulate(dice, { t0: restW, duration: simEnd - restW, rand: R, kinematic: kin }) };
     plan.callW = restW + 0.1;
     plan.revealW = hp.T.pull[0] + 1.3;
     plan.endW = hp.T.pull[1] + 0.9;
@@ -360,7 +418,15 @@ function dicePose(plan, i, w) {
     const dt = w - P.RELEASE.t;
     const wl = Math.hypot(...L.w) || 1;
     pose = { p: [L.p[0] + L.v[0] * dt, L.p[1] + L.v[1] * dt - 0.5 * P.G * dt * dt, L.p[2] + L.v[2] * dt], q: P.qmul(P.qaxis(L.w, wl * dt), L.q) };
-  } else if (plan.stick && w > plan.restW) pose = P.poseAt(plan.stick.run, i, w);
+  } else if (plan.stick && w > plan.restW) {
+    const S = plan.stick;
+    if (w <= S.simEnd) pose = P.poseAt(S.run, i, w);
+    else {
+      // past the recording the dice ride on with the hook, sliding
+      const last = P.poseAt(S.run, i, S.simEnd), du = S.hp.at(w).u - S.hp.at(S.simEnd).u, U = S.hp.line.U;
+      pose = { p: [last.p[0] + U[0] * du, last.p[1], last.p[2] + U[2] * du], q: last.q };
+    }
+  }
   else pose = P.poseAt(run, i, w);
   if (plan.edge && plan.edge.die === i && w > plan.edge.tf) {
     const E = plan.edge, k = easeOut((w - E.tf) / (E.done - E.tf), 3);
@@ -483,6 +549,32 @@ function pipGeometry() {
   return geo;
 }
 
+// UVs in world units, so a shared texture keeps one scale on every piece:
+// `scaleUV` stretches a geometry's 0..1 UVs; `boxUV` gives each face of a
+// BoxGeometry its own size over (tu, tv) cm tiles, the grain running along
+// the box's longest horizontal side.
+function scaleUV(geo, su, sv) {
+  const uv = geo.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * su, uv.getY(i) * sv);
+  uv.needsUpdate = true;
+  return geo;
+}
+function boxUV(geo, w, h, d, tu, tv) {
+  // BoxGeometry faces in order: +x, -x, +y, -y, +z, -z (4 vertices each)
+  const uv = geo.attributes.uv, alongX = w >= d;
+  const size = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+  for (let f = 0; f < 6; f++) {
+    let [a, b] = size[f];
+    const swap = (f < 2 && alongX) || (f >= 2 && f < 4 && !alongX);
+    for (let k = 0; k < 4; k++) {
+      const i = f * 4 + k, u = uv.getX(i), v = uv.getY(i);
+      if (swap) uv.setXY(i, (v * b) / tu, (u * a) / tv); else uv.setXY(i, (u * a) / tu, (v * b) / tv);
+    }
+  }
+  uv.needsUpdate = true;
+  return geo;
+}
+
 // Soft sprites and decals, painted once on small canvases.
 function canvasTexture(size, paint) {
   const c = document.createElement('canvas');
@@ -566,7 +658,8 @@ class Sound {
     src.start(start);
     this.bed = { src, g };
   }
-  cut(when) { if (this.bed) { this.bed.g.gain.cancelScheduledValues(when); this.bed.g.gain.setTargetAtTime(0, when, 0.012); } }
+  cut(when) { this.fade(when, 0.012); }
+  fade(when, tc) { if (this.bed) { this.bed.g.gain.cancelScheduledValues(when); this.bed.g.gain.setTargetAtTime(0, when, tc); } }
   play(ev, when, slow) {
     // slow < 1: the moment is in slow motion, so the sound is too.
     const k = slow < 0.6 ? 0.5 : 1;
@@ -692,7 +785,7 @@ async function buildIntro(opts, undo, teardown) {
     canvas.remove();
   });
 
-  const [feltN, rubberN, leatherN, walnut, gunmetal, badge, goldC, goldA, goldN] = await Promise.all([
+  const [feltN, rubberN, leatherN, walnut, gunmetal, badge, goldC, goldA, goldN, walnutN, cushionN, carpetC, carpetN] = await Promise.all([
     tex('felt-normal.jpg', false, [13, 20]),
     tex('rubber-normal.jpg', false, [14.4, 2.36]),
     tex('leather-normal.jpg', false, [5, 2]),
@@ -701,7 +794,11 @@ async function buildIntro(opts, undo, teardown) {
     tex('badge.png', true),
     tex('gold-trim-color.jpg', true, [1, 1]),
     tex('gold-trim-alpha.png', false, [1, 1]),
-    tex('gold-trim-normal.jpg', false, [1, 1])
+    tex('gold-trim-normal.jpg', false, [1, 1]),
+    tex('walnut-normal.jpg', false, [1, 1]),
+    tex('cushion-normal.jpg', false, [1, 1]),
+    tex('carpet-color.jpg', true, [1, 1]),
+    tex('carpet-normal.jpg', false, [1, 1])
   ]);
   // (the filigree band repeats along its length only)
   [goldC, goldA, goldN].forEach(t => { t.wrapT = THREE.ClampToEdgeWrapping; t.anisotropy = 8; });
@@ -726,31 +823,56 @@ async function buildIntro(opts, undo, teardown) {
   scene.add(felt);
 
   const rubber = new THREE.MeshStandardMaterial({ color: 0x08080a, roughness: 0.7, normalMap: rubberN, normalScale: new THREE.Vector2(0.9, 0.9) });
-  const cushion = new THREE.MeshStandardMaterial({ color: 0x0e0e10, roughness: 0.42, normalMap: leatherN, normalScale: new THREE.Vector2(0.3, 0.3) });
+  // (the walls: plain pebbled leather; the padded rails: the same leather
+  // with a double-stitched seam either side of the top - see cushionUV)
+  const leatherWall = new THREE.MeshStandardMaterial({ color: 0x0e0e10, roughness: 0.42, normalMap: leatherN, normalScale: new THREE.Vector2(0.3, 0.3) });
+  const cushion = new THREE.MeshStandardMaterial({ color: 0x100e0e, roughness: 0.4, normalMap: cushionN, normalScale: new THREE.Vector2(0.55, 0.55), envMapIntensity: 0.9 });
   const brass = new THREE.MeshStandardMaterial({ color: 0xd8ae58, metalness: 1, roughness: 0.27, envMapIntensity: 1.0 });
   // Gold filigree: a running scroll of acanthus in relief, between beaded
   // rules. One band texture, repeating along its length (TRIM.tile cm).
   const gold = new THREE.MeshStandardMaterial({ map: goldC, alphaMap: goldA, alphaTest: 0.5, normalMap: goldN, normalScale: new THREE.Vector2(1.3, 1.3), metalness: 1, roughness: 0.28, envMapIntensity: 1.4, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-  const wood = new THREE.MeshPhysicalMaterial({ map: walnut, color: 0x7a5a44, roughness: 0.45, clearcoat: 0.5, clearcoatRoughness: 0.25 });
+  // figured walnut under a satin lacquer (UVs in cm: 60 along the grain, 15 across)
+  const wood = new THREE.MeshPhysicalMaterial({ map: walnut, normalMap: walnutN, normalScale: new THREE.Vector2(0.35, 0.35), color: 0x8a6e60, roughness: 0.42, clearcoat: 0.65, clearcoatRoughness: 0.18 });
+  const WOOD_TILE = [60, 15];
   const wallTop = P.TABLE.wallTop, wz = P.TABLE.wallZ, sx = P.TABLE.sideX;
   const back = new THREE.Mesh(new THREE.PlaneGeometry(2 * sx, wallTop), rubber);
   back.position.set(0, wallTop / 2, wz); back.receiveShadow = true; scene.add(back);
-  const addRail = (len, pos, rotY) => {
+  // A rail: the padded cushion over the wall, a brass edge, and the walnut
+  // cap outside it; below the cap the walnut apron runs down to a black
+  // plinth, so the table stands on the floor (seen from the float and the
+  // fly-in). capLen runs corner to corner of the outside.
+  const nz = P.TABLE.nearZ, OUT = 18, APRON = -56;
+  const addRail = (len, capLen, apLen, pos, rotY) => {
     const g = new THREE.Group();
-    const cyl = new THREE.Mesh(new THREE.CylinderGeometry(4.6, 4.6, len, 40), cushion);
+    // (a cylinder's u runs round it, v along it: stitches every 14.45 cm tile)
+    const cyl = new THREE.Mesh(scaleUV(new THREE.CylinderGeometry(4.6, 4.6, len, 48), 1, len / 14.45), cushion);
     cyl.rotation.z = Math.PI / 2; cyl.position.set(0, wallTop + 4.4, -4.4); cyl.castShadow = true; g.add(cyl);
     const trim = new THREE.Mesh(new THREE.BoxGeometry(len, 0.55, 1.0), brass);
     trim.position.set(0, wallTop + 0.15, -0.55); g.add(trim);
-    const cap = new THREE.Mesh(new THREE.BoxGeometry(len + 8, 3.2, 10), wood);
-    cap.position.set(0, wallTop + 7.4, -13); g.add(cap);
+    const cap = new THREE.Mesh(boxUV(new THREE.BoxGeometry(capLen, 3.2, 10), capLen, 3.2, 10, ...WOOD_TILE), wood);
+    cap.position.set(0, wallTop + 7.4, -13); cap.castShadow = true; g.add(cap);
+    const apH = wallTop + 5.8 - APRON;
+    const apron = new THREE.Mesh(boxUV(new THREE.BoxGeometry(apLen, apH, 2.4), apLen, apH, 2.4, ...WOOD_TILE), wood);
+    apron.position.set(0, APRON + apH / 2, -(OUT - 1.2)); g.add(apron);
+    const band = new THREE.Mesh(new THREE.BoxGeometry(apLen, 0.6, 0.4), brass);
+    band.position.set(0, wallTop + 2.2, -(OUT + 0.15)); g.add(band);
+    const plinth = new THREE.Mesh(new THREE.BoxGeometry(capLen - 16, APRON + 82, 2), new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.6 }));
+    plinth.position.set(0, (APRON - 82) / 2, -(OUT - 9)); g.add(plinth);
     g.position.set(...pos); g.rotation.y = rotY; scene.add(g);
   };
-  addRail(2 * sx + 10, [0, 0, wz], 0);
+  const outW = 2 * (sx + OUT);
+  addRail(2 * sx + 10, outW, outW - 4.8, [0, 0, wz], 0);
+  // the near end: the players' side, closed like the rest (behind the lens
+  // through the shot; seen from the float and the fly-in)
+  const near = new THREE.Mesh(new THREE.PlaneGeometry(2 * sx, wallTop), leatherWall);
+  near.position.set(0, wallTop / 2, nz); near.rotation.y = Math.PI; near.receiveShadow = true; scene.add(near);
+  addRail(2 * sx + 10, outW, outW - 4.8, [0, 0, nz], Math.PI);
   [-1, 1].forEach(sgn => {
-    const side = new THREE.Mesh(new THREE.PlaneGeometry(P.TABLE.nearZ - wz, wallTop), cushion);
-    side.position.set(sgn * sx, wallTop / 2, (P.TABLE.nearZ + wz) / 2);
+    const side = new THREE.Mesh(new THREE.PlaneGeometry(nz - wz, wallTop), leatherWall);
+    side.position.set(sgn * sx, wallTop / 2, (nz + wz) / 2);
     side.rotation.y = -sgn * Math.PI / 2; side.receiveShadow = true; scene.add(side);
-    addRail(P.TABLE.nearZ - wz + 10, [sgn * sx, 0, (P.TABLE.nearZ + wz) / 2], -sgn * Math.PI / 2);
+    // (the sides' aprons run the full length, closing the corners)
+    addRail(nz - wz + 10, nz - wz + 2 * OUT - 20, nz - wz + 2 * OUT, [sgn * sx, 0, (nz + wz) / 2], -sgn * Math.PI / 2);
   });
   // The gold: a filigree border inlaid in the felt round the back and
   // sides (mitred at the corners), and a frieze along the top of the walls.
@@ -767,35 +889,71 @@ async function buildIntro(opts, undo, teardown) {
       scene.add(m);
     };
     const oz = wz + TRIM.inset, iz = oz + TRIM.w, ox = sx - TRIM.inset, ix = ox - TRIM.w, y = 0.01;
-    // back: u runs along x; v 0 at the wall side, 1 toward the player
+    const onz = nz - TRIM.inset, inz = onz - TRIM.w;
+    // back and near: u runs along x; v 0 at the wall side, 1 inward
     band([[-ox, y, oz], [-ix, y, iz], [ix, y, iz], [ox, y, oz]], p => [p[0] / TRIM.tile, (p[2] - oz) / TRIM.w]);
+    band([[ox, y, onz], [ix, y, inz], [-ix, y, inz], [-ox, y, onz]], p => [p[0] / TRIM.tile, (onz - p[2]) / TRIM.w]);
     [-1, 1].forEach(sg => {
-      const far = P.TABLE.nearZ;
-      const q = [[sg * ox, y, oz], [sg * ox, y, far], [sg * ix, y, far], [sg * ix, y, iz]];
-      band(sg > 0 ? q : q.reverse(), p => [p[2] / TRIM.tile, (sg * ox - p[0]) * sg / TRIM.w]);
+      // (wound to face up: reversed on the right)
+      const q = [[sg * ox, y, oz], [sg * ox, y, onz], [sg * ix, y, inz], [sg * ix, y, iz]];
+      band(sg > 0 ? q.reverse() : q, p => [p[2] / TRIM.tile, (sg * ox - p[0]) * sg / TRIM.w]);
     });
     const fy0 = wallTop - TRIM.w - 0.35, fy1 = wallTop - 0.35;
     band([[-sx, fy0, wz + 0.05], [sx, fy0, wz + 0.05], [sx, fy1, wz + 0.05], [-sx, fy1, wz + 0.05]], p => [p[0] / TRIM.tile, (fy1 - p[1]) / TRIM.w]);
+    band([[sx, fy0, nz - 0.05], [-sx, fy0, nz - 0.05], [-sx, fy1, nz - 0.05], [sx, fy1, nz - 0.05]], p => [p[0] / TRIM.tile, (fy1 - p[1]) / TRIM.w]);
     [-1, 1].forEach(sg => {
-      const x = sg * (sx - 0.05), q = [[x, fy0, wz], [x, fy0, P.TABLE.nearZ], [x, fy1, P.TABLE.nearZ], [x, fy1, wz]];
-      band(sg > 0 ? q.reverse() : q, p => [p[2] / TRIM.tile, (fy1 - p[1]) / TRIM.w]);
+      // (wound to face the table: reversed on the left)
+      const x = sg * (sx - 0.05), q = [[x, fy0, wz], [x, fy0, nz], [x, fy1, nz], [x, fy1, wz]];
+      band(sg > 0 ? q : q.reverse(), p => [p[2] / TRIM.tile, (fy1 - p[1]) / TRIM.w]);
     });
   }
-  // The room: brushed gunmetal behind the table, far out of focus; the floor.
+  // The room: brushed gunmetal behind the table, far out of focus; a deep
+  // oxblood carpet with a worn gold art-deco lattice (200 cm repeat), lit
+  // in pools under the lamps and lost to the dark between them (fog).
   const backdrop = new THREE.Mesh(new THREE.PlaneGeometry(1500, 700), new THREE.MeshBasicMaterial({ map: gunmetal, color: new THREE.Color(0.85, 0.85, 0.88) }));
   backdrop.position.set(120, 160, -420); scene.add(backdrop);
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), new THREE.MeshBasicMaterial({ color: 0x040405 }));
-  floor.rotation.x = -Math.PI / 2; floor.position.y = -82; scene.add(floor);
+  scene.fog = new THREE.FogExp2(0x050506, ROOM.fog);
+  const carpet = new THREE.MeshStandardMaterial({ map: carpetC, normalMap: carpetN, normalScale: new THREE.Vector2(0.6, 0.6), roughness: 0.95, envMapIntensity: 0.1 });
+  const floor = new THREE.Mesh(scaleUV(new THREE.PlaneGeometry(3000, 3000), 15, 15), carpet);
+  floor.rotation.x = -Math.PI / 2; floor.position.y = ROOM.floor; floor.receiveShadow = true; scene.add(floor);
+  // The lamp over the table: a long bronze pendant, its diffuser glowing
+  // warm underneath, hung on two rods from the dark.
+  {
+    const lamp = new THREE.Group();
+    const bronze = new THREE.MeshStandardMaterial({ color: 0x2a1c12, metalness: 0.85, roughness: 0.35 });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(34, 7, 132), bronze);
+    const lip = new THREE.Mesh(new THREE.BoxGeometry(35, 1, 133), brass);
+    lip.position.y = -3.4;
+    const glow = new THREE.Mesh(new THREE.PlaneGeometry(30, 128), new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 1.9, 1.4), fog: false }));
+    glow.rotation.x = Math.PI / 2; glow.position.y = -3.95;
+    lamp.add(body, lip, glow);
+    [-50, 50].forEach(z => { const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 200, 8), bronze); rod.position.set(0, 103, z); lamp.add(rod); });
+    lamp.position.set(-8, ROOM.lamp, -25);
+    scene.add(lamp);
+  }
+  // Other tables in the room, far off: pools of lamplight on the carpet and
+  // the glow of their lamps, nothing more (the fog does the rest).
+  {
+    const pool = canvasTexture(128, radial([[0, 'rgba(255,214,160,0.55)'], [0.45, 'rgba(255,190,130,0.18)'], [1, 'rgba(255,190,130,0)']]));
+    ROOM.far.forEach(([x, z, r]) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(r * 2, r * 2), new THREE.MeshBasicMaterial({ map: pool, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: true }));
+      m.rotation.x = -Math.PI / 2; m.position.set(x, ROOM.floor + 0.3, z); scene.add(m);
+      const shade = new THREE.Mesh(new THREE.BoxGeometry(r * 0.35, 4, r * 0.9), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 1.2, 0.8) }));
+      shade.position.set(x, ROOM.lamp - 10, z); scene.add(shade);
+    });
+  }
+  // (the set's materials and textures, for the table the landing flies to)
+  scene.userData.set = { felt: felt.material, rubber, leatherWall, cushion, brass, gold, wood, carpet, WOOD_TILE, tex: { feltN, leatherN, cushionN, walnut, walnutN, goldC, goldA, goldN, badge } };
 
   // ---- Lights: a warm pendant over the table (the shadows), the light
   // behind the lens (it rides with the camera, so its gleam slides across
   // the dice as the camera moves), a faint fill.
   const pendant = new THREE.SpotLight(0xfff0e2, PENDANT, 0, 0.62, 0.75, 0);
-  pendant.position.set(-8, 150, -25);
+  pendant.position.set(-8, ROOM.lamp - 6, -25);
   pendant.target.position.set(0, 0, -32);
   pendant.castShadow = true;
   pendant.shadow.mapSize.set(1024, 1024);
-  pendant.shadow.camera.near = 60; pendant.shadow.camera.far = 220;
+  pendant.shadow.camera.near = 80; pendant.shadow.camera.far = 290;
   pendant.shadow.bias = -0.0004; pendant.shadow.normalBias = 0.04; pendant.shadow.radius = 5;
   scene.add(pendant, pendant.target);
   const lensLight = new THREE.SpotLight(0xfff4e6, 1.2, 0, 0.32, 0.9, 0);
@@ -874,20 +1032,28 @@ async function buildIntro(opts, undo, teardown) {
     const hp = plan.stick.hp;
     const g = new THREE.Group();
     const curve = new THREE.CatmullRomCurve3(hp.curve.map(([a, b]) => new THREE.Vector3(a, 0, b)));
-    const hook = new THREE.Mesh(new THREE.TubeGeometry(curve, 120, HOOK.cap, 10, false), wood);
+    // (UVs in cm, the grain along the wood: a tube's u already runs along it)
+    const hookGeo = new THREE.TubeGeometry(curve, 120, HOOK.cap, 10, false);
+    scaleUV(hookGeo, curve.getLength() / WOOD_TILE[0], (2 * Math.PI * HOOK.cap) / WOOD_TILE[1]);
+    const hook = new THREE.Mesh(hookGeo, wood);
     hook.castShadow = true; g.add(hook);
-    const len = 160, lean = 11 * DEG;
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.48, len, 14), wood);
-    const attach = new THREE.Vector3(-HOOK.rc - 0.35, 0.2, HOOK.rc + 3.2);
-    const dir = new THREE.Vector3(0, Math.sin(lean), Math.cos(lean));
-    shaft.position.copy(attach).addScaledVector(dir, len / 2);
-    shaft.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-    shaft.castShadow = true; g.add(shaft);
+    // The shaft and its ferrule hang from a pivot at the hook, laid along
+    // the pull (+z) and tipped up per frame (see shaftLean).
+    const len = SHAFT.len;
+    const pivot = new THREE.Group();
+    pivot.position.set(...HOOK_ATTACH);
+    // (a cylinder's u runs round it: swapped, so the grain runs along)
+    const shaftGeo = new THREE.CylinderGeometry(0.42, 0.48, len, 14);
+    { const uv = shaftGeo.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getY(i) * len) / WOOD_TILE[0], (uv.getX(i) * 2.8) / WOOD_TILE[1]); }
+    const shaft = new THREE.Mesh(shaftGeo, wood);
+    shaft.rotation.x = Math.PI / 2; shaft.position.z = len / 2;
+    shaft.castShadow = true; pivot.add(shaft);
     const ferrule = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 1.8, 16), new THREE.MeshStandardMaterial({ color: 0x8c6d34, metalness: 1, roughness: 0.45 }));
-    ferrule.position.copy(attach).addScaledVector(dir, 1.2);
-    ferrule.quaternion.copy(shaft.quaternion); g.add(ferrule);
+    ferrule.rotation.x = Math.PI / 2; ferrule.position.z = 1.2;
+    pivot.add(ferrule);
+    g.add(pivot);
     scene.add(g);
-    stick = { g, hp };
+    stick = { g, hp, pivot };
   }
 
   // ---- The Vault Pull's pieces.
@@ -989,7 +1155,8 @@ async function buildIntro(opts, undo, teardown) {
     pushKey([R2(T.approach[0]), -32, 52, D * 0.96, D * 0.12]);
     pushKey([R2(T.pull[0]), -35, 56, D * 1.08, D * 0.16]);
     pushKey([R2(T.pull[1]), -38, 62, D * 1.26, D * 0.24]);
-    pushKey([R2(plan.endW) + 2, -39, 63, D * 1.3, D * 0.25]);
+    // (backing out and tilting up as the landing's copy comes in)
+    pushKey([R2(plan.endW) + 2, -40, 60, D * 1.36, D * 0.42]);
   } else if (plan.vault) {
     const Bm = R2(plan.vault.boom);
     pushKey([Bm - 0.3, -32, 40, D * 0.9, D * 0.1]);
@@ -1003,9 +1170,22 @@ async function buildIntro(opts, undo, teardown) {
     pushKey([Fd + 0.7, -38, 20, 20, 2.2]);
     pushKey([R2(plan.endW) + 2, -54, 16, 17, 2.6]);
   }
+  // The float: past the shot the camera drifts on, backing out and rising
+  // slowly, until someone taps (the landing decides what that does) or it
+  // settles under the ceiling.
+  {
+    const L = keys[keys.length - 1];
+    const F = plan.stick ? { el: -8, g: [1.12, 1.3, 1.42], h: [0.12, 0.3, 0.42] }
+      : plan.vault ? { el: 10, g: [1.1, 1.25, 1.35], h: [0.08, 0.2, 0.3] }
+      : { el: 14, g: [1.6, 2.6, 3.4], h: [0.3, 0.8, 1.2] };
+    [6, 16, FLOAT - 2].forEach((dt, i) => keys.push([L[0] + dt, L[1] - [2, 4, 5][i], L[2] + F.el * [0.3, 0.7, 1][i], L[3] * F.g[i], L[4] + L[3] * F.h[i]]));
+  }
   for (let k = turnFrom; k < keys.length; k++) keys[k][1] += dAz;
   const centroid = w => { const a = dicePose(plan, 0, w).p, b = dicePose(plan, 1, w).p; return mix3(a, b, 0.5); };
   const cupAim = t => { const c = cupAt(t); return [c.p[0], c.p[1] + 1, c.p[2]]; };
+  // (once the draw is under way the camera stops following the dice: the
+  // stick carries them on to the side as the camera backs away)
+  const stickAnchor = plan.stick ? centroid(plan.stick.hp.T.pull[1]) : null;
   const aimRaw = t => {
     const w = W.world(t);
     let aim;
@@ -1016,9 +1196,11 @@ async function buildIntro(opts, undo, teardown) {
     aim = mix3(aim, plan.impact, kI * 0.3);
     if (plan.edge && w > plan.edge.tf) aim = mix3(aim, dicePose(plan, plan.edge.die, w).p, smoother((w - plan.edge.tf) / 0.6));
     if (plan.vault && w > plan.vault.boom + 1.5) aim = mix3(aim, [aim[0], aim[1], aim[2] - 90], smoother((w - plan.vault.boom - 1.5) / 2.0));
+    if (stickAnchor) { const T = plan.stick.hp.T; aim = mix3(aim, stickAnchor, smoother((w - T.pull[0]) / (T.pull[1] - T.pull[0] + 1.2))); }
     return aim;
   };
-  const CAM_DT = 1 / 120, camN = Math.ceil((plan.totalReal + 2) / CAM_DT) + 2;
+  const floatEnd = plan.totalReal + FLOAT;
+  const CAM_DT = 1 / 120, camN = Math.ceil((floatEnd + 2) / CAM_DT) + 2;
   const camEye = new Float32Array(camN * 3), camAim = new Float32Array(camN * 3);
   {
     let aim = null;
@@ -1117,7 +1299,14 @@ async function buildIntro(opts, undo, teardown) {
         const bk = [e[0] - A[0], e[1] - A[1], e[2] - A[2]], bl = Math.hypot(...bk) || 1;
         for (let j = 0; j < 3; j++) e[j] += (bk[j] / bl) * pull[k];
       }
+      // 3. the whole close-up on the dice, from the throw to the landing,
+      // stands a fifth further back (same move, same view, smaller dice)
+      const tt = k * CAM_DT;
+      const zf = 1 + 0.2 * smoother((tt - Rrel) / Math.max(0.1, Rwall - Rrel)) * (1 - smoother((tt - (Rrest + 0.3)) / 0.8));
+      if (zf > 1.0001) for (let j = 0; j < 3; j++) e[j] = A[j] + (e[j] - A[j]) * zf;
       e[1] = Math.max(e[1], 2.5);
+      // 4. the ceiling: the float rises into it and rests there
+      if (e[1] > CEIL - 20) e[1] = CEIL - 20 * Math.exp(-(e[1] - (CEIL - 20)) / 20);
     }
   }
 
@@ -1202,10 +1391,17 @@ async function buildIntro(opts, undo, teardown) {
   // ---- One frame at real time t.
   const setPose = (obj, p, q) => { obj.position.set(p[0], p[1], p[2]); obj.quaternion.set(q[0], q[1], q[2], q[3]); };
   const project = p => { const v = new THREE.Vector3(p[0], p[1], p[2]).project(camera); return [(v.x * 0.5 + 0.5) * host.clientWidth, (-v.y * 0.5 + 0.5) * host.clientHeight, v.z]; };
-  const render = t => {
+  // The light behind the lens: brightest through the slow motion.
+  const gleamAt = t => smoother((t - (Rwall - 0.2)) / 0.35) * (1 - smoother((t - W.slowHold[1]) / 0.7));
+  const aimLens = (eye, aim, gleam) => {
+    const back = new THREE.Vector3(eye[0] - aim[0], eye[1] - aim[1], eye[2] - aim[2]).normalize();
+    lensLight.position.set(eye[0] + back.x * 18, eye[1] + back.y * 18 + 14, eye[2] + back.z * 18);
+    lensLight.target.position.set(aim[0], aim[1], aim[2]);
+    lensLight.intensity = 0.5 + 1.0 * gleam;
+  };
+  // The camera at real time t, from the path worked out above.
+  const cameraAt = t => {
     const w = W.world(t);
-    const rate = W.rateAt(t);
-    // Camera.
     const f = Math.min(camN - 2, Math.max(0, t / CAM_DT)), k0 = Math.floor(f), u = f - k0;
     const eye = [0, 1, 2].map(j => lerp(camEye[k0 * 3 + j], camEye[(k0 + 1) * 3 + j], u));
     const aim = [0, 1, 2].map(j => lerp(camAim[k0 * 3 + j], camAim[(k0 + 1) * 3 + j], u));
@@ -1214,15 +1410,20 @@ async function buildIntro(opts, undo, teardown) {
       const x = w - plan.vault.boom;
       if (x > 0 && x < 0.8) { const a = 0.9 * Math.exp(-x / 0.14); shake = [a * Math.sin(x * 73), a * Math.sin(x * 61 + 1), a * Math.sin(x * 57 + 2)]; }
     }
-    camera.position.set(eye[0] + shake[0], eye[1] + shake[1], eye[2] + shake[2]);
+    return { eye: [eye[0] + shake[0], eye[1] + shake[1], eye[2] + shake[2]], aim };
+  };
+  const placeCamera = t => {
+    const { eye, aim } = cameraAt(t);
+    camera.position.set(eye[0], eye[1], eye[2]);
     camera.lookAt(aim[0], aim[1], aim[2]);
     camera.updateMatrixWorld();
-    // The light behind the lens: brightest through the slow motion.
-    const gleam = smoother((t - (Rwall - 0.2)) / 0.35) * (1 - smoother((t - W.slowHold[1]) / 0.7));
-    const back = new THREE.Vector3(eye[0] - aim[0], eye[1] - aim[1], eye[2] - aim[2]).normalize();
-    lensLight.position.set(eye[0] + back.x * 18, eye[1] + back.y * 18 + 14, eye[2] + back.z * 18);
-    lensLight.target.position.set(aim[0], aim[1], aim[2]);
-    lensLight.intensity = 0.5 + 1.0 * gleam;
+    aimLens(eye, aim, gleamAt(t));
+  };
+  // Everything in the shot but the camera, at real time t.
+  const stage = t => {
+    const w = W.world(t);
+    const rate = W.rateAt(t);
+    const gleam = gleamAt(t);
     // Cup.
     const cp = cupAt(Math.min(w, 5));
     setPose(cup, cp.p, cp.q);
@@ -1267,6 +1468,8 @@ async function buildIntro(opts, undo, teardown) {
         const m = new THREE.Matrix4().makeBasis(new THREE.Vector3(...hw.X), new THREE.Vector3(0, 1, 0), new THREE.Vector3(...hw.U));
         stick.g.quaternion.setFromRotationMatrix(m);
         stick.g.position.set(hw.O[0], hw.O[1], hw.O[2]);
+        // (rotating about x by -lean tips +z up toward +y)
+        stick.pivot.rotation.x = -shaftLean(stick.hp.line, st.u);
       }
     }
     // Vault.
@@ -1354,13 +1557,16 @@ async function buildIntro(opts, undo, teardown) {
       }
     }
     badgeEl.style.opacity = tier === 'standard' ? '0' : smoother((w - plan.callW - 0.2) / 0.6).toFixed(3);
-    // Render.
+    return { w, rate, gleam, burst };
+  };
+  const draw = st => {
     if (composer) {
-      bloom.strength = 0.3 + 0.22 * gleam + (plan.vault ? 1.4 * Math.max(0, 1 - Math.max(0, burst) / 0.6) * (burst > 0 ? 1 : 0) : 0);
+      bloom.strength = 0.3 + 0.22 * st.gleam + (plan.vault ? 1.4 * Math.max(0, 1 - Math.max(0, st.burst) / 0.6) * (st.burst > 0 ? 1 : 0) : 0);
       composer.render();
     } else renderer.render(scene, camera);
-    return { w, rate };
   };
+  // One frame at real time t.
+  const render = t => { placeCamera(t); const st = stage(t); draw(st); return st; };
 
   // ---- Playback.
   let raf = 0, t = 0, last = 0, playing = false, sfxIndex = 0, silenced = false;
@@ -1393,11 +1599,33 @@ async function buildIntro(opts, undo, teardown) {
     }
     if (plan.edge && !silenced && to >= R2(plan.silence[0])) { silenced = true; sound.cut(now + Math.max(0, R2(plan.silence[0]) - from)); }
   };
+  // Fires the landing's cues once each, whichever way the shot gets there.
+  const cue = () => {
+    if (!revealed && t >= plan.revealReal) { revealed = true; if (o.onReveal) o.onReveal(); }
+    if (!ended && t >= plan.totalReal) { ended = true; if (o.onEnd) o.onEnd(); }
+  };
+  // The finished frame, held still (motion off, or a device too slow to
+  // play it): never earlier than the end of the shot.
+  const still = () => {
+    playing = false; cancelAnimationFrame(raf);
+    t = Math.max(t, plan.totalReal);
+    render(t);
+    soundBtn.hidden = true;
+    if (sound && sound.bed) sound.cut(sound.ctx.currentTime);
+    cue();
+  };
+  // The float has risen into the ceiling: the frame stays, the loop rests.
+  const settle = () => {
+    playing = false; cancelAnimationFrame(raf);
+    t = floatEnd; render(t);
+    if (sound && sound.bed) sound.fade(sound.ctx.currentTime, 1.2);
+    cue();
+  };
   const loop = now => {
     if (!playing) return;
     // Reduced motion switched on mid-shot (in the app or the system): the
     // finished frame, at once, as when it was on from the start.
-    if (o.motionOff && o.motionOff()) { playing = false; if (o.onEnd) o.onEnd(); return; }
+    if (o.motionOff && o.motionOff()) { still(); return; }
     const raw = last ? (now - last) / 1000 : 1 / 60;
     last = now;
     // Time runs with the clock (a slow device drops frames rather than
@@ -1416,15 +1644,15 @@ async function buildIntro(opts, undo, teardown) {
       if (quality > 0) { applyQuality(--quality); winFrames = 0; winTime = 0; }
       // Still a slideshow at the lowest setting: show the finished frame
       // instead (as with motion off) rather than stutter through the shot.
-      else if (winFrames >= 6 && avg > 0.12) { playing = false; if (o.onEnd) o.onEnd(); return; }
+      else if (winFrames >= 6 && avg > 0.12) { still(); return; }
     }
     scheduleSound(t0, t + 0.1);
-    if (t >= plan.totalReal) { t = plan.totalReal; render(t); playing = false; if (o.onEnd) o.onEnd(); return; }
+    if (t >= floatEnd) { settle(); return; }
     render(t);
-    if (!revealed && t >= plan.revealReal) { revealed = true; if (o.onReveal) o.onReveal(); }
+    cue();
     raf = requestAnimationFrame(loop);
   };
-  let revealed = false;
+  let revealed = false, ended = false;
   const onResize = () => { size(); render(t); };
   window.addEventListener('resize', onResize);
   let resumed = false;
@@ -1478,10 +1706,49 @@ async function buildIntro(opts, undo, teardown) {
   checkAbort();
   render(0);
   return {
-    plan: { tier, seed: o.seed, revealReal: plan.revealReal, totalReal: plan.totalReal, restReal: plan.restReal, wallReal: plan.wallReal, values: plan.values, call: plan.call, throwOk: plan.throwOk, why: plan.why },
+    plan: { tier, seed: o.seed, revealReal: plan.revealReal, totalReal: plan.totalReal, floatEnd, restReal: plan.restReal, wallReal: plan.wallReal, values: plan.values, call: plan.call, throwOk: plan.throwOk, why: plan.why },
     play() { playing = true; last = 0; raf = requestAnimationFrame(loop); },
-    seek(time) { playing = false; cancelAnimationFrame(raf); t = Math.max(0, Math.min(plan.totalReal, time)); render(t); },
-    finish() { playing = false; cancelAnimationFrame(raf); t = plan.totalReal; render(t); soundBtn.hidden = true; if (sound && sound.bed) sound.cut(sound.ctx.currentTime); },
+    seek(time) { playing = false; cancelAnimationFrame(raf); t = Math.max(0, Math.min(floatEnd, time)); render(t); },
+    // A tap mid-shot: straight to its end, and float on from there.
+    skip() {
+      if (t < plan.totalReal) {
+        t = plan.totalReal;
+        sfxIndex = sfx.findIndex(ev => ev.t >= t); if (sfxIndex < 0) sfxIndex = sfx.length;
+      }
+      if (!playing && t < floatEnd) { playing = true; last = 0; raf = requestAnimationFrame(loop); }
+      render(t);
+      cue();
+    },
+    // Motion off: the finished frame, held still.
+    finish: still,
+    // A look at the running scene (the table builds into it while the
+    // intro floats), without stopping anything.
+    peek() { return { scene, renderer, camera }; },
+    // The fly-in takes the scene over: the loop stops and the set, the
+    // renderer and the camera are handed on, as they are this moment.
+    release() {
+      playing = false; cancelAnimationFrame(raf);
+      window.removeEventListener('resize', onResize);
+      document.removeEventListener('visibilitychange', onVisibility);
+      soundBtn.hidden = true;
+      if (sound && sound.bed) sound.fade(sound.ctx.currentTime, 0.6);
+      return {
+        THREE, renderer, scene, camera, host, canvas, t, floatEnd,
+        get composer() { return composer; },
+        get bloom() { return bloom; },
+        get pixelRatio() { return pixelRatio; },
+        get quality() { return quality; },
+        size,
+        // the intro's own world (dice, stick, dust) at a real time, and a
+        // frame of it drawn through the intro's post-processing
+        stage: tt => stage(tt == null ? t : tt),
+        draw,
+        lights: { pendant, rim, lensLight, edgeSpot },
+        dice: dice.map(d => d.g),
+        overlays: [call, badgeEl, flashEl],
+        dispose: teardown
+      };
+    },
     dispose: teardown
   };
 }
