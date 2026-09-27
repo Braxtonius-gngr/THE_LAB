@@ -515,6 +515,8 @@ class Sound {
   burst(when, type, freq, q, gain, dur, rate) {
     const c = this.ctx, src = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
     src.buffer = this.noise; src.playbackRate.value = rate || 1;
+    // (the buffer holds a second of noise: a longer burst loops it)
+    src.loop = true;
     f.type = type; f.frequency.value = freq; f.Q.value = q;
     g.gain.setValueAtTime(0, when); g.gain.linearRampToValueAtTime(gain, when + 0.002); g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
     src.connect(f); f.connect(g); g.connect(this.out || this.master);
@@ -635,16 +637,24 @@ export async function createIntro(opts) {
   canvas.className = 'r3-canvas';
   canvas.setAttribute('aria-hidden', 'true');
 
-  const [feltN, rubberN, leatherN, walnut, gunmetal, badge] = await Promise.all([
-    tex('felt-normal.jpg', false, [9, 13]),
-    tex('rubber-normal.jpg', false, [14.4, 2.36]),
-    tex('leather-normal.jpg', false, [5, 2]),
-    tex('walnut.jpg', true, [1, 1]),
-    tex('gunmetal.jpg', true),
-    tex('badge.png', true)
-  ]);
-
-  const plan = makePlan(tier, o.seed);
+  // If the base set fails to load (or the plan throws), the context is
+  // given back before the error goes up: browsers allow only a few live.
+  let feltN, rubberN, leatherN, walnut, gunmetal, badge, plan;
+  try {
+    [feltN, rubberN, leatherN, walnut, gunmetal, badge] = await Promise.all([
+      tex('felt-normal.jpg', false, [9, 13]),
+      tex('rubber-normal.jpg', false, [14.4, 2.36]),
+      tex('leather-normal.jpg', false, [5, 2]),
+      tex('walnut.jpg', true, [1, 1]),
+      tex('gunmetal.jpg', true),
+      tex('badge.png', true)
+    ]);
+    plan = makePlan(tier, o.seed);
+  } catch (err) {
+    renderer.dispose();
+    try { renderer.forceContextLoss(); } catch (e) { /* already gone */ }
+    throw err;
+  }
   const W = plan.warp;
 
   // ---- The set.
@@ -1163,7 +1173,10 @@ export async function createIntro(opts) {
   // 0 the dice lose their glass (transmission renders the scene twice).
   let quality = composer ? 3 : 2, winFrames = 0, winTime = 0, frames = 0;
   const applyQuality = q => {
-    if (q <= 2) { composer = null; pixelRatio = Math.min(pixelRatio, 1.5); }
+    if (q <= 2) {
+      if (composer) { composer.dispose(); bloom.dispose(); }
+      composer = null; pixelRatio = Math.min(pixelRatio, 1.5);
+    }
     if (q <= 1) {
       pixelRatio = 1;
       renderer.shadowMap.enabled = false;
@@ -1195,9 +1208,12 @@ export async function createIntro(opts) {
     t += dt;
     // (the first frames are skipped: they carry texture uploads)
     frames++;
-    if (frames > 3 && o.quality !== 'full') { winFrames++; winTime += raw; }
+    // (nor the frame after the tab was hidden: that gap is the tab, not the
+    // device, and must not cost quality or end the shot)
+    const stall = resumed; resumed = false;
+    if (frames > 3 && o.quality !== 'full' && !stall) { winFrames++; winTime += raw; }
     const avg = winFrames ? winTime / winFrames : 0;
-    if (o.quality !== 'full' && ((winFrames >= 8 && avg > 0.036) || (frames > 3 && raw > 0.25))) {
+    if (o.quality !== 'full' && !stall && ((winFrames >= 8 && avg > 0.036) || (frames > 3 && raw > 0.25))) {
       if (quality > 0) { applyQuality(--quality); winFrames = 0; winTime = 0; }
       // Still a slideshow at the lowest setting: show the finished frame
       // instead (as with motion off) rather than stutter through the shot.
@@ -1212,6 +1228,9 @@ export async function createIntro(opts) {
   let revealed = false;
   const onResize = () => { size(); render(t); };
   window.addEventListener('resize', onResize);
+  let resumed = false;
+  const onVisibility = () => { if (document.hidden) resumed = true; };
+  document.addEventListener('visibilitychange', onVisibility);
 
   // The speaker: sound on or off, without skipping the shot.
   const soundBtn = document.createElement('button');
@@ -1255,6 +1274,7 @@ export async function createIntro(opts) {
     dispose() {
       playing = false; cancelAnimationFrame(raf);
       window.removeEventListener('resize', onResize);
+      document.removeEventListener('visibilitychange', onVisibility);
       if (sound && sound.ctx) sound.ctx.close().catch(() => {});
       renderer.dispose();
       try { renderer.forceContextLoss(); } catch (e) { /* already gone */ }
