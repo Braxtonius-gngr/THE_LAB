@@ -51,6 +51,12 @@ const easeOut = (x, k = 3) => 1 - Math.pow(1 - clamp01(x), k);
 const lerp = (a, b, k) => a + (b - a) * k;
 const mix3 = (a, b, k) => [lerp(a[0], b[0], k), lerp(a[1], b[1], k), lerp(a[2], b[2], k)];
 const DEG = Math.PI / 180;
+// The light: the pendant over the table, and the studio the glossy surfaces
+// mirror (dimmed together round the Defiant Edge's die).
+const PENDANT = 3.5, ENV_LEVEL = 0.95, RIM = 2.4;
+// The gold filigree band: its width, its repeat along its length (the
+// texture is 8:1), and how far in from the walls it is inlaid in the felt.
+const TRIM = { w: 2.4, tile: 19.2, inset: 2.2 };
 // Catmull-Rom through keys [t, v1, v2, ...]: smooth velocity through every key.
 function spline(keys, t) {
   const n = keys.length;
@@ -251,7 +257,7 @@ function planFromThrow(tier, seed, best) {
     const e = run.bodies[0].p[2] > run.bodies[1].p[2] ? 0 : 1;
     const tf = Math.max(run.restAt[e] - 0.3, wallW + 0.35);
     const f = P.poseAt(run, e, tf), g = P.poseAt(run, e, tf - 0.02);
-    const ih = P.DIE / 2 - P.DIE_ROUND;
+    const ih = P.DIE / 2 - VIS_ROUND;
     let low = null;
     for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
       const d = P.qrot(f.q, [sx, sy, sz]);
@@ -260,7 +266,7 @@ function planFromThrow(tier, seed, best) {
     const lw = P.qrot(f.q, low.b.map(v => v / Math.sqrt(3)));
     const qc = P.qmul(P.qfromto(lw, [0, -1, 0]), f.q);
     const drift = [(f.p[0] - g.p[0]) / 0.02, (f.p[2] - g.p[2]) / 0.02];
-    const pc = [f.p[0] + drift[0] * 0.07, ih * Math.sqrt(3) + P.DIE_ROUND, f.p[2] + drift[1] * 0.07];
+    const pc = [f.p[0] + drift[0] * 0.07, ih * Math.sqrt(3) + VIS_ROUND, f.p[2] + drift[1] * 0.07];
     let pinned = false;
     run = P.simThrow(run.seed, {
       onStep: (t, bodies) => {
@@ -419,11 +425,15 @@ const PIP_LAYOUT = {
   4: [[-1, -1], [1, -1], [-1, 1], [1, 1]], 5: [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]],
   6: [[-1, -1], [-1, 0], [-1, 1], [1, -1], [1, 0], [1, 1]]
 };
-const PIP = { off: 0.47, r: 0.19, r1: 0.25, depth: 0.075 };
+const PIP = { off: 0.44, r: 0.225, r1: 0.3, depth: 0.1 };
+// The dice are drawn rounder than the physics body (0.2): the soft, sanded
+// corners of translucent casino-shop dice. A die at rest sits on a face, so
+// the two agree there; on a corner (the Defiant Edge) it is set by this one.
+const VIS_ROUND = 0.28;
 function pipsOf(value) { return PIP_LAYOUT[value].map(([u, v]) => ({ u: u * PIP.off, v: v * PIP.off, r: value === 1 ? PIP.r1 : PIP.r })); }
 function dieGeometry() {
   const h = P.DIE / 2;
-  return roundedBox([h, h, h], P.DIE_ROUND, 30, 5, {
+  return roundedBox([h, h, h], VIS_ROUND, 40, 7, {
     dimple: (fi, u, v) => {
       for (const pp of pipsOf(FACE_VALUE[fi])) if (Math.hypot(u - pp.u, v - pp.v) < pp.r * 1.02) return PIP.depth + 0.04;
       return 0;
@@ -432,7 +442,7 @@ function dieGeometry() {
 }
 // The pips: cupped white paint, each a shallow bowl sitting in its well.
 function pipGeometry() {
-  const h = P.DIE / 2, pos = [], nor = [], idx = [];
+  const h = P.DIE / 2, pos = [], nor = [], idx = [], col = [];
   const faces = [[0, 1], [0, -1], [1, 1], [1, -1], [2, 1], [2, -1]];
   faces.forEach(([a, s], fi) => {
     const b = (a + 1) % 3, c = (a + 2) % 3;
@@ -449,6 +459,9 @@ function pipGeometry() {
           const n = [0, 0, 0]; n[a] = s; n[b] = -g * du; n[c] = -g * dv;
           const l = Math.hypot(...n);
           pos.push(...Pp); nor.push(n[0] / l, n[1] / l, n[2] / l);
+          // a bright lip round a greyer hollow (the paint pools thin there)
+          const shade = 0.62 + 0.38 * Math.pow(rho / pp.r, 3);
+          col.push(shade, shade, shade);
         }
       }
       for (let m = 0; m < segs; m++) {
@@ -465,6 +478,7 @@ function pipGeometry() {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   geo.setIndex(idx);
   return geo;
 }
@@ -664,7 +678,7 @@ async function buildIntro(opts, undo, teardown) {
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  renderer.toneMappingExposure = 1.25;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   let pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
@@ -678,14 +692,20 @@ async function buildIntro(opts, undo, teardown) {
     canvas.remove();
   });
 
-  const [feltN, rubberN, leatherN, walnut, gunmetal, badge] = await Promise.all([
-    tex('felt-normal.jpg', false, [9, 13]),
+  const [feltN, rubberN, leatherN, walnut, gunmetal, badge, goldC, goldA, goldN] = await Promise.all([
+    tex('felt-normal.jpg', false, [13, 20]),
     tex('rubber-normal.jpg', false, [14.4, 2.36]),
     tex('leather-normal.jpg', false, [5, 2]),
     tex('walnut.jpg', true, [1, 1]),
     tex('gunmetal.jpg', true),
-    tex('badge.png', true)
+    tex('badge.png', true),
+    tex('gold-trim-color.jpg', true, [1, 1]),
+    tex('gold-trim-alpha.png', false, [1, 1]),
+    tex('gold-trim-normal.jpg', false, [1, 1])
   ]);
+  // (the filigree band repeats along its length only)
+  [goldC, goldA, goldN].forEach(t => { t.wrapT = THREE.ClampToEdgeWrapping; t.anisotropy = 8; });
+  feltN.anisotropy = 8;
   checkAbort();
   const plan = await makePlanAsync(tier, o.seed, o.signal);
   checkAbort();
@@ -695,10 +715,11 @@ async function buildIntro(opts, undo, teardown) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x050506);
   scene.environment = studioEnvironment(renderer);
-  scene.environmentIntensity = 0.7;
+  scene.environmentIntensity = ENV_LEVEL;
 
   const felt = new THREE.Mesh(new THREE.PlaneGeometry(2 * P.TABLE.sideX, P.TABLE.nearZ - P.TABLE.wallZ),
-    new THREE.MeshPhysicalMaterial({ color: 0x030304, roughness: 0.97, sheen: 0.45, sheenRoughness: 0.45, sheenColor: new THREE.Color(0x16161b), normalMap: feltN, normalScale: new THREE.Vector2(0.4, 0.4), envMapIntensity: 0.08 }));
+    // black baize: a fine twill under a soft nap that catches the light
+    new THREE.MeshPhysicalMaterial({ color: 0x070709, roughness: 0.9, specularIntensity: 0.22, sheen: 0.85, sheenRoughness: 0.5, sheenColor: new THREE.Color(0x2c2c36), normalMap: feltN, normalScale: new THREE.Vector2(0.85, 0.85), envMapIntensity: 0.15 }));
   felt.rotation.x = -Math.PI / 2;
   felt.position.set(0, 0, (P.TABLE.nearZ + P.TABLE.wallZ) / 2);
   felt.receiveShadow = true;
@@ -706,7 +727,10 @@ async function buildIntro(opts, undo, teardown) {
 
   const rubber = new THREE.MeshStandardMaterial({ color: 0x08080a, roughness: 0.7, normalMap: rubberN, normalScale: new THREE.Vector2(0.9, 0.9) });
   const cushion = new THREE.MeshStandardMaterial({ color: 0x0e0e10, roughness: 0.42, normalMap: leatherN, normalScale: new THREE.Vector2(0.3, 0.3) });
-  const brass = new THREE.MeshStandardMaterial({ color: 0xc9a24c, metalness: 1, roughness: 0.26 });
+  const brass = new THREE.MeshStandardMaterial({ color: 0xd8ae58, metalness: 1, roughness: 0.27, envMapIntensity: 1.0 });
+  // Gold filigree: a running scroll of acanthus in relief, between beaded
+  // rules. One band texture, repeating along its length (TRIM.tile cm).
+  const gold = new THREE.MeshStandardMaterial({ map: goldC, alphaMap: goldA, alphaTest: 0.5, normalMap: goldN, normalScale: new THREE.Vector2(1.3, 1.3), metalness: 1, roughness: 0.28, envMapIntensity: 1.4, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   const wood = new THREE.MeshPhysicalMaterial({ map: walnut, color: 0x7a5a44, roughness: 0.45, clearcoat: 0.5, clearcoatRoughness: 0.25 });
   const wallTop = P.TABLE.wallTop, wz = P.TABLE.wallZ, sx = P.TABLE.sideX;
   const back = new THREE.Mesh(new THREE.PlaneGeometry(2 * sx, wallTop), rubber);
@@ -728,6 +752,35 @@ async function buildIntro(opts, undo, teardown) {
     side.rotation.y = -sgn * Math.PI / 2; side.receiveShadow = true; scene.add(side);
     addRail(P.TABLE.nearZ - wz + 10, [sgn * sx, 0, (P.TABLE.nearZ + wz) / 2], -sgn * Math.PI / 2);
   });
+  // The gold: a filigree border inlaid in the felt round the back and
+  // sides (mitred at the corners), and a frieze along the top of the walls.
+  {
+    const band = (quad, uvOf) => {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(quad.flat(), 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(quad.map(uvOf).flat(), 2));
+      g.setAttribute('normal', new THREE.Float32BufferAttribute(quad.map(() => [0, 0, 0]).flat(), 3));
+      g.setIndex([0, 1, 2, 0, 2, 3]);
+      g.computeVertexNormals();
+      const m = new THREE.Mesh(g, gold);
+      m.receiveShadow = true;
+      scene.add(m);
+    };
+    const oz = wz + TRIM.inset, iz = oz + TRIM.w, ox = sx - TRIM.inset, ix = ox - TRIM.w, y = 0.01;
+    // back: u runs along x; v 0 at the wall side, 1 toward the player
+    band([[-ox, y, oz], [-ix, y, iz], [ix, y, iz], [ox, y, oz]], p => [p[0] / TRIM.tile, (p[2] - oz) / TRIM.w]);
+    [-1, 1].forEach(sg => {
+      const far = P.TABLE.nearZ;
+      const q = [[sg * ox, y, oz], [sg * ox, y, far], [sg * ix, y, far], [sg * ix, y, iz]];
+      band(sg > 0 ? q : q.reverse(), p => [p[2] / TRIM.tile, (sg * ox - p[0]) * sg / TRIM.w]);
+    });
+    const fy0 = wallTop - TRIM.w - 0.35, fy1 = wallTop - 0.35;
+    band([[-sx, fy0, wz + 0.05], [sx, fy0, wz + 0.05], [sx, fy1, wz + 0.05], [-sx, fy1, wz + 0.05]], p => [p[0] / TRIM.tile, (fy1 - p[1]) / TRIM.w]);
+    [-1, 1].forEach(sg => {
+      const x = sg * (sx - 0.05), q = [[x, fy0, wz], [x, fy0, P.TABLE.nearZ], [x, fy1, P.TABLE.nearZ], [x, fy1, wz]];
+      band(sg > 0 ? q.reverse() : q, p => [p[2] / TRIM.tile, (fy1 - p[1]) / TRIM.w]);
+    });
+  }
   // The room: brushed gunmetal behind the table, far out of focus; the floor.
   const backdrop = new THREE.Mesh(new THREE.PlaneGeometry(1500, 700), new THREE.MeshBasicMaterial({ map: gunmetal, color: new THREE.Color(0.85, 0.85, 0.88) }));
   backdrop.position.set(120, 160, -420); scene.add(backdrop);
@@ -737,7 +790,7 @@ async function buildIntro(opts, undo, teardown) {
   // ---- Lights: a warm pendant over the table (the shadows), the light
   // behind the lens (it rides with the camera, so its gleam slides across
   // the dice as the camera moves), a faint fill.
-  const pendant = new THREE.SpotLight(0xfff0e2, 2.8, 0, 0.62, 0.75, 0);
+  const pendant = new THREE.SpotLight(0xfff0e2, PENDANT, 0, 0.62, 0.75, 0);
   pendant.position.set(-8, 150, -25);
   pendant.target.position.set(0, 0, -32);
   pendant.castShadow = true;
@@ -747,7 +800,14 @@ async function buildIntro(opts, undo, teardown) {
   scene.add(pendant, pendant.target);
   const lensLight = new THREE.SpotLight(0xfff4e6, 1.2, 0, 0.32, 0.9, 0);
   scene.add(lensLight, lensLight.target);
-  scene.add(new THREE.HemisphereLight(0x8a90a0, 0x050505, 0.18));
+  scene.add(new THREE.HemisphereLight(0x8a90a0, 0x0a0806, 0.3));
+  // A warm rim hung high over the back of the table, facing the lens: it
+  // comes through the dice and lights the resin from inside, and rakes the
+  // nap of the felt and the relief of the gold.
+  const rim = new THREE.SpotLight(0xffd9b0, RIM, 0, 0.55, 0.85, 0);
+  rim.position.set(12, 78, -64);
+  rim.target.position.set(0, 0, -30);
+  scene.add(rim, rim.target);
   const edgeSpot = new THREE.SpotLight(0xfff0dc, 0, 0, 0.1, 0.5, 0);
   scene.add(edgeSpot, edgeSpot.target);
 
@@ -787,12 +847,15 @@ async function buildIntro(opts, undo, teardown) {
 
   // ---- The dice.
   const dieGeo = dieGeometry(), pipGeo = pipGeometry();
-  const pipMat = new THREE.MeshStandardMaterial({ color: 0xd2cec4, roughness: 0.5 });
+  // (both sides: the pips of the far faces show through the resin)
+  const pipMat = new THREE.MeshStandardMaterial({ color: 0xdcd8ce, roughness: 0.42, vertexColors: true, side: THREE.DoubleSide });
   const dice = [0, 1].map(() => {
     const mat = new THREE.MeshPhysicalMaterial({
-      color: 0xd21c36, roughness: 0.05, metalness: 0, transmission: 0.9, thickness: 1.5, ior: 1.49,
-      attenuationColor: new THREE.Color(0x8a0818), attenuationDistance: 1.4,
-      clearcoat: 1, clearcoatRoughness: 0.03, specularIntensity: 1, envMapIntensity: 1.25,
+      // deep red resin: dark through the middle, bright red where it is
+      // thin (the rounded edges), glass-hard highlights on the clear coat
+      color: 0xc01424, roughness: 0.03, metalness: 0, transmission: 0.9, thickness: 1.6, ior: 1.5,
+      attenuationColor: new THREE.Color(0x8a0616), attenuationDistance: 0.75,
+      clearcoat: 1, clearcoatRoughness: 0.02, specularIntensity: 1, envMapIntensity: 2.3,
       emissive: new THREE.Color(0xff3212), emissiveIntensity: 0
     });
     const g = new THREE.Group();
@@ -909,8 +972,10 @@ async function buildIntro(opts, undo, teardown) {
     [0, -34, 12, 38, 1.5],
     [1.2, -30, 13, 34, 1.5],
     [Rrel + 0.12, -24, 17, 36, 1],
-    [Rwall - 0.08, -22, 14, 31, 0],
-    [W.slowHold[1], -58, 10, 27, 0]
+    // (the push toward the wall strike goes 4/5 of the way it once did:
+    // 36 cm to 31 and 27 then, to 32 and 28.8 now)
+    [Rwall - 0.08, -22, 14, 36 - 0.8 * 5, 0],
+    [W.slowHold[1], -58, 10, 36 - 0.8 * 9, 0]
   ];
   const R2 = w => W.real(w);
   // (keys must run forward in time; a quick settle can come before the
@@ -981,8 +1046,75 @@ async function buildIntro(opts, undo, teardown) {
           }
         }
       }
-      e[1] = Math.max(e[1], 2.5);
       camEye.set(e, k * 3); camAim.set(A, k * 3);
+    }
+    // Through the strike and the landing, keep the dice in the frame: a
+    // tall phone sees little from side to side, and the dice can part
+    // widely off the wall. Where either would leave it, the eye backs off
+    // along the view just far enough, up to PULL cm; if that is still not
+    // enough for both, the aim leans toward the die nearer the lens, so one
+    // is always held. Both are eased (held ahead a little, then smoothed),
+    // so the camera moves before a die reaches the edge, never after.
+    const PULL = 16, M = 0.8, R = 1.6;
+    const inWin = k => { const t = k * CAM_DT; return t > Rwall - 0.15 && t < Rrest + 0.3; };
+    const basis = k => {
+      const e = camEye.subarray(k * 3, k * 3 + 3), A = camAim.subarray(k * 3, k * 3 + 3);
+      const f = [A[0] - e[0], A[1] - e[1], A[2] - e[2]], fl = Math.hypot(...f);
+      f[0] /= fl; f[1] /= fl; f[2] /= fl;
+      const rl = Math.hypot(f[2], f[0]) || 1, r = [-f[2] / rl, 0, f[0] / rl];
+      const u = [r[1] * f[2] - r[2] * f[1], r[2] * f[0] - r[0] * f[2], r[0] * f[1] - r[1] * f[0]];
+      return { e, A, f, r, u };
+    };
+    const needAt = (k, only) => {
+      const { e, f, r, u } = basis(k), wv = W.world(k * CAM_DT);
+      let s = 0;
+      for (let i = 0; i < 2; i++) {
+        if (only != null && i !== only) continue;
+        const p = dicePose(plan, i, wv).p, d = [p[0] - e[0], p[1] - e[1], p[2] - e[2]];
+        const z = d[0] * f[0] + d[1] * f[1] + d[2] * f[2];
+        const x = Math.abs(d[0] * r[0] + d[1] * r[1] + d[2] * r[2]) + R, y = Math.abs(d[0] * u[0] + d[1] * u[1] + d[2] * u[2]) + R;
+        s = Math.max(s, x / (M * tanH) - z, y / (M * tanV) - z);
+      }
+      return s;
+    };
+    const ease = arr => {
+      const hold = Math.round(0.3 / CAM_DT), soft = Math.round(0.18 / CAM_DT);
+      const held = arr.map((_, k) => { let m = 0; for (let j = Math.max(0, k - hold); j <= Math.min(camN - 1, k + hold); j++) m = Math.max(m, arr[j]); return m; });
+      return held.map((_, k) => { let a = 0, n = 0; for (let j = -2 * soft; j <= 2 * soft; j++) { const i = k + j; if (i < 0 || i >= camN) continue; const g = Math.exp(-(j * j) / (2 * soft * soft)); a += held[i] * g; n += g; } return a / n; });
+    };
+    // 1. the lean, where pulling back PULL cm would not be enough. It
+    // follows one die for the whole strike (the one nearer the lens over
+    // it), never swapping between them mid-shot.
+    let hero = 0;
+    {
+      let dd = [0, 0];
+      for (let k = 0; k < camN; k++) if (inWin(k)) {
+        const e = camEye.subarray(k * 3, k * 3 + 3), wv = W.world(k * CAM_DT);
+        for (let i = 0; i < 2; i++) { const p = dicePose(plan, i, wv).p; dd[i] += Math.hypot(p[0] - e[0], p[1] - e[1], p[2] - e[2]); }
+      }
+      hero = dd[0] <= dd[1] ? 0 : 1;
+    }
+    const lean = ease(new Float32Array(camN).map((_, k) => (inWin(k) ? Math.min(0.85, Math.max(0, needAt(k) - PULL) / 14) : 0)));
+    for (let k = 0; k < camN; k++) {
+      if (lean[k] < 0.005) continue;
+      const { e, A } = basis(k), near = dicePose(plan, hero, W.world(k * CAM_DT)).p;
+      // (the eye moves with the aim, so the view keeps its angle)
+      for (let j = 0; j < 3; j++) { const dA = (near[j] - A[j]) * lean[k] * (j === 1 ? 0.5 : 1); A[j] += dA; e[j] += dA; }
+    }
+    // 2. the pull back: enough for both dice, or, as far as the lean has
+    // gone, for the one it follows
+    const pull = ease(new Float32Array(camN).map((_, k) => {
+      if (!inWin(k)) return 0;
+      const l = Math.min(1, lean[k] / 0.85);
+      return Math.min(PULL, Math.max(0, (1 - l) * needAt(k) + l * needAt(k, hero)));
+    }));
+    for (let k = 0; k < camN; k++) {
+      const { e, A } = basis(k);
+      if (pull[k] > 0.01) {
+        const bk = [e[0] - A[0], e[1] - A[1], e[2] - A[2]], bl = Math.hypot(...bk) || 1;
+        for (let j = 0; j < 3; j++) e[j] += (bk[j] / bl) * pull[k];
+      }
+      e[1] = Math.max(e[1], 2.5);
     }
   }
 
@@ -1057,7 +1189,7 @@ async function buildIntro(opts, undo, teardown) {
     const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
     composer = new EffectComposer(renderer, rt);
     composer.addPass(new RenderPass(scene, camera));
-    bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.35, 0.5, 1.35);
+    bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.35, 0.5, 1.7);
     composer.addPass(bloom);
     composer.addPass(new OutputPass());
   };
@@ -1111,9 +1243,9 @@ async function buildIntro(opts, undo, teardown) {
         const q = P.qmul(P.qaxis(axis, ang), pose.q);
         // Rocked on its edge: lifted so its lowest corner stays on the felt.
         let low = Infinity;
-        const ih = P.DIE / 2 - P.DIE_ROUND;
+        const ih = P.DIE / 2 - VIS_ROUND;
         for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) low = Math.min(low, P.qrot(q, [sx * ih, sy * ih, sz * ih])[1]);
-        pose = { p: [pose.p[0], P.DIE_ROUND - low, pose.p[2]], q };
+        pose = { p: [pose.p[0], VIS_ROUND - low, pose.p[2]], q };
       }
       setPose(d.g, pose.p, pose.q);
       const shown = w >= P.RELEASE.t - 0.07 && !(burst > 0.06);
@@ -1158,9 +1290,10 @@ async function buildIntro(opts, undo, teardown) {
       const k = smoother((w - plan.edge.done) / 0.5);
       edgeSpot.position.set(e[0] - 6, e[1] + 60, e[2] + 8);
       edgeSpot.target.position.set(e[0], e[1], e[2]);
-      edgeSpot.intensity = 7 * k;
-      pendant.intensity = 2.8 * (1 - 0.8 * k);
-      scene.environmentIntensity = 0.7 * (1 - 0.6 * k);
+      edgeSpot.intensity = 2.8 * k;
+      pendant.intensity = PENDANT * (1 - 0.8 * k);
+      rim.intensity = RIM * (1 - 0.7 * k);
+      scene.environmentIntensity = ENV_LEVEL * (1 - 0.6 * k);
     }
     // Particles.
     let n = 0;
@@ -1242,7 +1375,7 @@ async function buildIntro(opts, undo, teardown) {
       renderer.shadowMap.enabled = false;
       scene.traverse(m => { if (m.material) [].concat(m.material).forEach(x => { x.needsUpdate = true; }); });
     }
-    if (q <= 0) dice.forEach(d => { d.mat.transmission = 0; d.mat.color.set(0x7a0c18); d.mat.needsUpdate = true; });
+    if (q <= 0) dice.forEach(d => { d.mat.transmission = 0; d.mat.color.set(0x9a1224); d.mat.clearcoat = 1; d.mat.needsUpdate = true; });
     size();
   };
   const scheduleSound = (from, to) => {
