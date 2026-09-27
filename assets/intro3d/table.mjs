@@ -57,11 +57,15 @@ const SLOTS = { cols: 3, gapX: 1.3, gapZ: 2.4, max: 9 };
 const LAYOUT = {
   card: {
     view: [{ eye: [0, 54, -22], aim: [0, 0, 21], fov: 50 }, { eye: [0, 46, -24], aim: [0, 0, 25], fov: 40 }],
-    z0: 16.5, rail: { y: 7.2, z: -4.2, tilt: 28 }, shoe: [-16, 55], discard: [16, 55]
+    z0: 16.5, rail: { y: 7.2, z: -4.2, tilt: 28 }, shoe: [-16, 55], discard: [16, 55],
+    // the phone at rest: [x, y] in the view (-1..1), and its distance, cm
+    // (nearer than the rail's panel, which it must stay in front of)
+    phone: [0.8, -1.24, 40]
   },
   craps: {
     view: [{ eye: [0, 60, -20], aim: [0, 0, 36], fov: 50 }, { eye: [0, 54, -22], aim: [0, 0, 40], fov: 40 }],
-    z0: 25, rail: { y: 26.4, z: -4.4, tilt: 34, scale: 54 }, shoe: [-17, 50], discard: [17, 50]
+    z0: 25, rail: { y: 26.4, z: -4.4, tilt: 34, scale: 54 }, shoe: [-17, 50], discard: [17, 50],
+    phone: [0.8, -1.18, 32]
   }
 };
 // The shot's timings (seconds from the tap).
@@ -457,6 +461,9 @@ function cardHTML(c) {
   const red = suit === '♥' || suit === '♦';
   const ev = typeof c.ev === 'number' && c.ev > 0 ? `~$${c.ev.toFixed(2)}` : '';
   const state = c.remaining > 0 ? fmtLeft(c.remaining) : 'Ready';
+  // (a dealt card is ready by being dealt: it shows what it's worth, or
+  // how long it has left when it isn't)
+  const shown = c.remaining > 0 ? state : (ev || state);
   const label = `${c.name}, ${tier === 'U' ? 'unranked' : tier + ' tier'}, ${state}${ev ? ', about ' + ev.slice(2) + ' dollars a day' : ''}`;
   return `<div class="r3t-card-in">
     <div class="r3t-face r3t-front t-${tier}${red ? ' r3t-red' : ''}">
@@ -465,7 +472,7 @@ function cardHTML(c) {
       <span class="r3t-idx r3t-br"><b>${tier === 'U' ? '•' : tier}</b><i>${suit}</i></span>
       <div class="r3t-seal"><span>${esc(initials(c.name))}</span></div>
       <div class="r3t-name">${esc(c.name)}</div>
-      <div class="r3t-meta"><span class="r3t-state">${esc(state)}</span>${ev ? `<span class="r3t-ev">${esc(ev)}</span>` : ''}</div>
+      <div class="r3t-meta"><span class="r3t-state">${esc(shown)}</span></div>
       <div class="r3t-sheen"></div>
     </div>
     <div class="r3t-face r3t-back"></div>
@@ -713,22 +720,26 @@ export async function prepareTable(opts) {
 
     // ---- Time and the rail's readouts.
     const q = s => railEl.querySelector(s);
+    // (only what changed is touched: each change re-rasterises a layer
+    // laid in 3D, and the phone's and the rail's are large)
+    const put = (el, v) => { if (el && el.textContent !== v) el.textContent = v; };
+    const turn = (el, deg) => { const v = `rotate(${deg} 50 50)`; if (el && el.getAttribute('transform') !== v) el.setAttribute('transform', v); };
     const tick = () => {
       const d = new Date();
       const hh = d.getHours(), mm = d.getMinutes(), ss = d.getSeconds();
       const h12 = ((hh + 11) % 12) + 1;
-      q('.r3t-now').textContent = `${h12}:${String(mm).padStart(2, '0')}`;
-      q('.r3t-date').textContent = `${hh < 12 ? 'AM' : 'PM'} · ${d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}`;
-      q('.r3t-hand-h').setAttribute('transform', `rotate(${(hh % 12) * 30 + mm * 0.5} 50 50)`);
-      q('.r3t-hand-m').setAttribute('transform', `rotate(${mm * 6 + ss * 0.1} 50 50)`);
-      q('.r3t-hand-s').setAttribute('transform', `rotate(${ss * 6} 50 50)`);
+      const hm = `${h12}:${String(mm).padStart(2, '0')}`;
+      put(q('.r3t-now'), hm);
+      put(q('.r3t-date'), `${hh < 12 ? 'AM' : 'PM'} · ${d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}`);
+      turn(q('.r3t-hand-h'), (hh % 12) * 30 + mm * 0.5);
+      turn(q('.r3t-hand-m'), mm * 6 + ss * 0.1);
+      turn(q('.r3t-hand-s'), ss * 6);
       const st = (hand.length && hooks.status && hooks.status()) || sampleStatus();
-      q('.r3t-run-v').textContent = `${st.ready} ready${st.value > 0 ? ` · ~$${st.value.toFixed(2)}` : ''}`;
-      q('.r3t-next').textContent = st.next ? `Next in ${fmtLeft(st.next)}` : 'All caught up';
-      q('.r3t-done').textContent = `${st.done} done today`;
-      phoneEl.querySelectorAll('.r3t-ph-clock, .r3t-ph-big').forEach(n => { n.textContent = `${h12}:${String(mm).padStart(2, '0')}`; });
-      const day = phoneEl.querySelector('.r3t-ph-day');
-      if (day) day.textContent = d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+      put(q('.r3t-run-v'), `${st.ready} ready${st.value > 0 ? ` · ~$${st.value.toFixed(2)}` : ''}`);
+      put(q('.r3t-next'), st.next ? `Next in ${fmtLeft(st.next)}` : 'All caught up');
+      put(q('.r3t-done'), `${st.done} done today`);
+      phoneEl.querySelectorAll('.r3t-ph-clock, .r3t-ph-big').forEach(n => put(n, hm));
+      put(phoneEl.querySelector('.r3t-ph-day'), d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }));
     };
     tick();
     const clock = setInterval(tick, 1000);
@@ -809,7 +820,7 @@ export async function prepareTable(opts) {
       const k = phoneTarget === phoneFrom ? phoneTarget : smoother(phoneFrom + (phoneTarget - phoneFrom) * clamp01((tt - phoneT0) / 0.6));
       phoneK = k;
       const heldDist = (15.4 / 2) / (0.86 * Math.tan((camera.fov * DEG) / 2));
-      const rest = camFrame(0.8, -1.24, 40, 34 * DEG, 16 * DEG);
+      const rest = camFrame(L.phone[0], L.phone[1], L.phone[2], 34 * DEG, 16 * DEG);
       const held = camFrame(0, 0, heldDist, 0, 0);
       const p = rest.p.clone().lerp(held.p, k);
       p.addScaledVector(V(0, 1, 0), Math.sin(Math.PI * k) * 3);
