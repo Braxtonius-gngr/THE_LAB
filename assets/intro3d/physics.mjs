@@ -440,19 +440,48 @@ export function simThrow(seed, opts) {
 // Gives up after `tries` throws or `budgetMs` of work, whichever comes
 // first; the caller must check `score.ok` (the best failure is returned
 // only so it can be reported).
-export function throwDice(seed, opts) {
+// The search, one attempt per step. The budget counts only the time spent
+// simulating, so the same seed finds the same throw whether it is run in
+// one go (throwDice) or with pauses between attempts (throwDiceAsync).
+function* throwSearch(seed, opts) {
   const o = Object.assign({ tries: 60, extra: null, budgetMs: Infinity }, opts || {});
   const r = rng(seed);
-  const start = Date.now();
+  let spent = 0;
   let best = null;
-  for (let attempt = 0; attempt < o.tries && (attempt === 0 || Date.now() - start < o.budgetMs); attempt++) {
+  for (let attempt = 0; attempt < o.tries && (attempt === 0 || spent < o.budgetMs); attempt++) {
+    const t0 = Date.now();
     const run = simThrow(Math.floor(r() * 4294967296));
     const score = judge(run);
     if (o.extra) { const why = o.extra(run); if (why) { score.ok = false; score.why.push(why); } else score.score += 2; }
+    spent += Date.now() - t0;
     if (!best || score.score > best.score.score) best = { run, score, attempt };
     if (score.ok) break;
+    yield;
   }
   return best;
+}
+export function throwDice(seed, opts) {
+  const it = throwSearch(seed, opts);
+  let step = it.next();
+  while (!step.done) step = it.next();
+  return step.value;
+}
+// The same search, handing the main thread back every ~30 ms so the page
+// keeps painting and taking input (and its fallback timer can fire) while a
+// hard seed is searched. signal (an AbortSignal) stops it between attempts.
+export async function throwDiceAsync(seed, opts, signal) {
+  const it = throwSearch(seed, opts);
+  let slice = Date.now();
+  let step = it.next();
+  while (!step.done) {
+    if (Date.now() - slice > 30) {
+      await new Promise(res => setTimeout(res, 0));
+      if (signal && signal.aborted) throw new Error('intro cancelled');
+      slice = Date.now();
+    }
+    step = it.next();
+  }
+  return step.value;
 }
 function judge(run) {
   const why = [];

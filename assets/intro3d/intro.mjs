@@ -214,16 +214,24 @@ function hookWorld(hp, st) {
 // What the stickman calls: the number, and 'easy' for an even total rolled
 // the easy way (not a pair), or 'winner' for a seven or eleven.
 const CALLS = { 3: ['Three', ''], 4: ['Four', 'The easy way'], 5: ['Five', ''], 6: ['Six', 'The easy way'], 7: ['Seven', 'Winner'], 8: ['Eight', 'The easy way'], 9: ['Nine', ''], 10: ['Ten', 'The easy way'], 11: ['Yo-leven', 'Winner'] };
+const throwOpts = tier => ({
+  tries: 200, budgetMs: 2500,
+  extra: tier === 'standard' || tier === 'hardways' ? run => {
+    const rest = run.bodies.map(b => ({ p: b.p, q: b.q }));
+    return stickLine(rest) ? null : 'stick cannot take both dice';
+  } : null
+});
+// makePlan works the throw out in one go (the lab and the checks use it);
+// makePlanAsync is the same plan, searched without holding the main thread.
 export function makePlan(tier, seed) {
+  return planFromThrow(tier, seed, P.throwDice(seed, throwOpts(tier)));
+}
+export async function makePlanAsync(tier, seed, signal) {
+  return planFromThrow(tier, seed, await P.throwDiceAsync(seed, throwOpts(tier), signal));
+}
+function planFromThrow(tier, seed, best) {
   const R = P.rng((seed ^ 0x9e3779b9) >>> 0);
   const wantsStick = tier === 'standard' || tier === 'hardways';
-  const best = P.throwDice(seed, {
-    tries: 200, budgetMs: 2500,
-    extra: wantsStick ? run => {
-      const rest = run.bodies.map(b => ({ p: b.p, q: b.q }));
-      return stickLine(rest) ? null : 'stick cannot take both dice';
-    } : null
-  });
   // No throw passed every check within the budget: never play one that
   // did not. The caller shows the CSS intro instead.
   if (!best.score.ok) throw new Error(`no valid throw for seed ${seed}: ${best.score.why.join('; ')}`);
@@ -679,7 +687,7 @@ async function buildIntro(opts, undo, teardown) {
     tex('badge.png', true)
   ]);
   checkAbort();
-  const plan = makePlan(tier, o.seed);
+  const plan = await makePlanAsync(tier, o.seed, o.signal);
   checkAbort();
   const W = plan.warp;
 
