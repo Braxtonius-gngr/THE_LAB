@@ -604,7 +604,7 @@ class Sound {
 
 // ------------------------------------------------------------- the intro
 export async function createIntro(opts) {
-  const o = Object.assign({ host: null, tier: 'standard', seed: 1, onReveal: null, onEnd: null, sound: true, onSoundChange: null, quality: 'auto' }, opts);
+  const o = Object.assign({ host: null, controlsHost: null, tier: 'standard', seed: 1, onReveal: null, onEnd: null, sound: true, onSoundChange: null, quality: 'auto' }, opts);
   const host = o.host;
   const tier = TIERS.includes(o.tier) ? o.tier : 'standard';
 
@@ -1247,7 +1247,10 @@ export async function createIntro(opts) {
       ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>'
       : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16.5 9.5l5 5M21.5 9.5l-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
   };
-  soundBtn.addEventListener('pointerdown', e => e.stopPropagation());
+  // Its own taps, focus and keys belong to it: none of them may reach the
+  // landing screen's skip handlers (focus arriving there, or Enter/Space
+  // reaching the document, would end the shot it is meant to keep).
+  ['pointerdown', 'focusin', 'keydown'].forEach(type => soundBtn.addEventListener(type, e => e.stopPropagation()));
   soundBtn.addEventListener('click', e => {
     e.stopPropagation();
     if (!sound) { try { sound = new Sound(); } catch (err) { sound = null; } }
@@ -1262,7 +1265,9 @@ export async function createIntro(opts) {
     if (o.onSoundChange) o.onSoundChange(!sound.muted);
   });
   paintBtn();
-  host.appendChild(soundBtn);
+  // Outside the scene's aria-hidden layer, so assistive technology can
+  // find it (the canvas and overlays stay hidden, as decoration).
+  (o.controlsHost || host).appendChild(soundBtn);
   if (sound && sound.ctx) sound.ctx.onstatechange = paintBtn;
 
   // Shaders compiled up front (in parallel where the driver can), so the
