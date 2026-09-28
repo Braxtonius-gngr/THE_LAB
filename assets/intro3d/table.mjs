@@ -2,9 +2,8 @@
 //
 // After the roll intro has floated up, a tap on the landing starts one
 // continuous shot: the camera rises out of the float, sweeps across the room
-// and settles into the player's seat at a table. Two destinations are being
-// tried (?dest= picks one): a private high-limit card table across the room
-// ('card'), or the craps table itself, at its near end ('craps').
+// and settles into the player's seat at a private high-limit card table
+// across the room ('card', the one destination).
 //
 // The seat is the home screen of the Refinement x Realization skin. The rail
 // in front of you holds the clock and the Daily Run; the deck waits in its
@@ -25,9 +24,8 @@
 
 import * as THREE from '../vendor/three/three.module.js';
 import { CSS3DRenderer, CSS3DObject } from '../vendor/three/three.addons.js';
-import * as P from './physics.mjs';
 
-export const DESTS = ['card', 'craps'];
+export const DESTS = ['card'];
 
 const DEG = Math.PI / 180;
 const clamp01 = x => Math.min(Math.max(x, 0), 1);
@@ -46,29 +44,22 @@ const CARD_TABLE = { at: [212, 0, -18], yaw: 90 };
 // Its felt: a half-ellipse, a across and b deep, from the player's rail to
 // the dealer's straight edge.
 const FELT = { a: 80, b: 64 };
-// The craps seat: at the rail along the long side, opposite the
-// stickman, looking across the table to where the stick draws the dice.
-const CRAPS_SEAT = { at: [-P.TABLE.sideX, 0, 6], yaw: 90, zRange: [-50, 64] };
 // A playing card (6.35 x 8.89 cm), built at CARD.px page pixels per cm and
 // scaled down, so its print is rasterised sharp.
 const CARD = { w: 6.35, h: 8.89, px: 50 };
 // Where the dealt cards lie: three to a row, rows away from the player.
 const SLOTS = { cols: 3, gapX: 1.3, gapZ: 2.4, max: 9 };
-// Each destination's layout in its seat frame: the seat camera (portrait,
+// The destination's layout in its seat frame: the seat camera (portrait,
 // landscape), the first row of cards, the rail's panel, the shoe and the
 // discard rack.
 const LAYOUT = {
   card: {
     view: [{ eye: [0, 54, -22], aim: [0, 0, 21], fov: 50 }, { eye: [0, 46, -24], aim: [0, 0, 25], fov: 40 }],
     z0: 18.5, rail: { x: 3.4, y: 7.2, z: -4.2, tilt: 28 }, shoe: [-15.5, 54], discard: [16, 55]
-  },
-  craps: {
-    view: [{ eye: [0, 60, -20], aim: [0, 0, 36], fov: 50 }, { eye: [0, 54, -22], aim: [0, 0, 40], fov: 40 }],
-    z0: 25, rail: { x: 3.8, y: 26.4, z: -4.4, tilt: 34, scale: 54 }, shoe: [-13, 50], discard: [17, 50]
   }
 };
 // The shot's timings (seconds from the tap).
-const T = { cardFly: 4.8, crapsFly: 3.9, uiIn: 0.6 };
+const T = { cardFly: 4.8, uiIn: 0.6 };
 // The deal, by the dealer's hand: seconds per card, and its phases - the
 // reach to the shoe, the pull out of it, the carry to the card's place
 // (face down, a length short of it), the settle onto its near edge, the push
@@ -577,7 +568,7 @@ function phoneHTML(asset) {
       <div class="r3t-ph-hint">Tap to pick up</div>
     </div>
     <div class="r3t-ph-app">
-      <div class="r3t-ph-title">Daily <em>Roll Over</em></div>
+      <div class="r3t-ph-title">Daily <em>Roll Over</em><button type="button" class="r3t-ph-gear" data-view="settings" aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zm8.4 3.5c0-.5-.05-.95-.13-1.4l2.02-1.58-2-3.46-2.44.98a8.3 8.3 0 0 0-2.42-1.4L15 2.5H9l-.43 2.64a8.3 8.3 0 0 0-2.42 1.4l-2.44-.98-2 3.46 2.02 1.58a8.5 8.5 0 0 0 0 2.8L1.71 15l2 3.46 2.44-.98a8.3 8.3 0 0 0 2.42 1.4L9 21.5h6l.43-2.62a8.3 8.3 0 0 0 2.42-1.4l2.44.98 2-3.46-2.02-1.6c.08-.45.13-.9.13-1.4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></button></div>
       <div class="r3t-ph-grid">
         <button type="button" class="r3t-ph-tile" data-view="freebies">${coin('house')}<b>Freebies</b><span>Codes, drops, giveaways</span></button>
         <button type="button" class="r3t-ph-tile" data-view="community">${coin('send')}<b>Community</b><span>Drops other players shared</span></button>
@@ -605,48 +596,31 @@ export async function prepareTable(opts) {
 
   // ---- The seat frame and the destination.
   const seat = new THREE.Group();
-  let table = null, lampLight = null, lampGlow = null, focus = [0, 0, 30];
   const L = LAYOUT[dest];
-  if (dest === 'card') {
-    table = buildCardTable(set);
-    seat.add(table.group);
-    focus = table.focus;
-    seat.position.set(...CARD_TABLE.at);
-    seat.rotation.y = CARD_TABLE.yaw * DEG;
-    // its lamp: a low bronze pendant with a warm glow, and the light in it
-    const bronze = new THREE.MeshStandardMaterial({ color: 0x2a1c12, metalness: 0.85, roughness: 0.35 });
-    const lamp = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.BoxGeometry(70, 6, 26), bronze);
-    const lip = new THREE.Mesh(new THREE.BoxGeometry(71, 0.8, 27), set.brass); lip.position.y = -3.2;
-    lampGlow = new THREE.Mesh(new THREE.PlaneGeometry(66, 22), new THREE.MeshBasicMaterial({ color: new THREE.Color(0, 0, 0), fog: false }));
-    lampGlow.rotation.x = Math.PI / 2; lampGlow.position.y = -3.7;
-    lamp.add(body, lip, lampGlow);
-    [-26, 26].forEach(x => { const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 200, 8), bronze); rod.position.set(x, 103, 0); lamp.add(rod); });
-    lamp.position.set(0, 118, 34);
-    seat.add(lamp);
-    lampLight = new THREE.SpotLight(0xffeedd, 0, 0, 0.78, 0.85, 0);
-    lampLight.position.set(0, 112, 34);
-    lampLight.target.position.set(0, 0, 30);
-    lampLight.castShadow = true;
-    lampLight.shadow.mapSize.set(1024, 1024);
-    lampLight.shadow.camera.near = 50; lampLight.shadow.camera.far = 200;
-    lampLight.shadow.bias = -0.0004; lampLight.shadow.normalBias = 0.03; lampLight.shadow.radius = 4;
-    seat.add(lampLight, lampLight.target);
-  } else {
-    seat.position.set(...CRAPS_SEAT.at);
-    seat.rotation.y = CRAPS_SEAT.yaw * DEG;
-    focus = [0, 0, 45];
-    // (the room's lamp is aimed down the far end: the players' end gets a
-    // light of its own, coming up as the card table's lamp would)
-    lampLight = new THREE.SpotLight(0xffeedd, 0, 0, 0.5, 0.9, 0);
-    lampLight.position.set(-30, 190, 40);
-    lampLight.target.position.set(0, 0, 34);
-    lampLight.castShadow = true;
-    lampLight.shadow.mapSize.set(1024, 1024);
-    lampLight.shadow.camera.near = 60; lampLight.shadow.camera.far = 220;
-    lampLight.shadow.bias = -0.0004; lampLight.shadow.normalBias = 0.03; lampLight.shadow.radius = 4;
-    seat.add(lampLight, lampLight.target);
-  }
+  const table = buildCardTable(set);
+  seat.add(table.group);
+  const focus = table.focus;
+  seat.position.set(...CARD_TABLE.at);
+  seat.rotation.y = CARD_TABLE.yaw * DEG;
+  // its lamp: a low bronze pendant with a warm glow, and the light in it
+  const bronze = new THREE.MeshStandardMaterial({ color: 0x2a1c12, metalness: 0.85, roughness: 0.35 });
+  const lamp = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(70, 6, 26), bronze);
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(71, 0.8, 27), set.brass); lip.position.y = -3.2;
+  const lampGlow = new THREE.Mesh(new THREE.PlaneGeometry(66, 22), new THREE.MeshBasicMaterial({ color: new THREE.Color(0, 0, 0), fog: false }));
+  lampGlow.rotation.x = Math.PI / 2; lampGlow.position.y = -3.7;
+  lamp.add(body, lip, lampGlow);
+  [-26, 26].forEach(x => { const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 200, 8), bronze); rod.position.set(x, 103, 0); lamp.add(rod); });
+  lamp.position.set(0, 118, 34);
+  seat.add(lamp);
+  const lampLight = new THREE.SpotLight(0xffeedd, 0, 0, 0.78, 0.85, 0);
+  lampLight.position.set(0, 112, 34);
+  lampLight.target.position.set(0, 0, 30);
+  lampLight.castShadow = true;
+  lampLight.shadow.mapSize.set(1024, 1024);
+  lampLight.shadow.camera.near = 50; lampLight.shadow.camera.far = 200;
+  lampLight.shadow.bias = -0.0004; lampLight.shadow.normalBias = 0.03; lampLight.shadow.radius = 4;
+  seat.add(lampLight, lampLight.target);
   scene.add(seat);
   made.push(seat);
 
@@ -676,31 +650,24 @@ export async function prepareTable(opts) {
 
   // The lamp comes up while the intro floats, so the table is there, lit,
   // before the camera turns toward it.
-  const lampT0 = performance.now();
+  let lampT0 = performance.now();
   const lampUp = () => {
-    if (!lampLight) return 1;
     const k = smoother((performance.now() - lampT0) / 2200);
-    lampLight.intensity = (dest === 'card' ? 3.3 : 1.5) * k;
-    if (lampGlow) lampGlow.material.color.setRGB(2.2 * k, 1.75 * k, 1.3 * k);
+    lampLight.intensity = 3.3 * k;
+    lampGlow.material.color.setRGB(2.2 * k, 1.75 * k, 1.3 * k);
     return k;
   };
   lampUp();
 
   // ---- The fly-in and the seat.
+  // flyOpts: `reduced` (motion off) cuts to the seat with the cards already
+  // dealt and nothing moving after - the readable take of the same table;
+  // `duration` is a fly of its own length (the short sit-down when the
+  // seat is taken without the shot).
   async function fly(world, flyOpts = {}) {
-    const fo = Object.assign({ manual: false, reduced: false, onArrive: null, host: null, seatView: null }, flyOpts);
+    const fo = Object.assign({ manual: false, reduced: false, duration: 0, onArrive: null, host: null, seatView: null }, flyOpts);
     const { renderer, camera } = world;
-    // At the craps table you sit along the rail from where the dice came to
-    // rest, so they lie in front of you past the cards.
-    if (dest === 'craps' && world.dice && world.dice.length) {
-      world.stage(world.floatEnd);
-      const c = V(0, 0, 0);
-      world.dice.forEach(d => c.add(d.getWorldPosition(V(0, 0, 0))));
-      c.multiplyScalar(1 / world.dice.length);
-      world.stage(world.t);
-      if (Number.isFinite(c.z)) seat.position.z = THREE.MathUtils.clamp(c.z, CRAPS_SEAT.zRange[0], CRAPS_SEAT.zRange[1]);
-      seat.updateMatrixWorld(true);
-    }
+    if (fo.reduced) lampT0 = -Infinity;   // (the lamp is simply on)
     const stageEl = fo.host || document.body;
     world.overlays.forEach(el => { el.style.visibility = 'hidden'; });
     // CSS3D layer, over the canvas, same camera.
@@ -762,16 +729,17 @@ export async function prepareTable(opts) {
     const travel = E1.clone().sub(E0); travel.y = 0;
     const side = V(-travel.z, 0, travel.x).normalize();
     const high = Math.max(E0.y, E1.y);
-    const eyePts = dest === 'card'
-      ? [E0, E0.clone().add(V(0, 26, 0)).addScaledVector(fwd0, -18), E0.clone().lerp(E1, 0.45).add(V(0, high * 0.55 + 40, 0)).addScaledVector(side, 38),
-        E1.clone().addScaledVector(seatBack, 70).add(V(0, 46, 0)), E1.clone().addScaledVector(seatBack, 22).add(V(0, 9, 0)), E1]
-      : [E0, E0.clone().add(V(0, 22, 0)).addScaledVector(fwd0, -14), E0.clone().lerp(E1, 0.5).add(V(0, 38, 0)).addScaledVector(side, 30),
-        E1.clone().addScaledVector(seatBack, 40).add(V(0, 28, 0)), E1];
+    const eyePts = [E0, E0.clone().add(V(0, 26, 0)).addScaledVector(fwd0, -18), E0.clone().lerp(E1, 0.45).add(V(0, high * 0.55 + 40, 0)).addScaledVector(side, 38),
+      E1.clone().addScaledVector(seatBack, 70).add(V(0, 46, 0)), E1.clone().addScaledVector(seatBack, 22).add(V(0, 9, 0)), E1];
     const F = toWorld(V(...focus));
     const aimPts = [A0, A0.clone().lerp(F, 0.35).add(V(0, 12, 0)), F.clone().add(V(0, 6, 0)), A1];
     const eyeCurve = new THREE.CatmullRomCurve3(eyePts, false, 'centripetal');
     const aimCurve = new THREE.CatmullRomCurve3(aimPts, false, 'centripetal');
-    const FLY = fo.reduced ? 0.01 : dest === 'card' ? T.cardFly : T.crapsFly;
+    const FLY = fo.reduced ? 0.01 : fo.duration > 0 ? fo.duration : T.cardFly;
+    // (motion off: the UI is simply there, and each card is on its place
+    // the moment the frame is - no deal, the hand at rest by the tray)
+    const UI_IN = fo.reduced ? 0.01 : T.uiIn;
+    const EACH = fo.reduced ? 0 : DEAL.each;
     const fov0 = camera.fov;
     const lens0 = world.lights.lensLight.intensity;
     const bloom0 = world.bloom ? world.bloom.strength : 0;
@@ -798,7 +766,7 @@ export async function prepareTable(opts) {
     // up toward the dealer, to make room)
     const rows = Math.ceil(cards.length / SLOTS.cols);
     const z0 = rows >= 3 ? L.z0 - 4 : L.z0;
-    if (table && table.group.userData.mark) table.group.userData.mark.position.z = FELT.b - (rows >= 3 ? 15 : 23);
+    if (table.group.userData.mark) table.group.userData.mark.position.z = FELT.b - (rows >= 3 ? 15 : 23);
     const slotAt = i => {
       const r = Math.floor(i / SLOTS.cols), c = i % SLOTS.cols;
       const inRow = Math.min(SLOTS.cols, cards.length - r * SLOTS.cols);
@@ -825,7 +793,7 @@ export async function prepareTable(opts) {
     const phoneEl = document.createElement('div');
     phoneEl.className = 'r3t-phone';
     phoneEl.setAttribute('role', 'button');
-    phoneEl.setAttribute('aria-label', 'Your phone: freebies, community drops, the deck and the catalogue');
+    phoneEl.setAttribute('aria-label', 'Your phone: freebies, community drops, the deck, the catalogue and settings');
     phoneEl.tabIndex = 0;
     phoneEl.innerHTML = phoneHTML(asset);
     css.domElement.appendChild(phoneEl);
@@ -868,9 +836,9 @@ export async function prepareTable(opts) {
     const clock = setInterval(tick, 1000);
 
     // ---- The timeline, in seconds from the tap.
-    const dealAt = FLY + T.uiIn;
-    const cardAt = i => dealAt + i * DEAL.each;
-    const settleAt = cards.length ? cardAt(cards.length - 1) + DEAL.each + 0.55 : dealAt;
+    const dealAt = FLY + UI_IN;
+    const cardAt = i => dealAt + i * EACH;
+    const settleAt = cards.length ? cardAt(cards.length - 1) + EACH + 0.55 : dealAt;
     const introT0 = world.t;
     let focusId = null;
     const lift = new Map();                 // card id -> [k, target, from, t0]
@@ -889,7 +857,7 @@ export async function prepareTable(opts) {
         camera.up.copy(up).applyAxisAngle(f, roll);
         camera.position.copy(e);
         camera.lookAt(a);
-        camera.fov = lerp(fov0, sv.fov, u) + 10 * Math.sin(Math.PI * u) * (dest === 'card' ? 1 : 0.6);
+        camera.fov = lerp(fov0, sv.fov, u) + 10 * Math.sin(Math.PI * u);
       } else {
         camera.up.copy(up);
         camera.position.copy(E1);
@@ -924,10 +892,12 @@ export async function prepareTable(opts) {
       cardObjs.forEach((obj, i) => {
         const { t0, t1, t2, t3, t4, t5 } = stages(i);
         const el = obj.element;
-        if (tt < t0) { el.style.visibility = 'hidden'; return; }
+        if (tt < (fo.reduced ? dealAt : t0)) { el.style.visibility = 'hidden'; return; }
         el.style.visibility = 'visible';
         const p = cardPose.p, q = cardPose.q;
-        if (tt < t1) {
+        if (fo.reduced) {
+          turned(obj, Math.PI, cardPose);
+        } else if (tt < t1) {
           const k = easeOut((tt - t0) / DEAL.pull, 2);
           p.copy(inShoe).lerp(pulled, k); p.y += 0.3 * k;
           lying(q, { yaw: yawShoe, flip: Math.PI });
@@ -947,7 +917,7 @@ export async function prepareTable(opts) {
         }
         const L = lift.get(obj.userData.card.id);
         if (L) {
-          const lk = smoother(L[2] + (L[1] - L[2]) * clamp01((tt - L[3]) / 0.35));
+          const lk = fo.reduced ? L[1] : smoother(L[2] + (L[1] - L[2]) * clamp01((tt - L[3]) / 0.35));
           L[0] = lk;
           p.y += lk * 5; p.z -= lk * 3.2;
           // (tipped up toward you about its own width)
@@ -976,7 +946,7 @@ export async function prepareTable(opts) {
     const poseHand = tt => {
       const n = cardObjs.length;
       let pose = REST;
-      if (n && tt >= dealAt - 0.5) {
+      if (n && !fo.reduced && tt >= dealAt - 0.5) {
         const last = cardAt(n - 1) + DEAL.each;
         if (tt < dealAt) pose = mixPose(REST, HOVER, smoother((tt - (dealAt - 0.5)) / 0.5));
         else if (tt >= last) pose = mixPose(HOVER, REST, smoother((tt - last) / 0.55));
@@ -1013,15 +983,17 @@ export async function prepareTable(opts) {
       placeCamera(tt);
       // the intro's own world keeps time (the stick still drawing the dice)
       world.stage(introT0 + tt);
-      // (its lights set by stage(): the lens light goes; from the craps seat
-      // the rim light is straight into the lens, and goes too)
-      const kf = clamp01(tt / 0.9);
+      // (its lights set by stage(): the lens light goes, and the rim light
+      // eases down)
+      const kf = fo.reduced ? 1 : clamp01(tt / 0.9);
       world.lights.lensLight.intensity = lens0 * (1 - kf);
-      world.lights.rim.intensity *= 1 - (dest === 'craps' ? 1 : 0.6) * kf;
-      if (world.bloom) world.bloom.strength = lerp(bloom0, 0.3, kf);
+      world.lights.rim.intensity *= 1 - 0.6 * kf;
+      // (motion off: no bloom either - the glints stay on the metal, the
+      // light stays off the print)
+      if (world.bloom) world.bloom.strength = fo.reduced ? 0 : lerp(bloom0, 0.3, kf);
       poseCards(tt);
       poseHand(tt);
-      const uiK = clamp01((tt - FLY + 0.1) / T.uiIn);
+      const uiK = clamp01((tt - FLY + 0.1) / UI_IN);
       css.domElement.style.setProperty('--r3t-in', uiK.toFixed(3));
       css.domElement.classList.toggle('r3t-hide', uiK <= 0);
       if (!arrived && tt >= FLY) { arrived = true; if (fo.onArrive) fo.onArrive(css.domElement); }
@@ -1061,7 +1033,7 @@ export async function prepareTable(opts) {
         return;
       }
       if (e.target.closest('.r3t-run')) { if (hooks.run) hooks.run(); return; }
-      const tile = e.target.closest('.r3t-ph-tile');
+      const tile = e.target.closest('.r3t-ph-tile, .r3t-ph-gear');
       if (tile) { if (hooks.openView) hooks.openView(tile.dataset.view); return; }
       if (e.target.closest('.r3t-ph-put')) { holdPhone(false); return; }
       if (e.target.closest('.r3t-phone') && !phoneHeld) { holdPhone(true); }

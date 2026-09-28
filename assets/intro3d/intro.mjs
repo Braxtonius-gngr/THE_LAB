@@ -615,8 +615,9 @@ function studioEnvironment(renderer) {
 // -------------------------------------------------------------- sound
 // Synthesised live with WebAudio (the Vault Pull's ceramic clack is a
 // recording, fetched only for that tier). Browsers keep a page silent until
-// it has been tapped, so the intro may start muted; the speaker button
-// turns sound on without skipping the shot.
+// it has been tapped, so the intro may start muted: the first tap or key
+// starts the sound (see createIntro), and the speaker button turns it on
+// or off without skipping the shot.
 class Sound {
   constructor() {
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -1514,7 +1515,7 @@ async function buildIntro(opts, undo, teardown) {
     }
     // The rim light is for the strike: once the dice have come to rest it
     // eases down, or a face square to it would flash white into the lens.
-    if (!plan.edge) rim.intensity = RIM * (1 - 0.72 * smoother((w - plan.restW) / 0.8));
+    if (!plan.edge) rim.intensity = RIM * (1 - 0.8 * smoother((w - (plan.restW - 0.45)) / 0.5));
     // Edge: the room goes dark round the pinned die as the lens closes in.
     if (plan.edge) {
       const e = dicePose(plan, plan.edge.die, w).p;
@@ -1629,11 +1630,13 @@ async function buildIntro(opts, undo, teardown) {
     if (!revealed && t >= plan.revealReal) { revealed = true; if (o.onReveal) o.onReveal(); }
     if (!ended && t >= plan.totalReal) { ended = true; if (o.onEnd) o.onEnd(); }
   };
-  // The finished frame, held still (motion off, or a device too slow to
-  // play it): never earlier than the end of the shot.
+  // The finished frame, held still (motion off, a muted skin, or a device
+  // too slow to play it): never earlier than the end of the shot - and a
+  // breath into the float, where the dice have come down from under the
+  // copy's veil and sit, red and sharp, on the hook below it.
   const still = () => {
     playing = false; cancelAnimationFrame(raf);
-    t = Math.max(t, plan.totalReal);
+    t = Math.max(t, plan.totalReal + 2.4);
     render(t);
     soundBtn.hidden = true;
     if (sound && sound.bed) sound.cut(sound.ctx.currentTime);
@@ -1724,6 +1727,26 @@ async function buildIntro(opts, undo, teardown) {
   (o.controlsHost || host).appendChild(soundBtn);
   undo.push(() => soundBtn.remove());
   if (sound && sound.ctx) sound.ctx.onstatechange = paintBtn;
+  // Sound is on unless it was switched off, but the browser holds the page
+  // silent until its first tap or key. So the first one anywhere - the tap
+  // that skips the shot, say - starts it, as the speaker would. A tap on
+  // the speaker itself is the speaker's to answer (it would otherwise turn
+  // straight back off what this had just turned on).
+  const UNLOCK_ON = ['pointerup', 'touchend', 'click', 'keydown'];
+  const dropUnlock = () => UNLOCK_ON.forEach(type => window.removeEventListener(type, unlock, true));
+  const unlock = e => {
+    if (e && e.target && e.target.closest && e.target.closest('.r3-sound')) return;
+    if (!sound || !sound.ctx || sound.muted || sound.ctx.state !== 'suspended') { dropUnlock(); return; }
+    sound.ctx.resume().then(() => {
+      dropUnlock();
+      if (sound.muted) return;
+      sfxIndex = sfx.findIndex(ev => ev.t >= t); if (sfxIndex < 0) sfxIndex = sfx.length;
+      paintBtn();
+    }).catch(() => { /* not a gesture the browser counts: the next one */ });
+  };
+  if (sound && sound.ctx && sound.ctx.state !== 'running') UNLOCK_ON.forEach(type => window.addEventListener(type, unlock, true));
+  soundBtn.addEventListener('click', dropUnlock);
+  undo.push(dropUnlock);
 
   // Shaders compiled up front (in parallel where the driver can), so the
   // shot does not hitch on its first frames.
@@ -1756,6 +1779,7 @@ async function buildIntro(opts, undo, teardown) {
       window.removeEventListener('resize', onResize);
       document.removeEventListener('visibilitychange', onVisibility);
       soundBtn.hidden = true;
+      dropUnlock();
       if (sound && sound.bed) sound.fade(sound.ctx.currentTime, 0.6);
       return {
         THREE, renderer, scene, camera, host, canvas, t, floatEnd,
