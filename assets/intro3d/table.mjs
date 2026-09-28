@@ -577,7 +577,7 @@ function phoneHTML(asset) {
       <div class="r3t-ph-hint">Tap to pick up</div>
     </div>
     <div class="r3t-ph-app">
-      <div class="r3t-ph-title">Daily <em>Roll Over</em></div>
+      <div class="r3t-ph-title">Daily <em>Roll Over</em><button type="button" class="r3t-ph-gear" data-view="settings" aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zm8.4 3.5c0-.5-.05-.95-.13-1.4l2.02-1.58-2-3.46-2.44.98a8.3 8.3 0 0 0-2.42-1.4L15 2.5H9l-.43 2.64a8.3 8.3 0 0 0-2.42 1.4l-2.44-.98-2 3.46 2.02 1.58a8.5 8.5 0 0 0 0 2.8L1.71 15l2 3.46 2.44-.98a8.3 8.3 0 0 0 2.42 1.4L9 21.5h6l.43-2.62a8.3 8.3 0 0 0 2.42-1.4l2.44.98 2-3.46-2.02-1.6c.08-.45.13-.9.13-1.4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></button></div>
       <div class="r3t-ph-grid">
         <button type="button" class="r3t-ph-tile" data-view="freebies">${coin('house')}<b>Freebies</b><span>Codes, drops, giveaways</span></button>
         <button type="button" class="r3t-ph-tile" data-view="community">${coin('send')}<b>Community</b><span>Drops other players shared</span></button>
@@ -676,7 +676,7 @@ export async function prepareTable(opts) {
 
   // The lamp comes up while the intro floats, so the table is there, lit,
   // before the camera turns toward it.
-  const lampT0 = performance.now();
+  let lampT0 = performance.now();
   const lampUp = () => {
     if (!lampLight) return 1;
     const k = smoother((performance.now() - lampT0) / 2200);
@@ -687,9 +687,14 @@ export async function prepareTable(opts) {
   lampUp();
 
   // ---- The fly-in and the seat.
+  // flyOpts: `reduced` (motion off) cuts to the seat with the cards already
+  // dealt and nothing moving after - the readable take of the same table;
+  // `duration` is a fly of its own length (the short sit-down when the
+  // seat is taken without the shot).
   async function fly(world, flyOpts = {}) {
-    const fo = Object.assign({ manual: false, reduced: false, onArrive: null, host: null, seatView: null }, flyOpts);
+    const fo = Object.assign({ manual: false, reduced: false, duration: 0, onArrive: null, host: null, seatView: null }, flyOpts);
     const { renderer, camera } = world;
+    if (fo.reduced) lampT0 = -Infinity;   // (the lamp is simply on)
     // At the craps table you sit along the rail from where the dice came to
     // rest, so they lie in front of you past the cards.
     if (dest === 'craps' && world.dice && world.dice.length) {
@@ -771,7 +776,11 @@ export async function prepareTable(opts) {
     const aimPts = [A0, A0.clone().lerp(F, 0.35).add(V(0, 12, 0)), F.clone().add(V(0, 6, 0)), A1];
     const eyeCurve = new THREE.CatmullRomCurve3(eyePts, false, 'centripetal');
     const aimCurve = new THREE.CatmullRomCurve3(aimPts, false, 'centripetal');
-    const FLY = fo.reduced ? 0.01 : dest === 'card' ? T.cardFly : T.crapsFly;
+    const FLY = fo.reduced ? 0.01 : fo.duration > 0 ? fo.duration : dest === 'card' ? T.cardFly : T.crapsFly;
+    // (motion off: the UI is simply there, and each card is on its place
+    // the moment the frame is - no deal, the hand at rest by the tray)
+    const UI_IN = fo.reduced ? 0.01 : T.uiIn;
+    const EACH = fo.reduced ? 0 : DEAL.each;
     const fov0 = camera.fov;
     const lens0 = world.lights.lensLight.intensity;
     const bloom0 = world.bloom ? world.bloom.strength : 0;
@@ -825,7 +834,7 @@ export async function prepareTable(opts) {
     const phoneEl = document.createElement('div');
     phoneEl.className = 'r3t-phone';
     phoneEl.setAttribute('role', 'button');
-    phoneEl.setAttribute('aria-label', 'Your phone: freebies, community drops, the deck and the catalogue');
+    phoneEl.setAttribute('aria-label', 'Your phone: freebies, community drops, the deck, the catalogue and settings');
     phoneEl.tabIndex = 0;
     phoneEl.innerHTML = phoneHTML(asset);
     css.domElement.appendChild(phoneEl);
@@ -868,9 +877,9 @@ export async function prepareTable(opts) {
     const clock = setInterval(tick, 1000);
 
     // ---- The timeline, in seconds from the tap.
-    const dealAt = FLY + T.uiIn;
-    const cardAt = i => dealAt + i * DEAL.each;
-    const settleAt = cards.length ? cardAt(cards.length - 1) + DEAL.each + 0.55 : dealAt;
+    const dealAt = FLY + UI_IN;
+    const cardAt = i => dealAt + i * EACH;
+    const settleAt = cards.length ? cardAt(cards.length - 1) + EACH + 0.55 : dealAt;
     const introT0 = world.t;
     let focusId = null;
     const lift = new Map();                 // card id -> [k, target, from, t0]
@@ -924,10 +933,12 @@ export async function prepareTable(opts) {
       cardObjs.forEach((obj, i) => {
         const { t0, t1, t2, t3, t4, t5 } = stages(i);
         const el = obj.element;
-        if (tt < t0) { el.style.visibility = 'hidden'; return; }
+        if (tt < (fo.reduced ? dealAt : t0)) { el.style.visibility = 'hidden'; return; }
         el.style.visibility = 'visible';
         const p = cardPose.p, q = cardPose.q;
-        if (tt < t1) {
+        if (fo.reduced) {
+          turned(obj, Math.PI, cardPose);
+        } else if (tt < t1) {
           const k = easeOut((tt - t0) / DEAL.pull, 2);
           p.copy(inShoe).lerp(pulled, k); p.y += 0.3 * k;
           lying(q, { yaw: yawShoe, flip: Math.PI });
@@ -947,7 +958,7 @@ export async function prepareTable(opts) {
         }
         const L = lift.get(obj.userData.card.id);
         if (L) {
-          const lk = smoother(L[2] + (L[1] - L[2]) * clamp01((tt - L[3]) / 0.35));
+          const lk = fo.reduced ? L[1] : smoother(L[2] + (L[1] - L[2]) * clamp01((tt - L[3]) / 0.35));
           L[0] = lk;
           p.y += lk * 5; p.z -= lk * 3.2;
           // (tipped up toward you about its own width)
@@ -976,7 +987,7 @@ export async function prepareTable(opts) {
     const poseHand = tt => {
       const n = cardObjs.length;
       let pose = REST;
-      if (n && tt >= dealAt - 0.5) {
+      if (n && !fo.reduced && tt >= dealAt - 0.5) {
         const last = cardAt(n - 1) + DEAL.each;
         if (tt < dealAt) pose = mixPose(REST, HOVER, smoother((tt - (dealAt - 0.5)) / 0.5));
         else if (tt >= last) pose = mixPose(HOVER, REST, smoother((tt - last) / 0.55));
@@ -1015,13 +1026,15 @@ export async function prepareTable(opts) {
       world.stage(introT0 + tt);
       // (its lights set by stage(): the lens light goes; from the craps seat
       // the rim light is straight into the lens, and goes too)
-      const kf = clamp01(tt / 0.9);
+      const kf = fo.reduced ? 1 : clamp01(tt / 0.9);
       world.lights.lensLight.intensity = lens0 * (1 - kf);
       world.lights.rim.intensity *= 1 - (dest === 'craps' ? 1 : 0.6) * kf;
-      if (world.bloom) world.bloom.strength = lerp(bloom0, 0.3, kf);
+      // (motion off: no bloom either - the glints stay on the metal, the
+      // light stays off the print)
+      if (world.bloom) world.bloom.strength = fo.reduced ? 0 : lerp(bloom0, 0.3, kf);
       poseCards(tt);
       poseHand(tt);
-      const uiK = clamp01((tt - FLY + 0.1) / T.uiIn);
+      const uiK = clamp01((tt - FLY + 0.1) / UI_IN);
       css.domElement.style.setProperty('--r3t-in', uiK.toFixed(3));
       css.domElement.classList.toggle('r3t-hide', uiK <= 0);
       if (!arrived && tt >= FLY) { arrived = true; if (fo.onArrive) fo.onArrive(css.domElement); }
@@ -1061,7 +1074,7 @@ export async function prepareTable(opts) {
         return;
       }
       if (e.target.closest('.r3t-run')) { if (hooks.run) hooks.run(); return; }
-      const tile = e.target.closest('.r3t-ph-tile');
+      const tile = e.target.closest('.r3t-ph-tile, .r3t-ph-gear');
       if (tile) { if (hooks.openView) hooks.openView(tile.dataset.view); return; }
       if (e.target.closest('.r3t-ph-put')) { holdPhone(false); return; }
       if (e.target.closest('.r3t-phone') && !phoneHeld) { holdPhone(true); }
