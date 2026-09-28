@@ -1629,11 +1629,13 @@ async function buildIntro(opts, undo, teardown) {
     if (!revealed && t >= plan.revealReal) { revealed = true; if (o.onReveal) o.onReveal(); }
     if (!ended && t >= plan.totalReal) { ended = true; if (o.onEnd) o.onEnd(); }
   };
-  // The finished frame, held still (motion off, or a device too slow to
-  // play it): never earlier than the end of the shot.
+  // The finished frame, held still (motion off, a muted skin, or a device
+  // too slow to play it): never earlier than the end of the shot - and a
+  // breath into the float, where the dice have come down from under the
+  // copy's veil and sit, red and sharp, on the hook below it.
   const still = () => {
     playing = false; cancelAnimationFrame(raf);
-    t = Math.max(t, plan.totalReal);
+    t = Math.max(t, plan.totalReal + 2.4);
     render(t);
     soundBtn.hidden = true;
     if (sound && sound.bed) sound.cut(sound.ctx.currentTime);
