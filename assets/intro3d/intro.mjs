@@ -1514,7 +1514,7 @@ async function buildIntro(opts, undo, teardown) {
     }
     // The rim light is for the strike: once the dice have come to rest it
     // eases down, or a face square to it would flash white into the lens.
-    if (!plan.edge) rim.intensity = RIM * (1 - 0.72 * smoother((w - plan.restW) / 0.8));
+    if (!plan.edge) rim.intensity = RIM * (1 - 0.8 * smoother((w - (plan.restW - 0.45)) / 0.5));
     // Edge: the room goes dark round the pinned die as the lens closes in.
     if (plan.edge) {
       const e = dicePose(plan, plan.edge.die, w).p;
