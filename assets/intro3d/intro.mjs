@@ -1011,9 +1011,11 @@ async function buildIntro(opts, undo, teardown) {
     const mat = new THREE.MeshPhysicalMaterial({
       // deep red resin: dark through the middle, bright red where it is
       // thin (the rounded edges), glass-hard highlights on the clear coat
-      color: 0xc01424, roughness: 0.03, metalness: 0, transmission: 0.9, thickness: 1.6, ior: 1.5,
+      // (a little roughness on both coats: a face that catches a light
+      // square on glints rather than flashes white)
+      color: 0xc01424, roughness: 0.13, metalness: 0, transmission: 0.9, thickness: 1.6, ior: 1.5,
       attenuationColor: new THREE.Color(0x8a0616), attenuationDistance: 0.75,
-      clearcoat: 1, clearcoatRoughness: 0.02, specularIntensity: 1, envMapIntensity: 2.3,
+      clearcoat: 1, clearcoatRoughness: 0.12, specularIntensity: 0.85, envMapIntensity: 2.3,
       emissive: new THREE.Color(0xff3212), emissiveIntensity: 0
     });
     const g = new THREE.Group();
@@ -1386,7 +1388,7 @@ async function buildIntro(opts, undo, teardown) {
     const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
     composer = new EffectComposer(renderer, rt);
     composer.addPass(new RenderPass(scene, camera));
-    bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.35, 0.5, 1.7);
+    bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.35, 0.5, 2.1);
     composer.addPass(bloom);
     composer.addPass(new OutputPass());
   };
@@ -1471,8 +1473,8 @@ async function buildIntro(opts, undo, teardown) {
       const kg = 1 - smoother((far - 48) / 55);
       d.mat.envMapIntensity = 0.3 + 2.0 * kg;
       d.mat.clearcoat = kg;
-      d.mat.specularIntensity = 0.25 + 0.75 * kg;
-      d.mat.roughness = 0.03 + 0.5 * (1 - kg);
+      d.mat.specularIntensity = 0.25 + 0.6 * kg;
+      d.mat.roughness = 0.13 + 0.4 * (1 - kg);
     }
     // Stick.
     if (stick) {
