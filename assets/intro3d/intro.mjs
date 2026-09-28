@@ -1599,7 +1599,14 @@ async function buildIntro(opts, undo, teardown) {
   // Quality steps down while frames run slow (averaged over 24 frames):
   // 3 full; 2 no bloom, lower resolution; 1 no shadows, 1x resolution;
   // 0 the dice lose their glass (transmission renders the scene twice).
-  let quality = composer ? 3 : 2, winFrames = 0, winTime = 0, frames = 0;
+  let quality = composer ? 3 : 2, frames = 0;
+  // The last frames' times, judged by their median: steady slowness is the
+  // device and costs quality; a lone long frame is the page (the app still
+  // booting under the shot - a sync, the catalogue's first render) and
+  // must not, since a step down recompiles every material and is itself
+  // the hitch.
+  const win = [];
+  const median = a => a.slice().sort((x, y) => x - y)[a.length >> 1];
   const applyQuality = q => {
     if (q <= 2) {
       if (composer) { composer.dispose(); bloom.dispose(); }
@@ -1661,18 +1668,19 @@ async function buildIntro(opts, undo, teardown) {
     const dt = Math.min(raw, 0.1);
     const t0 = t;
     t += dt;
-    // (the first frames are skipped: they carry texture uploads)
+    // (the first frames are skipped: they carry texture uploads and the
+    // app's own start-up)
     frames++;
     // (nor the frame after the tab was hidden: that gap is the tab, not the
     // device, and must not cost quality or end the shot)
     const stall = resumed; resumed = false;
-    if (frames > 3 && o.quality !== 'full' && !stall) { winFrames++; winTime += raw; }
-    const avg = winFrames ? winTime / winFrames : 0;
-    if (o.quality !== 'full' && !stall && ((winFrames >= 8 && avg > 0.036) || (frames > 3 && raw > 0.25))) {
-      if (quality > 0) { applyQuality(--quality); winFrames = 0; winTime = 0; }
+    if (frames > 12 && o.quality !== 'full' && !stall) { win.push(raw); if (win.length > 10) win.shift(); }
+    if (win.length >= 10) {
+      const med = median(win);
+      if (med > 0.036 && quality > 0) { applyQuality(--quality); win.length = 0; }
       // Still a slideshow at the lowest setting: show the finished frame
       // instead (as with motion off) rather than stutter through the shot.
-      else if (winFrames >= 6 && avg > 0.12) { still(); return; }
+      else if (med > 0.12 && quality === 0) { still(); return; }
     }
     scheduleSound(t0, t + 0.1);
     if (t >= floatEnd) { settle(); return; }
