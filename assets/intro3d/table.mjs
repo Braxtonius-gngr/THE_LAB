@@ -58,6 +58,11 @@ const LAYOUT = {
     z0: 18.5, rail: { x: 3.4, y: 7.2, z: -4.2, tilt: 28 }, shoe: [-15.5, 54], discard: [16, 55]
   }
 };
+// A lifted card's info as a placard (the 'placard' take, see fly): set on
+// the rail in front of you over its instruments, leaning back like them,
+// its far edge short of the hand - built at px page pixels per cm like the
+// rail.
+const PLACARD = { w: 20, h: 12, px: 40, y: 8.5, z: -2.4, tilt: 30 };
 // The shot's timings (seconds from the tap).
 const T = { cardFly: 4.8, uiIn: 0.6 };
 // The deal, by the dealer's hand: seconds per card, and its phases - the
@@ -514,15 +519,19 @@ function demoHand() {
 }
 
 // --------------------------------------------------------------- the UI
+// What a card's face says: a dealt card is ready by being dealt, so it
+// shows what it's worth - or, once collected, how long it has left.
+function cardShown(c) {
+  const ev = typeof c.ev === 'number' && c.ev > 0 ? `~$${c.ev.toFixed(2)}` : '';
+  return c.remaining > 0 ? fmtLeft(c.remaining) : (ev || 'Ready');
+}
 function cardHTML(c) {
   const tier = tierOf(c.tier);
   const suit = SUITS[hash(c.name || '') % 4];
   const red = suit === '♥' || suit === '♦';
   const ev = typeof c.ev === 'number' && c.ev > 0 ? `~$${c.ev.toFixed(2)}` : '';
   const state = c.remaining > 0 ? fmtLeft(c.remaining) : 'Ready';
-  // (a dealt card is ready by being dealt: it shows what it's worth, or
-  // how long it has left when it isn't)
-  const shown = c.remaining > 0 ? state : (ev || state);
+  const shown = cardShown(c);
   const label = `${c.name}, ${tier === 'U' ? 'unranked' : tier + ' tier'}, ${state}${ev ? ', about ' + ev.slice(2) + ' dollars a day' : ''}`;
   return `<div class="r3t-card-in">
     <div class="r3t-face r3t-front t-${tier}${red ? ' r3t-red' : ''}">
@@ -665,7 +674,7 @@ export async function prepareTable(opts) {
   // `duration` is a fly of its own length (the short sit-down when the
   // seat is taken without the shot).
   async function fly(world, flyOpts = {}) {
-    const fo = Object.assign({ manual: false, reduced: false, duration: 0, onArrive: null, host: null, seatView: null }, flyOpts);
+    const fo = Object.assign({ manual: false, reduced: false, duration: 0, onArrive: null, host: null, seatView: null, info: 'sheet' }, flyOpts);
     const { renderer, camera } = world;
     if (fo.reduced) lampT0 = -Infinity;   // (the lamp is simply on)
     const stageEl = fo.host || document.body;
@@ -798,6 +807,46 @@ export async function prepareTable(opts) {
     phoneEl.innerHTML = phoneHTML(asset);
     css.domElement.appendChild(phoneEl);
     let phoneHeld = false;
+    // A lifted card's info: the Keen Info its logo pops out in the Deck,
+    // and its own moves - open it, mark it collected, run the deck from it
+    // (hooks.cardInfo / hooks.cardAction). Two takes while they are
+    // compared (fo.info): a sheet that rises over the rail with the card
+    // held above it ('sheet'), or a placard on the felt ('placard').
+    const infoMode = fo.info === 'placard' ? 'placard' : 'sheet';
+    const infoEl = document.createElement('div');
+    infoEl.className = `r3t-info r3t-info-${infoMode}`;
+    infoEl.setAttribute('role', 'region');
+    infoEl.style.visibility = 'hidden';
+    if (infoMode === 'placard') {
+      infoEl.style.width = `${PLACARD.w * PLACARD.px}px`;
+      infoEl.style.height = `${PLACARD.h * PLACARD.px}px`;
+      add(infoEl, V(0, PLACARD.y, PLACARD.z), lying(new THREE.Quaternion(), { tilt: PLACARD.tilt * DEG }), 1 / PLACARD.px);
+    } else {
+      css.domElement.appendChild(infoEl);
+    }
+    let infoId = null;
+    const showInfo = id => {
+      const d = hooks.cardInfo ? hooks.cardInfo(id) : null;
+      if (!d) { hideInfo(); return; }
+      infoId = id;
+      const tier = tierOf(d.tier);
+      infoEl.setAttribute('aria-label', `${d.name}: keen info`);
+      infoEl.innerHTML = `<div class="r3t-info-in">
+        <div class="r3t-info-head"><span class="r3t-info-tier t-${tier}">${tier === 'U' ? '&bull;' : tier}</span><b>${esc(d.name)}</b><span class="r3t-info-state${d.ready ? ' r3t-ready' : ''}">${esc(d.state)}</span><button type="button" class="r3t-info-x" aria-label="Put the card back">&times;</button></div>
+        <div class="r3t-info-acts">${(d.acts || []).map(([act, label]) => `<button type="button" class="r3t-act r3t-act-${esc(act)}" data-act="${esc(act)}">${esc(label)}</button>`).join('')}</div>
+        <div class="r3t-info-body">${d.html || ''}</div>
+      </div>`;
+      infoEl.style.visibility = 'visible';
+      // (the placard lies over the rail's instruments while it is up)
+      if (infoMode === 'placard') railEl.classList.add('r3t-away');
+      requestAnimationFrame(() => { if (infoId === id) infoEl.classList.add('r3t-open'); });
+    };
+    function hideInfo() {
+      infoId = null;
+      infoEl.classList.remove('r3t-open');
+      infoEl.style.visibility = 'hidden';
+      railEl.classList.remove('r3t-away');
+    }
     const holdPhone = on => {
       phoneHeld = !!on;
       phoneEl.classList.toggle('r3t-held', phoneHeld);
@@ -831,6 +880,15 @@ export async function prepareTable(opts) {
       put(phoneEl.querySelector('.r3t-ph-day'), d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }));
       put(phoneEl.querySelector('.r3t-ph-ready'), `${st.ready} ready${st.value > 0 ? ` · ~$${st.value.toFixed(2)}` : ''}`);
       put(phoneEl.querySelector('.r3t-ph-next'), st.next ? `Next comes ready in ${fmtLeft(st.next)}` : `All caught up · ${st.done} done today`);
+      // each dealt card's state as it is now: collected at the table (or
+      // anywhere), it shows how long it has left
+      if (hooks.cardState) cardObjs.forEach(obj => {
+        const c = obj.userData.card, now = hooks.cardState(c.id);
+        if (!now) return;
+        c.remaining = now.remaining;
+        put(obj.element.querySelector('.r3t-state'), cardShown(c));
+        obj.element.classList.toggle('r3t-spent', c.remaining > 0);
+      });
     };
     tick();
     const clock = setInterval(tick, 1000);
@@ -1018,7 +1076,26 @@ export async function prepareTable(opts) {
     const wake = () => { if (disposed || fo.manual) { if (fo.manual) { update(tNow); draw(); } return; } if (!running) { running = true; last = 0; raf = requestAnimationFrame(loop); } };
 
     // ---- Interaction.
+    // A lifted card goes back down, and its info away.
+    const putDown = () => {
+      if (focusId) { const F = lift.get(focusId); if (F) { F[2] = F[0]; F[1] = 0; F[3] = tNow; } }
+      focusId = null;
+      hideInfo();
+      wake();
+    };
     css.domElement.addEventListener('click', e => {
+      // (the info's own: its moves, its close, and - inside it - the Keen
+      // Info's notes and share, which answer for themselves)
+      const act = e.target.closest('.r3t-info [data-act]');
+      if (act) {
+        const id = infoId;
+        putDown();
+        if (hooks.cardAction && id) hooks.cardAction(id, act.dataset.act);
+        tick();
+        return;
+      }
+      if (e.target.closest('.r3t-info-x')) { const back = focusId; putDown(); const el = back && cardObjs.find(o => o.userData.card.id === back); if (el && e.detail === 0) el.element.focus({ preventScroll: true }); return; }
+      if (e.target.closest('.r3t-info')) return;
       const card = e.target.closest('.r3t-card');
       if (card) {
         const id = card.dataset.id;
@@ -1028,6 +1105,11 @@ export async function prepareTable(opts) {
         if (focusId && focusId !== id) { const F2 = lift.get(focusId); if (F2) { F2[2] = F2[0]; F2[1] = 0; F2[3] = tNow; } }
         lift.set(id, [cur, target, cur, tNow]);
         focusId = target ? id : null;
+        if (focusId) {
+          showInfo(id);
+          // (from the keyboard, on to the card's first move)
+          if (e.detail === 0) { const first = infoEl.querySelector('[data-act]'); if (first) first.focus({ preventScroll: true }); }
+        } else hideInfo();
         if (hooks.cardTap) hooks.cardTap(id);
         wake();
         return;
@@ -1041,6 +1123,7 @@ export async function prepareTable(opts) {
     css.domElement.addEventListener('keydown', e => {
       if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && (e.target.classList.contains('r3t-card') || e.target.classList.contains('r3t-phone'))) { e.preventDefault(); e.target.click(); }
       if (e.key === 'Escape' && phoneHeld) { holdPhone(false); phoneEl.focus({ preventScroll: true }); }
+      else if (e.key === 'Escape' && focusId) { const back = cardObjs.find(o => o.userData.card.id === focusId); putDown(); if (back) back.element.focus({ preventScroll: true }); }
     });
     const onResize = () => {
       aspect = size();
@@ -1058,6 +1141,9 @@ export async function prepareTable(opts) {
       get t() { return tNow; },
       seek(t) { tNow = t; update(t); draw(); },
       pickUpPhone(on = true) { holdPhone(on); },
+      // (lab and tests: lift a card, as a tap would)
+      liftCard(id) { const el = cardObjs.find(o => o.userData.card.id === id); if (el) el.element.click(); },
+      putDown,
       dispose() {
         disposed = true; running = false; cancelAnimationFrame(raf);
         clearInterval(clock);
