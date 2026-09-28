@@ -1,16 +1,19 @@
 # three.js (vendored)
 
-Used only by the WebGL roll intro (`assets/intro3d/intro.mjs`), which the
-landing screen loads with a dynamic `import()` when the device has WebGL.
+Used only by the landing's 3D scene: the WebGL roll intro
+(`assets/intro3d/intro.mjs`) and the table it flies into
+(`assets/intro3d/table.mjs`), both loaded with a dynamic `import()`.
 Everything else in the app stays classic scripts with no dependencies.
 
 - Version: three.js r186 (`three@0.186.1` on npm), MIT licence (`LICENSE`).
 - `three.core.js`, `three.module.js`: the package's `build/` files,
   minified with esbuild. The file names are kept so the module's own
   `import ... from "./three.core.js"` still resolves.
-- `three.addons.js`: the postprocessing addons the intro uses
-  (EffectComposer, RenderPass, UnrealBloomPass, OutputPass) bundled into one
-  file, importing three from `./three.module.js`, so no import map is needed.
+- `three.addons.js`: the addons the scene uses - the postprocessing chain
+  (EffectComposer, RenderPass, UnrealBloomPass, OutputPass) and the CSS3D
+  renderer (CSS3DRenderer, CSS3DObject) that lays the table's cards and
+  controls into the scene as page elements - bundled into one file,
+  importing three from `./three.module.js`, so no import map is needed.
 
 To update, from a scratch directory:
 
@@ -23,6 +26,7 @@ export { EffectComposer } from './package/examples/jsm/postprocessing/EffectComp
 export { RenderPass } from './package/examples/jsm/postprocessing/RenderPass.js';
 export { UnrealBloomPass } from './package/examples/jsm/postprocessing/UnrealBloomPass.js';
 export { OutputPass } from './package/examples/jsm/postprocessing/OutputPass.js';
+export { CSS3DRenderer, CSS3DObject } from './package/examples/jsm/renderers/CSS3DRenderer.js';
 EOF
 npx esbuild addons-entry.js --bundle --format=esm --minify --external:three --outfile=three.addons.js
 sed -i 's#from"three"#from"./three.module.js"#g' three.addons.js
