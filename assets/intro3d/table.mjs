@@ -36,6 +36,9 @@ const lerp = (a, b, k) => a + (b - a) * k;
 const easeInOut = x => { x = clamp01(x); return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; };
 const easeOut = (x, k = 3) => 1 - Math.pow(1 - clamp01(x), k);
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
+// The module's own assets (the coins and chips in ./icons), by URL.
+const HERE = new URL('./', import.meta.url);
+const asset = f => new URL(f, HERE).href;
 
 // Where the card table stands, and which way its seat faces: along +x, away
 // from the craps table, so the camera comes in from behind the chair.
@@ -57,15 +60,11 @@ const SLOTS = { cols: 3, gapX: 1.3, gapZ: 2.4, max: 9 };
 const LAYOUT = {
   card: {
     view: [{ eye: [0, 54, -22], aim: [0, 0, 21], fov: 50 }, { eye: [0, 46, -24], aim: [0, 0, 25], fov: 40 }],
-    z0: 16.5, rail: { y: 7.2, z: -4.2, tilt: 28 }, shoe: [-12, 54], discard: [16, 55],
-    // the phone at rest: [x, y] in the view (-1..1), and its distance, cm
-    // (it rides in a layer of its own, over the table's)
-    phone: [0.8, -1.24, 40]
+    z0: 18.5, rail: { x: 3.4, y: 7.2, z: -4.2, tilt: 28 }, shoe: [-15.5, 54], discard: [16, 55]
   },
   craps: {
     view: [{ eye: [0, 60, -20], aim: [0, 0, 36], fov: 50 }, { eye: [0, 54, -22], aim: [0, 0, 40], fov: 40 }],
-    z0: 25, rail: { y: 26.4, z: -4.4, tilt: 34, scale: 54 }, shoe: [-13, 50], discard: [17, 50],
-    phone: [0.8, -1.24, 40]
+    z0: 25, rail: { x: 3.8, y: 26.4, z: -4.4, tilt: 34, scale: 54 }, shoe: [-13, 50], discard: [17, 50]
   }
 };
 // The shot's timings (seconds from the tap).
@@ -298,13 +297,14 @@ function buildCardTable(set) {
     c.strokeStyle = '#fff'; c.fillStyle = '#fff';
     c.lineWidth = 0.22 * s;
     const ell = (aa, bb) => { c.beginPath(); for (let i = 0; i <= 200; i++) { const th = Math.PI / 2 - (Math.PI * i) / 200; const x = aa * Math.sin(th), z = b - bb * Math.cos(th); if (i) c.lineTo(px(x), pz(z)); else c.moveTo(px(x), pz(z)); } c.stroke(); };
-    // (the house line runs left to right as the player reads it: from x = +ra)
-    ell(a - 13, b - 13);
-    ell(a - 13.7, b - 13.7);
+    // (the house line runs left to right as the player reads it: from x = +ra;
+    // it and the diamonds keep below the cards' near row)
+    ell(a - 11.4, b - 11.4);
+    ell(a - 12.1, b - 12.1);
     // a string of small diamonds along the arc between the band and the
     // fine lines (small type would blur at the print's resolution and the
     // angle it is seen at)
-    const ra = a - 9.3, rb = b - 9.3;
+    const ra = a - 8, rb = b - 8;
     for (let i = 1; i < 18; i++) {
       const th = -Math.PI / 2 + (Math.PI * i) / 18;
       const x = ra * Math.sin(th), z = b - rb * Math.cos(th), d = 0.55 * s;
@@ -314,9 +314,9 @@ function buildCardTable(set) {
     }
   });
   print.colorSpace = THREE.NoColorSpace;
-  // the wordmark, by the dealer: 36 x 9 cm at 28 px/cm
+  // the wordmark, by the dealer: 36 x 9 cm at 57 px/cm
   const WM = { w: 36, h: 9, z: b - 23 };
-  const mark = canvasTex(1024, 256, (c, W, H) => {
+  const mark = canvasTex(2048, 512, (c, W, H) => {
     const s = W / WM.w;
     c.fillStyle = '#000'; c.fillRect(0, 0, W, H);
     c.fillStyle = '#fff'; c.strokeStyle = '#fff';
@@ -330,14 +330,15 @@ function buildCardTable(set) {
     c.beginPath(); c.moveTo(-13 * s, 0.45 * s); c.lineTo(13 * s, 0.45 * s); c.stroke();
     [-13.6, 13.6].forEach(x => { const d = 0.32 * s; c.beginPath(); c.moveTo(x * s - d, 0.45 * s); c.lineTo(x * s, 0.45 * s - d * 0.6); c.lineTo(x * s + d, 0.45 * s); c.lineTo(x * s, 0.45 * s + d * 0.6); c.closePath(); c.fill(); });
   });
-  mark.colorSpace = THREE.NoColorSpace;
-  // (printed ink, not foil: a muted, satin gold)
-  const inkMat = new THREE.MeshStandardMaterial({ color: 0x9c7c3e, alphaMap: print, transparent: true, depthWrite: false, metalness: 0.45, roughness: 0.6, envMapIntensity: 0.6, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  mark.colorSpace = THREE.NoColorSpace; mark.anisotropy = 16; print.anisotropy = 16;
+  // (gold foil pressed into the felt, not ink: it catches the lamp)
+  const inkMat = new THREE.MeshStandardMaterial({ color: 0xc9a75a, alphaMap: print, transparent: true, depthWrite: false, metalness: 0.8, roughness: 0.38, envMapIntensity: 0.9, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   const ink = new THREE.Mesh(new THREE.PlaneGeometry(168, 84), inkMat);
   ink.rotation.x = -Math.PI / 2; ink.rotation.z = Math.PI; ink.position.set(0, 0.006, 38); ink.receiveShadow = true; g.add(ink);
   const markMat = inkMat.clone(); markMat.alphaMap = mark;
   const markMesh = new THREE.Mesh(new THREE.PlaneGeometry(WM.w, WM.h), markMat);
   markMesh.rotation.x = -Math.PI / 2; markMesh.rotation.z = Math.PI; markMesh.position.set(0, 0.008, WM.z); markMesh.receiveShadow = true; g.add(markMesh);
+  g.userData.mark = markMesh;
   // The dealer's edge: a walnut bar across the straight side, with the
   // chip tray let into it.
   const barLen = 2 * a + 26;
@@ -349,28 +350,42 @@ function buildCardTable(set) {
   return { group: g, rim, focus: [0, 0, 30] };
 }
 
-// The chip tray: a black lacquer well with a brass rim, stacks of chips in
-// the house colours.
+// The chip rack: a black lacquer well let into the dealer's bar, brass
+// rails and dividers, and stacks of chips whose faces are the house's
+// coins (assets/intro3d/icons, the chip's colour under the gold).
+const CHIPS = ['onyx', 'oxblood', 'emerald', 'ivory', 'plum', 'gold'];
+const chipFaces = {};
+function chipFace(name) {
+  if (!chipFaces[name]) {
+    const t = new THREE.TextureLoader().load(asset(`icons/chip-${name}.webp`));
+    t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+    chipFaces[name] = t;
+  }
+  return chipFaces[name];
+}
 function chipTray(set) {
   const g = new THREE.Group();
-  const tray = new THREE.Mesh(new THREE.BoxGeometry(62, 1.2, 9.6), new THREE.MeshStandardMaterial({ color: 0x0b0a0a, roughness: 0.35, metalness: 0.2 }));
-  tray.position.y = 1.3; g.add(tray);
-  const rimGeo = new THREE.BoxGeometry(63, 0.5, 10.4);
-  const rim = new THREE.Mesh(rimGeo, set.brass); rim.position.y = 1.95; g.add(rim);
-  const colours = [['#101012', '#e8e2d2'], ['#5b1622', '#f1e7d0'], ['#1d3a2a', '#f1e7d0'], ['#3a2352', '#f1e7d0'], ['#d9cfb8', '#6b1320'], ['#b58a2e', '#1a1208']];
-  const mats = colours.map(([base, spot]) => {
+  const lacquer = new THREE.MeshPhysicalMaterial({ color: 0x0b0a0a, roughness: 0.28, clearcoat: 0.8, clearcoatRoughness: 0.12 });
+  const well = new THREE.Mesh(new THREE.BoxGeometry(63, 1.2, 10.4), lacquer);
+  well.position.y = 1.3; g.add(well);
+  // the rails along the front and back, and the dividers between stacks
+  [-5.5, 5.5].forEach(z => { const r = new THREE.Mesh(new THREE.BoxGeometry(64, 0.5, 0.7), set.brass); r.position.set(0, 2.1, z); g.add(r); });
+  [-32, 32].forEach(x => { const r = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.5, 11.7), set.brass); r.position.set(x, 2.1, 0); g.add(r); });
+  for (let k = 1; k < 12; k++) { const d = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.9, 10.4), set.brass); d.position.set(-30 + k * 5, 2.2, 0); g.add(d); }
+  const spots = { onyx: ['#101012', '#e8e2d2'], oxblood: ['#5b1622', '#f1e7d0'], emerald: ['#1d3a2a', '#f1e7d0'], ivory: ['#e6dfcb', '#6b1320'], plum: ['#3a2352', '#f1e7d0'], gold: ['#b58a2e', '#1a1208'] };
+  const mats = CHIPS.map(name => {
+    const [base, spot] = spots[name];
     const side = canvasTex(256, 16, (c, W, H) => { c.fillStyle = base; c.fillRect(0, 0, W, H); c.fillStyle = spot; for (let k = 0; k < 6; k++) c.fillRect(k * 42.7 + 16, 0, 9, H); });
-    const top = canvasTex(64, 64, (c, W) => { c.fillStyle = base; c.fillRect(0, 0, W, W); c.strokeStyle = spot; c.lineWidth = 3; c.beginPath(); c.arc(32, 32, 22, 0, 7); c.stroke(); c.lineWidth = 1; c.beginPath(); c.arc(32, 32, 15, 0, 7); c.stroke(); });
-    const sideM = new THREE.MeshStandardMaterial({ map: side, roughness: 0.45 });
-    const topM = new THREE.MeshStandardMaterial({ map: top, roughness: 0.4 });
+    const sideM = new THREE.MeshStandardMaterial({ map: side, roughness: 0.5 });
+    const topM = new THREE.MeshStandardMaterial({ map: chipFace(name), roughness: 0.42, metalness: 0.15 });
     return [sideM, topM, topM];
   });
-  const chipGeo = new THREE.CylinderGeometry(1.95, 1.95, 0.33, 32);
+  const chipGeo = new THREE.CylinderGeometry(1.95, 1.95, 0.33, 40);
   for (let k = 0; k < 12; k++) {
     const x = -27.5 + k * 5, m = mats[k % mats.length], n = 5 + ((k * 7) % 5);
     for (let j = 0; j < n; j++) {
       const chip = new THREE.Mesh(chipGeo, m);
-      chip.position.set(x + Math.sin(j * 2.1 + k) * 0.08, 1.9 + j * 0.34, Math.cos(j * 1.7 + k) * 0.08);
+      chip.position.set(x + Math.sin(j * 2.1 + k) * 0.07, 1.9 + j * 0.34, Math.cos(j * 1.7 + k) * 0.07);
       chip.rotation.y = j * 0.9 + k;
       chip.castShadow = j === n - 1;
       g.add(chip);
@@ -381,49 +396,64 @@ function chipTray(set) {
 }
 
 // ------------------------------------------------------------ the props
-// The shoe: a lacquered box, sloped, with a brass face where the cards
-// come out; the discard rack; the phone.
+// The shoe: smoked acrylic, the deck showing through it, a brass plate
+// at the mouth with the roller the cards come out under; the discard rack.
 function buildShoe(set) {
   const g = new THREE.Group();
-  // walnut sides, a black lacquer lid sloping down to the mouth, a brass
-  // face with the finger slot the cards are drawn through
+  const acrylic = new THREE.MeshPhysicalMaterial({ color: 0x2a2320, roughness: 0.06, metalness: 0, transparent: true, opacity: 0.38, clearcoat: 1, clearcoatRoughness: 0.04, depthWrite: false, side: THREE.DoubleSide });
   const lac = new THREE.MeshPhysicalMaterial({ color: 0x0c0a0a, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.08 });
-  const side = new THREE.Shape();
-  side.moveTo(-8, 0); side.lineTo(8, 0); side.lineTo(8, 6.2); side.lineTo(-6.6, 3.2); side.lineTo(-8, 3.2); side.closePath();
-  const bodyGeo = new THREE.ExtrudeGeometry(side, { depth: 8.4, bevelEnabled: true, bevelThickness: 0.2, bevelSize: 0.2, bevelSegments: 2 });
-  bodyGeo.translate(0, 0, -4.2);
-  const wood = set.wood.clone();
-  wood.map = retile(set.tex.walnut, 1 / 20, 1 / 20);
-  const body = new THREE.Mesh(bodyGeo, [wood, lac]);
-  // (the shape's x runs along the shoe: turned so its low end is the mouth, at -z)
-  body.rotation.y = -Math.PI / 2; body.castShadow = true; g.add(body);
-  const face = new THREE.Mesh(new THREE.BoxGeometry(8.9, 3.4, 0.35), set.brass);
-  face.position.set(0, 1.7, -8.2); g.add(face);
-  const slot = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.5, 0.4), new THREE.MeshBasicMaterial({ color: 0x050403 }));
-  slot.position.set(0, 0.55, -8.35); g.add(slot);
-  // the top card of the deck at the mouth, back up
-  const back = canvasTex(256, 356, paintCardBack);
-  const card = new THREE.Mesh(new THREE.BoxGeometry(6.35, 0.03, 8.89), [0, 0, new THREE.MeshStandardMaterial({ map: back, roughness: 0.5 }), 0, 0, 0].map(m => m || new THREE.MeshStandardMaterial({ color: 0xece4d2 })));
-  card.position.set(0, 0.2, -6.5); card.rotation.x = 3 * DEG; card.castShadow = true; g.add(card);
+  // the base: black lacquer, the mouth end open
+  const base = new THREE.Mesh(new THREE.BoxGeometry(9.2, 0.9, 17), lac); base.position.set(0, 0.45, 0.4); base.castShadow = true; g.add(base);
+  // the deck inside: a block of card edges, the top card's back on top
+  const edges = canvasTex(64, 256, (c, W, H) => { c.fillStyle = '#e9e1cf'; c.fillRect(0, 0, W, H); c.fillStyle = 'rgba(120,100,80,0.35)'; for (let y = 0; y < H; y += 3) c.fillRect(0, y, W, 1); });
+  edges.wrapS = edges.wrapT = THREE.RepeatWrapping;
+  const edgeM = new THREE.MeshStandardMaterial({ map: edges, roughness: 0.75 });
+  const backM = new THREE.MeshStandardMaterial({ map: canvasTex(256, 356, paintCardBack), roughness: 0.5 });
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(6.4, 2.6, 9), [edgeM, edgeM, backM, edgeM, edgeM, edgeM]);
+  deck.position.set(0, 0.9 + 1.3, 1.2); deck.rotation.x = 4 * DEG; g.add(deck);
+  // the acrylic hood: sloping lid, sides, back
+  const hood = new THREE.Shape();
+  hood.moveTo(-8.2, 0.9); hood.lineTo(8.2, 0.9); hood.lineTo(8.2, 6.4); hood.lineTo(-6.4, 3.4); hood.lineTo(-8.2, 3.4); hood.closePath();
+  const hoodGeo = new THREE.ExtrudeGeometry(hood, { depth: 8.9, bevelEnabled: false });
+  hoodGeo.translate(0, 0, -4.45);
+  const hoodM = new THREE.Mesh(hoodGeo, acrylic);
+  hoodM.rotation.y = -Math.PI / 2; g.add(hoodM);
+  // (the hood's ends: a back, and a strip over the mouth above the roller)
+  const back = new THREE.Mesh(new THREE.BoxGeometry(8.9, 5.5, 0.3), acrylic); back.position.set(0, 3.65, 8.2); g.add(back);
+  // the brass at the mouth: a plate with the finger slot, the roller, corner caps
+  const face = new THREE.Mesh(new THREE.BoxGeometry(9.2, 2.2, 0.4), set.brass); face.position.set(0, 1.8, -8.3); g.add(face);
+  const slot = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.5, 0.5), new THREE.MeshBasicMaterial({ color: 0x050403 })); slot.position.set(0, 1.25, -8.4); g.add(slot);
+  const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 8.6, 20), set.brass);
+  roller.rotation.z = Math.PI / 2; roller.position.set(0, 3.4, -8.1); g.add(roller);
+  [[-4.6, -8.2], [4.6, -8.2], [-4.6, 8.2], [4.6, 8.2]].forEach(([x, z]) => { const cap = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.4, 0.6), set.brass); cap.position.set(x, 1.1, z); g.add(cap); });
+  // the top card, out at the mouth, ready to be drawn
+  const card = new THREE.Mesh(new THREE.BoxGeometry(6.35, 0.03, 8.89), [0, 0, backM, 0, 0, 0].map(m => m || new THREE.MeshStandardMaterial({ color: 0xece4d2 })));
+  card.position.set(0, 0.95, -6.5); card.rotation.x = 3 * DEG; card.castShadow = true; g.add(card);
   return g;
 }
 function buildDiscard(set) {
-  // the discard rack: smoked glass on a walnut base, a few cards already in
-  // it (what has been played today)
+  // the discard rack: smoked acrylic on a walnut base, what has been played
+  // today stacked in it under a brass weight
   const g = new THREE.Group();
-  const smoke = new THREE.MeshPhysicalMaterial({ color: 0x2a221c, roughness: 0.08, metalness: 0, transparent: true, opacity: 0.42, clearcoat: 1, clearcoatRoughness: 0.05, depthWrite: false });
-  const base = new THREE.Mesh(new THREE.BoxGeometry(8.4, 0.8, 11), set.wood); base.position.y = 0.4; g.add(base);
-  [-3.9, 3.9].forEach(x => { const w = new THREE.Mesh(new THREE.BoxGeometry(0.3, 4.2, 10.4), smoke); w.position.set(x, 2.9, 0); g.add(w); });
-  const backW = new THREE.Mesh(new THREE.BoxGeometry(7.8, 4.2, 0.3), smoke); backW.position.set(0, 2.9, 5.1); g.add(backW);
-  const rim = new THREE.Mesh(new THREE.BoxGeometry(8.5, 0.25, 0.5), set.brass); rim.position.set(0, 5, 5.1); g.add(rim);
-  const back = new THREE.MeshStandardMaterial({ map: canvasTex(256, 356, paintCardBack), roughness: 0.5 });
-  const edge = new THREE.MeshStandardMaterial({ color: 0xe9e0cc, roughness: 0.7 });
-  for (let k = 0; k < 5; k++) {
-    const c = new THREE.Mesh(new THREE.BoxGeometry(6.35, 0.08, 8.89), [edge, edge, back, edge, edge, edge]);
-    c.position.set(Math.sin(k * 2.3) * 0.3, 0.86 + k * 0.09, 0.4 + Math.cos(k * 1.7) * 0.3);
-    c.rotation.y = Math.sin(k * 1.9) * 0.08;
+  const smoke = new THREE.MeshPhysicalMaterial({ color: 0x2a221c, roughness: 0.06, metalness: 0, transparent: true, opacity: 0.4, clearcoat: 1, clearcoatRoughness: 0.05, depthWrite: false });
+  const base = new THREE.Mesh(new THREE.BoxGeometry(8.6, 0.8, 11.2), set.wood); base.position.y = 0.4; base.castShadow = true; g.add(base);
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(8.8, 0.25, 11.4), set.brass); lip.position.y = 0.85; g.add(lip);
+  [-4.0, 4.0].forEach(x => { const w = new THREE.Mesh(new THREE.BoxGeometry(0.3, 4.6, 10.6), smoke); w.position.set(x, 3.2, 0); g.add(w); });
+  const backW = new THREE.Mesh(new THREE.BoxGeometry(8.0, 4.6, 0.3), smoke); backW.position.set(0, 3.2, 5.3); g.add(backW);
+  const edges = canvasTex(64, 256, (c, W, H) => { c.fillStyle = '#e9e1cf'; c.fillRect(0, 0, W, H); c.fillStyle = 'rgba(120,100,80,0.35)'; for (let y = 0; y < H; y += 3) c.fillRect(0, y, W, 1); });
+  const edgeM = new THREE.MeshStandardMaterial({ map: edges, roughness: 0.75 });
+  const backM = new THREE.MeshStandardMaterial({ map: canvasTex(256, 356, paintCardBack), roughness: 0.5 });
+  // the stack: a block of card edges with a few loose cards on top
+  const stack = new THREE.Mesh(new THREE.BoxGeometry(6.35, 1.4, 8.89), [edgeM, edgeM, backM, edgeM, edgeM, edgeM]);
+  stack.position.set(0, 0.98 + 0.7, 0.4); g.add(stack);
+  for (let k = 0; k < 3; k++) {
+    const c = new THREE.Mesh(new THREE.BoxGeometry(6.35, 0.06, 8.89), [edgeM, edgeM, backM, edgeM, edgeM, edgeM]);
+    c.position.set(Math.sin(k * 2.3) * 0.25, 2.42 + k * 0.07, 0.4 + Math.cos(k * 1.7) * 0.25);
+    c.rotation.y = Math.sin(k * 1.9) * 0.06;
     g.add(c);
   }
+  // the weight: a brass bar across the stack
+  const weight = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.7, 2.2), set.brass); weight.position.set(0, 3.0, 0.4); weight.castShadow = true; g.add(weight);
   return g;
 }
 // The dealer's right hand: a white cotton glove, a black sleeve. Its frame
@@ -464,13 +494,6 @@ function buildHand() {
 function handPose(p, z, y) {
   const zz = z.clone().normalize(), xx = y.clone().cross(zz).normalize(), yy = zz.clone().cross(xx);
   return { p: p.clone(), q: new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(xx, yy, zz)) };
-}
-// The phone is all page elements (its frame too - see .r3t-phone): it is
-// always in front of the table, and a WebGL body under a page-element
-// screen could be painted over by the rail's panel. This is just its
-// transform, which the screen follows.
-function buildPhone() {
-  return new THREE.Group();
 }
 // The back of every card: oxblood, a gold diamond lattice, the DRO seal.
 function paintCardBack(c, W, H) {
@@ -527,36 +550,44 @@ function railHTML() {
   return `<div class="r3t-rail-in">
     <div class="r3t-clock" aria-hidden="true">
       <svg viewBox="0 0 100 100" class="r3t-dial">
-        <circle cx="50" cy="50" r="46" class="r3t-dial-face"/>
-        ${Array.from({ length: 12 }, (_, i) => `<line x1="50" y1="${i % 3 ? 9 : 7}" x2="50" y2="${i % 3 ? 14 : 17}" transform="rotate(${i * 30} 50 50)" class="r3t-tick${i % 3 ? '' : ' r3t-tick-q'}"/>`).join('')}
-        <line x1="50" y1="50" x2="50" y2="27" class="r3t-hand-h"/>
-        <line x1="50" y1="54" x2="50" y2="15" class="r3t-hand-m"/>
-        <line x1="50" y1="58" x2="50" y2="12" class="r3t-hand-s"/>
-        <circle cx="50" cy="50" r="3.2" class="r3t-pin"/>
+        <circle cx="50" cy="50" r="47" class="r3t-dial-face"/>
+        ${Array.from({ length: 12 }, (_, i) => `<line x1="50" y1="6" x2="50" y2="${i % 3 ? 10 : 14}" transform="rotate(${i * 30} 50 50)" class="r3t-tick${i % 3 ? '' : ' r3t-tick-q'}"/>`).join('')}
+        <line x1="50" y1="52" x2="50" y2="26" class="r3t-hand-h"/>
+        <line x1="50" y1="55" x2="50" y2="13" class="r3t-hand-m"/>
+        <line x1="50" y1="60" x2="50" y2="10" class="r3t-hand-s"/>
+        <circle cx="50" cy="50" r="3.4" class="r3t-pin"/>
       </svg>
     </div>
-    <div class="r3t-time"><b class="r3t-now">--:--</b><small class="r3t-date"></small></div>
-    <button type="button" class="r3t-run"><span class="r3t-run-k">Run the deck</span><span class="r3t-run-v">&mdash;</span></button>
-    <div class="r3t-status"><b class="r3t-next">&mdash;</b><small class="r3t-done"></small></div>
+    <div class="r3t-time"><b class="r3t-now">--:--</b><small class="r3t-date"></small><span class="r3t-status"><b class="r3t-next">&mdash;</b><small class="r3t-done"></small></span></div>
+    <button type="button" class="r3t-run"><span class="r3t-run-coin" aria-hidden="true"></span><span class="r3t-run-k">Run the deck</span><span class="r3t-run-v">&mdash;</span></button>
   </div>`;
 }
-function phoneHTML() {
-  return `<div class="r3t-phone-in">
-    <div class="r3t-ph-status"><span class="r3t-ph-clock">--:--</span><span class="r3t-ph-icons">•••</span></div>
+function phoneHTML(asset) {
+  const coin = n => `<img class="r3t-ph-coin" src="${asset(`icons/coin-${n}.webp`)}" alt="" width="64" height="64">`;
+  return `<div class="r3t-ph-body"><div class="r3t-ph-screen">
+    <div class="r3t-ph-island"></div>
+    <div class="r3t-ph-status"><span class="r3t-ph-clock">--:--</span><span class="r3t-ph-sig" aria-hidden="true"><i></i><i></i><i></i><i></i><b></b></span></div>
     <div class="r3t-ph-lock">
-      <div class="r3t-ph-big">--:--</div>
       <div class="r3t-ph-day"></div>
-      <div class="r3t-ph-note"><b>Freebies</b><span>New drops waiting</span></div>
-      <div class="r3t-ph-note"><b>Community</b><span>Drops from other players</span></div>
-      <div class="r3t-ph-hint">Pick up</div>
+      <div class="r3t-ph-big">--:--</div>
+      <div class="r3t-ph-notes">
+        <div class="r3t-ph-note">${coin('house')}<div><b>Freebies</b><span class="r3t-ph-n-free">Codes, drops and giveaways</span></div><i>now</i></div>
+        <div class="r3t-ph-note">${coin('send')}<div><b>Community</b><span class="r3t-ph-n-comm">Drops shared by other players</span></div><i>2m</i></div>
+      </div>
+      <div class="r3t-ph-hint">Tap to pick up</div>
     </div>
     <div class="r3t-ph-app">
-      <div class="r3t-ph-title">Daily Roll Over</div>
-      <button type="button" class="r3t-ph-tile" data-view="freebies"><b>Freebies</b><span>Codes, drops and giveaways</span></button>
-      <button type="button" class="r3t-ph-tile" data-view="community"><b>Community drops</b><span>Shared by other players</span></button>
+      <div class="r3t-ph-title">Daily <em>Roll Over</em></div>
+      <div class="r3t-ph-grid">
+        <button type="button" class="r3t-ph-tile" data-view="freebies">${coin('house')}<b>Freebies</b><span>Codes, drops, giveaways</span></button>
+        <button type="button" class="r3t-ph-tile" data-view="community">${coin('send')}<b>Community</b><span>Drops other players shared</span></button>
+        <button type="button" class="r3t-ph-tile" data-view="deck">${coin('deck')}<b>Deck</b><span>Every platform you track</span></button>
+        <button type="button" class="r3t-ph-tile" data-view="catalogue">${coin('clock')}<b>Catalogue</b><span>Platforms to add</span></button>
+      </div>
+      <div class="r3t-ph-today"><b class="r3t-ph-ready">&mdash;</b><span class="r3t-ph-next">&mdash;</span></div>
       <button type="button" class="r3t-ph-put">Put it down</button>
     </div>
-  </div>`;
+  </div></div>`;
 }
 
 // ------------------------------------------------------------ prepare
@@ -631,8 +662,7 @@ export async function prepareTable(opts) {
   faceToward(discard, L.discard[0], L.discard[1], 0, L.z0 + 6);
   // The phone isn't on the table: it's yours, half out of your pocket at
   // the bottom right of the view, and pulled up in front of you on a tap.
-  const phone = buildPhone();
-  seat.add(shoe, discard, phone);
+  seat.add(shoe, discard);
   // (the hand itself is drawn over the cards - see fly - so it is never
   // painted under a card it is on; this is only its shadow on the felt)
   const handShadow = new THREE.Mesh(new THREE.PlaneGeometry(16, 22), new THREE.MeshBasicMaterial({ map: canvasTex(128, 128, (c, W, H) => { const g = c.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, W / 2); g.addColorStop(0, 'rgba(0,0,0,0.9)'); g.addColorStop(0.45, 'rgba(0,0,0,0.5)'); g.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = g; c.fillRect(0, 0, W, H); }), transparent: true, depthWrite: false, opacity: 0 }));
@@ -680,16 +710,10 @@ export async function prepareTable(opts) {
     const cssSeat = new THREE.Group();
     cssSeat.position.copy(seat.position); cssSeat.quaternion.copy(seat.quaternion);
     cssScene.add(cssSeat);
-    // The phone has a layer of its own over the table's: it's in your hand,
-    // in front of everything on the table, whatever the depths say.
-    const phoneCss = new CSS3DRenderer();
-    phoneCss.domElement.className = 'r3t-css r3t-css-phone';
-    const phoneScene = new THREE.Scene();
     const size = () => {
       world.size();
       const w = world.host.clientWidth || window.innerWidth, h = world.host.clientHeight || window.innerHeight;
       css.setSize(w, h);
-      phoneCss.setSize(w, h);
       if (typeof sizeHand === 'function') sizeHand(w, h);
       return w / h;
     };
@@ -716,7 +740,6 @@ export async function prepareTable(opts) {
     let aspect = size();
     stageEl.appendChild(css.domElement);
     css.domElement.appendChild(handGL.domElement);
-    css.domElement.appendChild(phoneCss.domElement);
 
     // Where the camera sits, and what it looks at, in the seat's frame.
     const seatView = () => {
@@ -750,7 +773,7 @@ export async function prepareTable(opts) {
     const aimCurve = new THREE.CatmullRomCurve3(aimPts, false, 'centripetal');
     const FLY = fo.reduced ? 0.01 : dest === 'card' ? T.cardFly : T.crapsFly;
     const fov0 = camera.fov;
-    const lens0 = world.lights.lensLight.intensity, rim0 = world.lights.rim.intensity;
+    const lens0 = world.lights.lensLight.intensity;
     const bloom0 = world.bloom ? world.bloom.strength : 0;
 
     // ---- The UI, built now, shown on arrival.
@@ -766,16 +789,21 @@ export async function prepareTable(opts) {
     const railEl = document.createElement('div');
     railEl.className = 'r3t-rail';
     railEl.innerHTML = railHTML();
-    const railObj = add(railEl, V(0, L.rail.y, L.rail.z), lying(new THREE.Quaternion(), { tilt: L.rail.tilt * DEG }), 1 / (L.rail.scale || 40));
+    const railObj = add(railEl, V(L.rail.x || 0, L.rail.y, L.rail.z), lying(new THREE.Quaternion(), { tilt: L.rail.tilt * DEG }), 1 / (L.rail.scale || 40));
     // the cards
     const hand = (hooks.deck && hooks.deck()) || [];
     const cards = (hand.length ? hand : demoHand()).slice(0, SLOTS.max);
     const sampleStatus = () => ({ ready: cards.length, value: cards.reduce((t, c) => t + (c.ev || 0), 0), next: null, done: 0 });
+    // (a third row of cards moves the whole hand nearer, and the wordmark
+    // up toward the dealer, to make room)
+    const rows = Math.ceil(cards.length / SLOTS.cols);
+    const z0 = rows >= 3 ? L.z0 - 4 : L.z0;
+    if (table && table.group.userData.mark) table.group.userData.mark.position.z = FELT.b - (rows >= 3 ? 15 : 23);
     const slotAt = i => {
       const r = Math.floor(i / SLOTS.cols), c = i % SLOTS.cols;
       const inRow = Math.min(SLOTS.cols, cards.length - r * SLOTS.cols);
       const x = ((inRow - 1) / 2 - c) * (CARD.w + SLOTS.gapX);
-      return V(x, 0.04, L.z0 + r * (CARD.h + SLOTS.gapZ));
+      return V(x, 0.04, z0 + r * (CARD.h + SLOTS.gapZ));
     };
     const cardObjs = cards.map((c, i) => {
       // (a div, not a <button>: Chrome lays a button's content in a box of
@@ -791,15 +819,22 @@ export async function prepareTable(opts) {
       el.style.visibility = 'hidden';
       return obj;
     });
-    // the phone's screen
+    // Your phone: not on the table but in the corner of the view, half out
+    // of your pocket, and up in front of you on a tap (a page element,
+    // over the hand's canvas; its moves are the page's own transitions)
     const phoneEl = document.createElement('div');
     phoneEl.className = 'r3t-phone';
-    phoneEl.innerHTML = phoneHTML();
-    // (CSS3D objects live in the css scene: the phone's screen follows the
-    // phone's transform each frame - see placePhone)
-    const phoneObj = new CSS3DObject(phoneEl);
-    phoneObj.scale.setScalar(1 / 55);
-    phoneScene.add(phoneObj);
+    phoneEl.setAttribute('role', 'button');
+    phoneEl.setAttribute('aria-label', 'Your phone: freebies, community drops, the deck and the catalogue');
+    phoneEl.tabIndex = 0;
+    phoneEl.innerHTML = phoneHTML(asset);
+    css.domElement.appendChild(phoneEl);
+    let phoneHeld = false;
+    const holdPhone = on => {
+      phoneHeld = !!on;
+      phoneEl.classList.toggle('r3t-held', phoneHeld);
+      phoneEl.setAttribute('aria-expanded', phoneHeld ? 'true' : 'false');
+    };
 
     css.domElement.appendChild(ui);
     css.domElement.classList.add('r3t-hide');
@@ -826,6 +861,8 @@ export async function prepareTable(opts) {
       put(q('.r3t-done'), `${st.done} done today`);
       phoneEl.querySelectorAll('.r3t-ph-clock, .r3t-ph-big').forEach(n => put(n, hm));
       put(phoneEl.querySelector('.r3t-ph-day'), d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }));
+      put(phoneEl.querySelector('.r3t-ph-ready'), `${st.ready} ready${st.value > 0 ? ` · ~$${st.value.toFixed(2)}` : ''}`);
+      put(phoneEl.querySelector('.r3t-ph-next'), st.next ? `Next comes ready in ${fmtLeft(st.next)}` : `All caught up · ${st.done} done today`);
     };
     tick();
     const clock = setInterval(tick, 1000);
@@ -835,7 +872,6 @@ export async function prepareTable(opts) {
     const cardAt = i => dealAt + i * DEAL.each;
     const settleAt = cards.length ? cardAt(cards.length - 1) + DEAL.each + 0.55 : dealAt;
     const introT0 = world.t;
-    let phoneK = 0, phoneTarget = 0, phoneFrom = 0, phoneT0 = 0;
     let focusId = null;
     const lift = new Map();                 // card id -> [k, target, from, t0]
 
@@ -925,7 +961,7 @@ export async function prepareTable(opts) {
     // The dealer's hand: at rest by the chip tray; over the shoe between
     // cards; on each card from its pull to its push, flat on its back with
     // the fingertips a little in from the end it holds.
-    const REST = handPose(V(-8, 6, 92), V(0.15, -0.3, -1), up);
+    const REST = handPose(V(-8, 6, 108), V(0.15, -0.3, -1), up);
     const gripAt = shoeMouth.clone().addScaledVector(mouthDir, 0.6); gripAt.y = shoeMouth.y + 0.95;
     const HOVER = handPose(gripAt.clone().addScaledVector(mouthDir, 2.5).add(V(0, 4.5, 0)), mouthDir.clone().negate().add(V(0, -0.5, 0)), up);
     const GRIP = handPose(gripAt, mouthDir.clone().negate().add(V(0, -0.08, 0)), up);
@@ -970,49 +1006,21 @@ export async function prepareTable(opts) {
       handShadow.rotation.z = Math.atan2(V(0, 0, 1).applyQuaternion(pose.q).x, V(0, 0, 1).applyQuaternion(pose.q).z);
       handShadow.material.opacity = 0.5 * clamp01(1 - (palm.y - 1.2) / 14) * (tt >= dealAt - 0.5 ? 1 : 0);
     };
-    // The phone, placed in the camera's own frame (it rides with the view):
-    // at rest low at the bottom right, leaning back, its top third showing;
-    // held, square to the lens and filling most of the view.
-    const camFrame = (x, y, dist, tiltBack, roll) => {
-      const tanV = Math.tan((camera.fov * DEG) / 2), tanH = tanV * camera.aspect;
-      const pc = V(x * tanH * dist, y * tanV * dist, -dist).applyQuaternion(camera.quaternion).add(camera.position);
-      const qc = camera.quaternion.clone()
-        .multiply(new THREE.Quaternion().setFromAxisAngle(V(0, 0, 1), roll))
-        .multiply(new THREE.Quaternion().setFromAxisAngle(V(1, 0, 0), -tiltBack));
-      return { p: seat.worldToLocal(pc), q: camQ.copy(seat.quaternion).invert().multiply(qc).clone() };
-    };
-    const placePhone = tt => {
-      const k = phoneTarget === phoneFrom ? phoneTarget : smoother(phoneFrom + (phoneTarget - phoneFrom) * clamp01((tt - phoneT0) / 0.6));
-      phoneK = k;
-      const heldDist = (15.4 / 2) / (0.86 * Math.tan((camera.fov * DEG) / 2));
-      const rest = camFrame(L.phone[0], L.phone[1], L.phone[2], 34 * DEG, 16 * DEG);
-      const held = camFrame(0, 0, heldDist, 0, 0);
-      const p = rest.p.clone().lerp(held.p, k);
-      p.addScaledVector(V(0, 1, 0), Math.sin(Math.PI * k) * 3);
-      phone.position.copy(p);
-      phone.quaternion.copy(rest.q).slerp(held.q, k);
-      // its screen rides on it
-      phone.updateMatrixWorld(true);
-      phoneObj.position.set(0, 0, 0).applyMatrix4(phone.matrixWorld);
-      phoneObj.quaternion.copy(seat.quaternion).multiply(phone.quaternion);
-      phoneEl.classList.toggle('r3t-held', k > 0.98);
-    };
-
     let tNow = 0, raf = 0, last = 0, running = false, arrived = false, disposed = false;
     const update = tt => {
       tNow = tt;
       lampUp();
       placeCamera(tt);
-      const kf = clamp01(tt / 0.9);
-      world.lights.lensLight.intensity = lens0 * (1 - kf);
-      // (from the craps seat the rim light is straight into the lens: gone)
-      world.lights.rim.intensity = rim0 * (1 - (dest === 'craps' ? 1 : 0.6) * kf);
-      if (world.bloom) world.bloom.strength = lerp(bloom0, 0.3, kf);
       // the intro's own world keeps time (the stick still drawing the dice)
       world.stage(introT0 + tt);
+      // (its lights set by stage(): the lens light goes; from the craps seat
+      // the rim light is straight into the lens, and goes too)
+      const kf = clamp01(tt / 0.9);
+      world.lights.lensLight.intensity = lens0 * (1 - kf);
+      world.lights.rim.intensity *= 1 - (dest === 'craps' ? 1 : 0.6) * kf;
+      if (world.bloom) world.bloom.strength = lerp(bloom0, 0.3, kf);
       poseCards(tt);
       poseHand(tt);
-      placePhone(tt);
       const uiK = clamp01((tt - FLY + 0.1) / T.uiIn);
       css.domElement.style.setProperty('--r3t-in', uiK.toFixed(3));
       css.domElement.classList.toggle('r3t-hide', uiK <= 0);
@@ -1022,9 +1030,8 @@ export async function prepareTable(opts) {
       if (world.composer) world.composer.render(); else renderer.render(scene, camera);
       css.render(cssScene, camera);
       handGL.render(handScene, camera);
-      phoneCss.render(phoneScene, camera);
     };
-    const busyUntil = () => Math.max(settleAt, phoneT0 + 0.6, ...[...lift.values()].map(L => L[3] + 0.4));
+    const busyUntil = () => Math.max(settleAt, ...[...lift.values()].map(L => L[3] + 0.4));
     const loop = now => {
       if (!running) return;
       // (slow frames play the shot slower rather than skip through it, down
@@ -1056,11 +1063,12 @@ export async function prepareTable(opts) {
       if (e.target.closest('.r3t-run')) { if (hooks.run) hooks.run(); return; }
       const tile = e.target.closest('.r3t-ph-tile');
       if (tile) { if (hooks.openView) hooks.openView(tile.dataset.view); return; }
-      if (e.target.closest('.r3t-ph-put')) { phoneFrom = phoneK; phoneTarget = 0; phoneT0 = tNow; wake(); return; }
-      if (e.target.closest('.r3t-phone') && phoneK < 0.5) { phoneFrom = phoneK; phoneTarget = 1; phoneT0 = tNow; wake(); }
+      if (e.target.closest('.r3t-ph-put')) { holdPhone(false); return; }
+      if (e.target.closest('.r3t-phone') && !phoneHeld) { holdPhone(true); }
     });
     css.domElement.addEventListener('keydown', e => {
-      if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('r3t-card')) { e.preventDefault(); e.target.click(); }
+      if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && (e.target.classList.contains('r3t-card') || e.target.classList.contains('r3t-phone'))) { e.preventDefault(); e.target.click(); }
+      if (e.key === 'Escape' && phoneHeld) { holdPhone(false); phoneEl.focus({ preventScroll: true }); }
     });
     const onResize = () => {
       aspect = size();
@@ -1077,7 +1085,7 @@ export async function prepareTable(opts) {
       duration: FLY, settleAt,
       get t() { return tNow; },
       seek(t) { tNow = t; update(t); draw(); },
-      pickUpPhone(on = true) { phoneFrom = phoneK; phoneTarget = on ? 1 : 0; phoneT0 = tNow; wake(); },
+      pickUpPhone(on = true) { holdPhone(on); },
       dispose() {
         disposed = true; running = false; cancelAnimationFrame(raf);
         clearInterval(clock);

@@ -53,13 +53,13 @@ const mix3 = (a, b, k) => [lerp(a[0], b[0], k), lerp(a[1], b[1], k), lerp(a[2], 
 const DEG = Math.PI / 180;
 // The light: the pendant over the table, and the studio the glossy surfaces
 // mirror (dimmed together round the Defiant Edge's die).
-const PENDANT = 3.5, ENV_LEVEL = 0.95, RIM = 2.4;
+const PENDANT = 3.5, ENV_LEVEL = 0.95, RIM = 2.0;
 // The gold filigree band: its width, its repeat along its length (the
 // texture is 8:1), and how far in from the walls it is inlaid in the felt.
 const TRIM = { w: 2.4, tile: 19.2, inset: 2.2 };
 // After the shot the camera floats on for FLOAT seconds, rising toward a
 // ceiling (eye height CEIL cm above the felt) that it eases into.
-const FLOAT = 36, CEIL = 145;
+const FLOAT = 36, CEIL = 178;
 // The room: the floor 82 cm under the felt, the lamps' height, the fog, and
 // the far tables' light pools ([x, z, radius]).
 const ROOM = { floor: -82, lamp: 172, fog: 0.0019, far: [[-340, -300, 150], [390, -430, 170], [-560, 120, 160], [620, 60, 150], [120, -720, 190], [-260, 520, 150]] };
@@ -156,7 +156,7 @@ function makeWarp(wallW) {
 
 // ------------------------------------------------------------ the stick
 // The stickman's stick: a long walnut shaft ending in a bent-wood J hook.
-// He reaches in from his side of the table (+x, toward the thrower), over
+// He reaches in from the shooter's end, on the lens's side, over
 // the dice, sets the hook down beyond them and draws them back to himself.
 // The hook is a moving body in the physics, so the dice are pushed by it -
 // sliding, bumping each other - rather than carried.
@@ -179,11 +179,12 @@ function hookCurve() {
 }
 function stickLine(rest) {
   // A line to pull along that takes both dice in the hook: close to the
-  // line through them, drawn toward the stickman (+x) and never back
-  // toward the wall.
-  const base = Math.atan2(0.35, 1);
+  // line through them, and drawn down the table toward the shooter - the
+  // stickman stands at the shooter's end, on the lens's side, so the dice
+  // come toward the bottom of the screen.
+  const base = Math.atan2(Math.cos(-36 * DEG), Math.sin(-36 * DEG));
   let best = null;
-  for (let d = -30; d <= 65; d += 2.5) {
+  for (let d = -32; d <= 32; d += 2) {
     const ang = base + d * DEG;
     const U = [Math.cos(ang), 0, Math.sin(ang)];
     const X = [U[2], 0, -U[0]];   // (X, up, U) is right-handed
@@ -1013,9 +1014,9 @@ async function buildIntro(opts, undo, teardown) {
       // thin (the rounded edges), glass-hard highlights on the clear coat
       // (a little roughness on both coats: a face that catches a light
       // square on glints rather than flashes white)
-      color: 0xc01424, roughness: 0.13, metalness: 0, transmission: 0.9, thickness: 1.6, ior: 1.5,
+      color: 0xc01424, roughness: 0.16, metalness: 0, transmission: 0.9, thickness: 1.6, ior: 1.5,
       attenuationColor: new THREE.Color(0x8a0616), attenuationDistance: 0.75,
-      clearcoat: 1, clearcoatRoughness: 0.12, specularIntensity: 0.85, envMapIntensity: 2.3,
+      clearcoat: 0.7, clearcoatRoughness: 0.16, specularIntensity: 0.6, envMapIntensity: 2.3,
       emissive: new THREE.Color(0xff3212), emissiveIntensity: 0
     });
     const g = new THREE.Group();
@@ -1158,7 +1159,7 @@ async function buildIntro(opts, undo, teardown) {
     pushKey([R2(T.pull[0]), -35, 56, D * 1.08, D * 0.16]);
     pushKey([R2(T.pull[1]), -38, 62, D * 1.26, D * 0.24]);
     // (backing out and tilting up as the landing's copy comes in)
-    pushKey([R2(plan.endW) + 2, -40, 60, D * 1.36, D * 0.42]);
+    pushKey([R2(plan.endW) + 2, -40, 58, D * 1.5, D * 0.46]);
   } else if (plan.vault) {
     const Bm = R2(plan.vault.boom);
     pushKey([Bm - 0.3, -32, 40, D * 0.9, D * 0.1]);
@@ -1177,7 +1178,8 @@ async function buildIntro(opts, undo, teardown) {
   // settles under the ceiling.
   {
     const L = keys[keys.length - 1];
-    const F = plan.stick ? { el: -8, g: [1.12, 1.3, 1.42], h: [0.12, 0.3, 0.42] }
+    // (the float rises and backs away - the apex the fly-in swoops down from)
+    const F = plan.stick ? { el: 4, g: [1.32, 1.7, 2.0], h: [0.2, 0.46, 0.66] }
       : plan.vault ? { el: 10, g: [1.1, 1.25, 1.35], h: [0.08, 0.2, 0.3] }
       : { el: 14, g: [1.6, 2.6, 3.4], h: [0.3, 0.8, 1.2] };
     [6, 16, FLOAT - 2].forEach((dt, i) => keys.push([L[0] + dt, L[1] - [2, 4, 5][i], L[2] + F.el * [0.3, 0.7, 1][i], L[3] * F.g[i], L[4] + L[3] * F.h[i]]));
@@ -1400,11 +1402,14 @@ async function buildIntro(opts, undo, teardown) {
   const project = p => { const v = new THREE.Vector3(p[0], p[1], p[2]).project(camera); return [(v.x * 0.5 + 0.5) * host.clientWidth, (-v.y * 0.5 + 0.5) * host.clientHeight, v.z]; };
   // The light behind the lens: brightest through the slow motion.
   const gleamAt = t => smoother((t - (Rwall - 0.2)) / 0.35) * (1 - smoother((t - W.slowHold[1]) / 0.7));
+  // (it sits up and off to the lens's left, not on its axis: a light on the
+  // axis comes straight back off any face square to the lens, a white flash)
   const aimLens = (eye, aim, gleam) => {
     const back = new THREE.Vector3(eye[0] - aim[0], eye[1] - aim[1], eye[2] - aim[2]).normalize();
-    lensLight.position.set(eye[0] + back.x * 18, eye[1] + back.y * 18 + 14, eye[2] + back.z * 18);
+    const right = new THREE.Vector3(back.z, 0, -back.x).normalize();
+    lensLight.position.set(eye[0] + back.x * 10 - right.x * 26, eye[1] + back.y * 10 + 30, eye[2] + back.z * 10 - right.z * 26);
     lensLight.target.position.set(aim[0], aim[1], aim[2]);
-    lensLight.intensity = 0.4 + 0.7 * gleam;
+    lensLight.intensity = 0.35 + 0.65 * gleam;
   };
   // The camera at real time t, from the path worked out above.
   const cameraAt = t => {
@@ -1472,9 +1477,9 @@ async function buildIntro(opts, undo, teardown) {
       const far = Math.hypot(pose.p[0] - camera.position.x, pose.p[1] - camera.position.y, pose.p[2] - camera.position.z) / s;
       const kg = 1 - smoother((far - 48) / 55);
       d.mat.envMapIntensity = 0.3 + 2.0 * kg;
-      d.mat.clearcoat = kg;
-      d.mat.specularIntensity = 0.25 + 0.6 * kg;
-      d.mat.roughness = 0.13 + 0.4 * (1 - kg);
+      d.mat.clearcoat = 0.7 * kg;
+      d.mat.specularIntensity = 0.25 + 0.35 * kg;
+      d.mat.roughness = 0.16 + 0.36 * (1 - kg);
     }
     // Stick.
     if (stick) {
@@ -1507,6 +1512,9 @@ async function buildIntro(opts, undo, teardown) {
         sc.ring.scale.setScalar(1 + 11 * (1 - Math.pow(1 - kk, 3)));
       });
     }
+    // The rim light is for the strike: once the dice have come to rest it
+    // eases down, or a face square to it would flash white into the lens.
+    if (!plan.edge) rim.intensity = RIM * (1 - 0.72 * smoother((w - plan.restW) / 0.8));
     // Edge: the room goes dark round the pinned die as the lens closes in.
     if (plan.edge) {
       const e = dicePose(plan, plan.edge.die, w).p;
