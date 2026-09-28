@@ -57,19 +57,25 @@ const SLOTS = { cols: 3, gapX: 1.3, gapZ: 2.4, max: 9 };
 const LAYOUT = {
   card: {
     view: [{ eye: [0, 54, -22], aim: [0, 0, 21], fov: 50 }, { eye: [0, 46, -24], aim: [0, 0, 25], fov: 40 }],
-    z0: 16.5, rail: { y: 7.2, z: -4.2, tilt: 28 }, shoe: [-16, 55], discard: [16, 55],
+    z0: 16.5, rail: { y: 7.2, z: -4.2, tilt: 28 }, shoe: [-12, 54], discard: [16, 55],
     // the phone at rest: [x, y] in the view (-1..1), and its distance, cm
     // (it rides in a layer of its own, over the table's)
     phone: [0.8, -1.24, 40]
   },
   craps: {
     view: [{ eye: [0, 60, -20], aim: [0, 0, 36], fov: 50 }, { eye: [0, 54, -22], aim: [0, 0, 40], fov: 40 }],
-    z0: 25, rail: { y: 26.4, z: -4.4, tilt: 34, scale: 54 }, shoe: [-17, 50], discard: [17, 50],
+    z0: 25, rail: { y: 26.4, z: -4.4, tilt: 34, scale: 54 }, shoe: [-13, 50], discard: [17, 50],
     phone: [0.8, -1.24, 40]
   }
 };
 // The shot's timings (seconds from the tap).
-const T = { cardFly: 4.8, crapsFly: 3.9, uiIn: 0.6, dealGap: 0.17, dealDur: 0.46, flipGap: 0.15, flipDur: 0.4 };
+const T = { cardFly: 4.8, crapsFly: 3.9, uiIn: 0.6 };
+// The deal, by the dealer's hand: seconds per card, and its phases - the
+// reach to the shoe, the pull out of it, the carry to the card's place
+// (face down, a length short of it), the settle onto its near edge, the push
+// that lifts it over onto its face-up place, and the fall it finishes on
+// its own while the hand goes back for the next.
+const DEAL = { each: 1.25, reach: 0.12, pull: 0.1, carry: 0.36, settle: 0.14, push: 0.14, fall: 0.22 };
 const TIERS = ['S', 'A', 'B', 'C', 'D', 'F'];
 const SUITS = ['♠', '♥', '♦', '♣'];
 
@@ -420,6 +426,45 @@ function buildDiscard(set) {
   }
   return g;
 }
+// The dealer's right hand: a white cotton glove, a black sleeve. Its frame
+// is at the fingertips - +z along the fingers, +y the back of the hand, +x
+// the thumb's side - so a pose is where the fingertips are and which way
+// they point. The fingers lie flat to slide under a card's end; the thumb
+// stands off to the side, clear of the card.
+function buildHand() {
+  const g = new THREE.Group();
+  const glove = new THREE.MeshStandardMaterial({ color: 0xf3efe6, roughness: 0.86 });
+  const cloth = new THREE.MeshStandardMaterial({ color: 0x141212, roughness: 0.92 });
+  const along = (mesh, a, b) => {
+    // (a capsule stands along y: laid from a to b)
+    const d = b.clone().sub(a), l = d.length();
+    mesh.quaternion.setFromUnitVectors(V(0, 1, 0), d.normalize());
+    mesh.position.copy(a).lerp(b, 0.5);
+    mesh.userData.len = l;
+    return mesh;
+  };
+  const capsule = (r, len, mat) => { const m = new THREE.Mesh(new THREE.CapsuleGeometry(r, len, 4, 12), mat); m.castShadow = true; return m; };
+  // the fingers, tips at the origin, lying back along -z, a little curled
+  [[2.3, 0.05, 0.3], [0.8, 0.2, 0], [-0.8, 0.15, 0], [-2.3, 0, 0.9]].forEach(([x, dy, back]) => {
+    g.add(along(capsule(0.78, 4.4, glove), V(x, 0.78 + dy, -back - 0.4), V(x, 1.35 + dy, -back - 6.2)));
+  });
+  const palm = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), glove);
+  palm.scale.set(3.6, 1.05, 3.6); palm.position.set(0, 1.35, -8.6); palm.castShadow = true; g.add(palm);
+  const knuckles = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), glove);
+  knuckles.scale.set(3.5, 0.9, 1.4); knuckles.position.set(0, 1.4, -6.2); g.add(knuckles);
+  g.add(along(capsule(0.82, 4.2, glove), V(3.3, 0.9, -8.4), V(5.6, 0.7, -4.2)));
+  // the cuff and the sleeve, back to the elbow (rising a little, out of the shot)
+  const cuff = new THREE.Mesh(new THREE.CylinderGeometry(2.7, 2.6, 1.6, 20), glove);
+  cuff.rotation.x = Math.PI / 2; cuff.position.set(0, 1.5, -12.6); g.add(cuff);
+  const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 2.5, 34, 20), cloth);
+  along(sleeve, V(0, 1.6, -13), V(0, 8.5, -46.3)); sleeve.castShadow = true; g.add(sleeve);
+  return g;
+}
+// A hand pose: fingertips at p, fingers along z, the back of the hand up y.
+function handPose(p, z, y) {
+  const zz = z.clone().normalize(), xx = y.clone().cross(zz).normalize(), yy = zz.clone().cross(xx);
+  return { p: p.clone(), q: new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(xx, yy, zz)) };
+}
 // The phone is all page elements (its frame too - see .r3t-phone): it is
 // always in front of the table, and a WebGL body under a page-element
 // screen could be painted over by the rail's panel. This is just its
@@ -475,7 +520,7 @@ function cardHTML(c) {
       <div class="r3t-meta"><span class="r3t-state">${esc(shown)}</span></div>
       <div class="r3t-sheen"></div>
     </div>
-    <div class="r3t-face r3t-back"></div>
+    <div class="r3t-face r3t-back t-${tier}"><div class="r3t-bk-frame"></div><div class="r3t-bk-seal"></div><div class="r3t-sheen"></div></div>
   </div><span class="r3t-sr">${esc(label)}</span>`;
 }
 function railHTML() {
@@ -578,14 +623,26 @@ export async function prepareTable(opts) {
   // (a box's mouth is its -z face: turned toward where the cards will lie)
   const faceToward = (obj, x, z, tx, tz) => { obj.position.set(x, 0, z); obj.rotation.y = Math.atan2(-(tx - x), -(tz - z)); };
   const shoe = buildShoe(set);
-  faceToward(shoe, L.shoe[0], L.shoe[1], 0, L.z0 + 4);
+  // (the shoe's mouth is toward the dealer, who draws the cards by their
+  // end: L.shoe is where the mouth is, the body lies back from it)
+  faceToward(shoe, L.shoe[0], L.shoe[1], L.shoe[0] + 3, L.shoe[1] + 15);
+  shoe.position.sub(V(0, 0, -11.6).applyAxisAngle(V(0, 1, 0), shoe.rotation.y));
   const discard = buildDiscard(set);
   faceToward(discard, L.discard[0], L.discard[1], 0, L.z0 + 6);
   // The phone isn't on the table: it's yours, half out of your pocket at
   // the bottom right of the view, and pulled up in front of you on a tap.
   const phone = buildPhone();
   seat.add(shoe, discard, phone);
+  // (the hand itself is drawn over the cards - see fly - so it is never
+  // painted under a card it is on; this is only its shadow on the felt)
+  const handShadow = new THREE.Mesh(new THREE.PlaneGeometry(16, 22), new THREE.MeshBasicMaterial({ map: canvasTex(128, 128, (c, W, H) => { const g = c.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, W / 2); g.addColorStop(0, 'rgba(0,0,0,0.9)'); g.addColorStop(0.45, 'rgba(0,0,0,0.5)'); g.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = g; c.fillRect(0, 0, W, H); }), transparent: true, depthWrite: false, opacity: 0 }));
+  handShadow.rotation.x = -Math.PI / 2; handShadow.position.y = 0.02; handShadow.renderOrder = 2;
+  seat.add(handShadow);
   const shoeMouth = V(0, 0.9, -11.6).applyAxisAngle(V(0, 1, 0), shoe.rotation.y).add(shoe.position);
+  const mouthDir = V(0, 0, -1).applyAxisAngle(V(0, 1, 0), shoe.rotation.y);
+  // (a card in the shoe lies with its top inward: the dealer draws it by
+  // its bottom end, and turns it over its far edge onto its place)
+  const yawShoe = Math.atan2(-mouthDir.x, -mouthDir.z);
 
   // The lamp comes up while the intro floats, so the table is there, lit,
   // before the camera turns toward it.
@@ -633,10 +690,32 @@ export async function prepareTable(opts) {
       const w = world.host.clientWidth || window.innerWidth, h = world.host.clientHeight || window.innerHeight;
       css.setSize(w, h);
       phoneCss.setSize(w, h);
+      if (typeof sizeHand === 'function') sizeHand(w, h);
       return w / h;
     };
+    // The dealer's hand has a canvas of its own over the cards (the cards
+    // are page elements, always painted over the table's canvas, and the
+    // hand is on top of the cards it deals), under the phone in yours.
+    const handGL = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: 'low-power' });
+    handGL.setPixelRatio(world.pixelRatio || 1);
+    handGL.toneMapping = renderer.toneMapping; handGL.toneMappingExposure = renderer.toneMappingExposure;
+    handGL.outputColorSpace = renderer.outputColorSpace;
+    handGL.domElement.className = 'r3t-hand';
+    const handScene = new THREE.Scene();
+    const handSeat = new THREE.Group();
+    handSeat.position.copy(seat.position); handSeat.quaternion.copy(seat.quaternion);
+    const dealer = buildHand();
+    handSeat.add(dealer);
+    handScene.add(handSeat);
+    {
+      const key = new THREE.DirectionalLight(0xffeedd, 2.4); key.position.set(-8, 40, 12); handSeat.add(key, key.target);
+      const fill = new THREE.DirectionalLight(0xc9d2e6, 0.5); fill.position.set(6, 10, -30); handSeat.add(fill, fill.target);
+      handScene.add(new THREE.HemisphereLight(0xfff0e0, 0x1a1410, 0.5));
+    }
+    const sizeHand = (w, h) => handGL.setSize(w, h, false);
     let aspect = size();
     stageEl.appendChild(css.domElement);
+    css.domElement.appendChild(handGL.domElement);
     css.domElement.appendChild(phoneCss.domElement);
 
     // Where the camera sits, and what it looks at, in the seat's frame.
@@ -707,7 +786,7 @@ export async function prepareTable(opts) {
       el.tabIndex = 0;
       el.innerHTML = cardHTML(c);
       el.dataset.id = c.id;
-      const obj = add(el, shoeMouth.clone(), lying(new THREE.Quaternion(), { flip: Math.PI }), 1 / CARD.px);
+      const obj = add(el, shoeMouth.clone().addScaledVector(mouthDir, -4), lying(new THREE.Quaternion(), { yaw: yawShoe, flip: Math.PI }), 1 / CARD.px);
       obj.userData = { card: c, slot: slotAt(i), yaw: ((hash(c.name || '') % 7) - 3) * 0.6 * DEG, i };
       el.style.visibility = 'hidden';
       return obj;
@@ -753,9 +832,8 @@ export async function prepareTable(opts) {
 
     // ---- The timeline, in seconds from the tap.
     const dealAt = FLY + T.uiIn;
-    const landAt = i => dealAt + i * T.dealGap + T.dealDur;
-    const flipAt = i => landAt(cards.length - 1) + 0.18 + i * T.flipGap;
-    const settleAt = cards.length ? flipAt(cards.length - 1) + T.flipDur + 0.05 : dealAt;
+    const cardAt = i => dealAt + i * DEAL.each;
+    const settleAt = cards.length ? cardAt(cards.length - 1) + DEAL.each + 0.55 : dealAt;
     const introT0 = world.t;
     let phoneK = 0, phoneTarget = 0, phoneFrom = 0, phoneT0 = 0;
     let focusId = null;
@@ -785,32 +863,112 @@ export async function prepareTable(opts) {
       camera.updateProjectionMatrix();
       camera.updateMatrixWorld();
     };
-    const slotQ = (obj, flipK) => lying(tmpQ, { yaw: obj.userData.yaw, flip: Math.PI * (1 - flipK) });
+    // Each card: in the shoe until its pull; drawn out by its end, face
+    // down, its top toward the player; carried over to lie a length short
+    // of its place; then flipped over its far edge onto it, face up and
+    // the right way up. The hand is on top of the card throughout.
+    const inShoe = shoeMouth.clone().addScaledVector(mouthDir, -4);
+    const pulled = shoeMouth.clone().addScaledVector(mouthDir, 1.6);
+    const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
+    const topOf = obj => V(Math.sin(obj.userData.yaw), 0, Math.cos(obj.userData.yaw));
+    // where the card lies face down, and the edge it turns over
+    const layAt = obj => obj.userData.slot.clone().addScaledVector(topOf(obj), CARD.h);
+    const flipAxis = obj => { const top = topOf(obj); return { pt: obj.userData.slot.clone().addScaledVector(top, CARD.h / 2), axis: top.clone().cross(up).normalize(), top }; };
+    const stages = i => { const t0 = cardAt(i) + DEAL.reach, t1 = t0 + DEAL.pull, t2 = t1 + DEAL.carry, t3 = t2 + DEAL.settle, t4 = t3 + DEAL.push, t5 = t4 + DEAL.fall; return { t0, t1, t2, t3, t4, t5 }; };
+    // the card's turn: angle a over its far edge (0 flat face down, pi flat face up)
+    const turned = (obj, a, out) => {
+      const { pt, axis, top } = flipAxis(obj);
+      const R = new THREE.Quaternion().setFromAxisAngle(axis, a);
+      out.p.copy(pt).add(V(0, 0, 0).copy(top).multiplyScalar(CARD.h / 2).applyQuaternion(R));
+      lying(out.q, { yaw: obj.userData.yaw + Math.PI, flip: Math.PI }).premultiply(R);
+      return out;
+    };
+    const cardPose = { p: V(0, 0, 0), q: new THREE.Quaternion() };
     const poseCards = tt => {
       cardObjs.forEach((obj, i) => {
-        const t0 = dealAt + i * T.dealGap, t1 = t0 + T.dealDur;
+        const { t0, t1, t2, t3, t4, t5 } = stages(i);
         const el = obj.element;
         if (tt < t0) { el.style.visibility = 'hidden'; return; }
         el.style.visibility = 'visible';
-        const k = easeOut((tt - t0) / T.dealDur, 2.6);
-        const s = obj.userData.slot;
-        // out of the shoe, skimming low and spinning square as it lands
-        const p = shoeMouth.clone().lerp(s, k);
-        p.y += Math.sin(Math.PI * clamp01((tt - t0) / T.dealDur)) * 3.2 + (1 - k) * 0.4;
-        const fk = smoother((tt - flipAt(i)) / T.flipDur);
-        p.y += Math.sin(Math.PI * fk) * 2.6;
+        const p = cardPose.p, q = cardPose.q;
+        if (tt < t1) {
+          const k = easeOut((tt - t0) / DEAL.pull, 2);
+          p.copy(inShoe).lerp(pulled, k); p.y += 0.3 * k;
+          lying(q, { yaw: yawShoe, flip: Math.PI });
+        } else if (tt < t3) {
+          const k = easeInOut(clamp01((tt - t1) / DEAL.carry));
+          p.copy(pulled).lerp(layAt(obj), k);
+          p.y += Math.sin(Math.PI * k) * 3.4 + (1 - k) * 0.3;
+          lying(q, { yaw: yawShoe + wrap(obj.userData.yaw + Math.PI - yawShoe) * k, flip: Math.PI });
+        } else if (tt < t4) {
+          turned(obj, 62 * DEG * smoother((tt - t3) / DEAL.push), cardPose);
+        } else {
+          // over it goes, quickening, with a small bounce at the end
+          const k = clamp01((tt - t4) / DEAL.fall);
+          const a = 62 * DEG + (Math.PI - 62 * DEG) * Math.pow(k, 1.7);
+          turned(obj, a, cardPose);
+          if (tt >= t5) { const b = tt - t5; p.y += Math.max(0, 0.9 * Math.sin(b * 22) * Math.exp(-b * 9)); }
+        }
         const L = lift.get(obj.userData.card.id);
         if (L) {
           const lk = smoother(L[2] + (L[1] - L[2]) * clamp01((tt - L[3]) / 0.35));
           L[0] = lk;
           p.y += lk * 5; p.z -= lk * 3.2;
+          // (tipped up toward you about its own width)
+          q.multiply(_q2.setFromAxisAngle(V(1, 0, 0), L[0] * 34 * DEG));
         }
         obj.position.copy(p);
-        const spin = (1 - k) * 0.9;
-        lying(obj.quaternion, { yaw: obj.userData.yaw + spin, flip: Math.PI * (1 - fk), tilt: L ? L[0] * 34 * DEG : 0 });
-        el.classList.toggle('r3t-up', fk > 0.5);
-        void t1;
+        obj.quaternion.copy(q);
+        el.classList.toggle('r3t-up', V(0, 0, 1).applyQuaternion(q).y > 0);
       });
+    };
+    // The dealer's hand: at rest by the chip tray; over the shoe between
+    // cards; on each card from its pull to its push, flat on its back with
+    // the fingertips a little in from the end it holds.
+    const REST = handPose(V(-8, 6, 92), V(0.15, -0.3, -1), up);
+    const gripAt = shoeMouth.clone().addScaledVector(mouthDir, 0.6); gripAt.y = shoeMouth.y + 0.95;
+    const HOVER = handPose(gripAt.clone().addScaledVector(mouthDir, 2.5).add(V(0, 4.5, 0)), mouthDir.clone().negate().add(V(0, -0.5, 0)), up);
+    const GRIP = handPose(gripAt, mouthDir.clone().negate().add(V(0, -0.08, 0)), up);
+    const onCard = (obj, inFrom) => {
+      // the card's "end" the hand holds is its local bottom: the dealer's
+      // side (the card's top is toward the player until it is turned)
+      const q = obj.quaternion, p = obj.position;
+      const end = V(0, -1, 0).applyQuaternion(q), back = V(0, 0, -1).applyQuaternion(q);
+      return handPose(p.clone().addScaledVector(end, CARD.h / 2 - inFrom).addScaledVector(back, 0.95), end.clone().negate(), back);
+    };
+    const mixPose = (a, b, k) => ({ p: a.p.clone().lerp(b.p, k), q: a.q.clone().slerp(b.q, k) });
+    const poseHand = tt => {
+      const n = cardObjs.length;
+      let pose = REST;
+      if (n && tt >= dealAt - 0.5) {
+        const last = cardAt(n - 1) + DEAL.each;
+        if (tt < dealAt) pose = mixPose(REST, HOVER, smoother((tt - (dealAt - 0.5)) / 0.5));
+        else if (tt >= last) pose = mixPose(HOVER, REST, smoother((tt - last) / 0.55));
+        else {
+          const i = Math.min(n - 1, Math.floor((tt - dealAt) / DEAL.each)), obj = cardObjs[i];
+          const { t0, t4 } = stages(i);
+          const s0 = cardAt(i);
+          if (tt < t0) pose = mixPose(HOVER, GRIP, smoother((tt - s0) / DEAL.reach));
+          else if (tt < t4) pose = onCard(obj, 1.6);
+          else {
+            // the card goes on without the hand, which lifts away and turns
+            // back for the shoe
+            const at = { p: V(0, 0, 0), q: new THREE.Quaternion() };
+            turned(obj, 62 * DEG, at);
+            const held = onCard({ position: at.p, quaternion: at.q }, 1.6);
+            const k = clamp01((tt - t4) / (DEAL.each - (t4 - s0)));
+            const away = { p: held.p.clone().add(V(0, 3.5, 0)).addScaledVector(topOf(obj), 3), q: held.q };
+            pose = k < 0.35 ? mixPose(held, away, smoother(k / 0.35)) : mixPose(away, HOVER, smoother((k - 0.35) / 0.65));
+          }
+        }
+      }
+      dealer.position.copy(pose.p);
+      dealer.quaternion.copy(pose.q);
+      // its shadow on the felt, under the palm, fading as the hand rises
+      const palm = V(0, 1.2, -8.6).applyQuaternion(pose.q).add(pose.p);
+      handShadow.position.set(palm.x, 0.02, palm.z);
+      handShadow.rotation.z = Math.atan2(V(0, 0, 1).applyQuaternion(pose.q).x, V(0, 0, 1).applyQuaternion(pose.q).z);
+      handShadow.material.opacity = 0.5 * clamp01(1 - (palm.y - 1.2) / 14) * (tt >= dealAt - 0.5 ? 1 : 0);
     };
     // The phone, placed in the camera's own frame (it rides with the view):
     // at rest low at the bottom right, leaning back, its top third showing;
@@ -853,6 +1011,7 @@ export async function prepareTable(opts) {
       // the intro's own world keeps time (the stick still drawing the dice)
       world.stage(introT0 + tt);
       poseCards(tt);
+      poseHand(tt);
       placePhone(tt);
       const uiK = clamp01((tt - FLY + 0.1) / T.uiIn);
       css.domElement.style.setProperty('--r3t-in', uiK.toFixed(3));
@@ -862,6 +1021,7 @@ export async function prepareTable(opts) {
     const draw = () => {
       if (world.composer) world.composer.render(); else renderer.render(scene, camera);
       css.render(cssScene, camera);
+      handGL.render(handScene, camera);
       phoneCss.render(phoneScene, camera);
     };
     const busyUntil = () => Math.max(settleAt, phoneT0 + 0.6, ...[...lift.values()].map(L => L[3] + 0.4));
@@ -922,6 +1082,7 @@ export async function prepareTable(opts) {
         disposed = true; running = false; cancelAnimationFrame(raf);
         clearInterval(clock);
         window.removeEventListener('resize', onResize);
+        handGL.dispose();
         css.domElement.remove();
       }
     };

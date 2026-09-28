@@ -160,7 +160,7 @@ function makeWarp(wallW) {
 // the dice, sets the hook down beyond them and draws them back to himself.
 // The hook is a moving body in the physics, so the dice are pushed by it -
 // sliding, bumping each other - rather than carried.
-const HOOK = { rc: 4.2, cap: 0.28, lift: 3.8, pull: 32, glide: 3.2 };
+const HOOK = { rc: 4.2, cap: 0.28, lift: 3.8, pull: 32, glide: 4.5 };
 // The shaft leans 11 degrees off the felt, and stands steeper as the hook
 // comes toward the rail, so it always clears the cushion (SHAFT.clear cm
 // above the felt); the glide after the draw stops where the shaft would
@@ -212,7 +212,7 @@ function hookFoot(line, rest) {
   return foot - 0.35;
 }
 function makeHookPath(line, foot, s0, draw, reach) {
-  const T = { approach: [s0, s0 + 1.05], set: [s0 + 1.05, s0 + 1.4], pull: [s0 + 1.5, s0 + 3.7] };
+  const T = { approach: [s0, s0 + 0.9], set: [s0 + 0.9, s0 + 1.2], pull: [s0 + 1.28, s0 + 2.5] };
   // After the draw the stick keeps coming - slowly, drawing the dice on
   // toward the stickman - and eases to rest `reach` cm further on. The
   // glide starts under the draw, so the stick never stops and restarts.
@@ -352,7 +352,7 @@ function planFromThrow(tier, seed, best) {
   // What follows the landing.
   if (wantsStick) {
     const line = stickLine(rest) || { U: [1, 0, 0], X: [0, 0, 1], sc: (rest[0].p[2] + rest[1].p[2]) / 2 };
-    const s0 = restW + 1.2;
+    const s0 = restW + 0.9;
     const foot = hookFoot(line, rest);
     const run = hookRun(line, foot);
     const hp = makeHookPath(line, foot, s0, run.draw, run.reach);
@@ -830,7 +830,7 @@ async function buildIntro(opts, undo, teardown) {
   const brass = new THREE.MeshStandardMaterial({ color: 0xd8ae58, metalness: 1, roughness: 0.27, envMapIntensity: 1.0 });
   // Gold filigree: a running scroll of acanthus in relief, between beaded
   // rules. One band texture, repeating along its length (TRIM.tile cm).
-  const gold = new THREE.MeshStandardMaterial({ map: goldC, alphaMap: goldA, alphaTest: 0.5, normalMap: goldN, normalScale: new THREE.Vector2(1.3, 1.3), metalness: 1, roughness: 0.28, envMapIntensity: 1.4, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  const gold = new THREE.MeshStandardMaterial({ map: goldC, alphaMap: goldA, alphaTest: 0.5, normalMap: goldN, normalScale: new THREE.Vector2(1.3, 1.3), metalness: 1, roughness: 0.34, envMapIntensity: 1.05, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   // figured walnut under a satin lacquer (UVs in cm: 60 along the grain, 15 across)
   const wood = new THREE.MeshPhysicalMaterial({ map: walnut, normalMap: walnutN, normalScale: new THREE.Vector2(0.35, 0.35), color: 0x8a6e60, roughness: 0.42, clearcoat: 0.65, clearcoatRoughness: 0.18 });
   const WOOD_TILE = [60, 15];
@@ -1237,7 +1237,7 @@ async function buildIntro(opts, undo, teardown) {
     // enough for both, the aim leans toward the die nearer the lens, so one
     // is always held. Both are eased (held ahead a little, then smoothed),
     // so the camera moves before a die reaches the edge, never after.
-    const PULL = 16, M = 0.8, R = 1.6;
+    const PULL = 55, M = 0.8, R = 1.6;
     const inWin = k => { const t = k * CAM_DT; return t > Rwall - 0.15 && t < Rrest + 0.3; };
     const basis = k => {
       const e = camEye.subarray(k * 3, k * 3 + 3), A = camAim.subarray(k * 3, k * 3 + 3);
@@ -1267,6 +1267,16 @@ async function buildIntro(opts, undo, teardown) {
       const held = arr.map((_, k) => { let m = 0; for (let j = Math.max(0, k - hold); j <= Math.min(camN - 1, k + hold); j++) m = Math.max(m, arr[j]); return m; });
       return held.map((_, k) => { let a = 0, n = 0; for (let j = -2 * soft; j <= 2 * soft; j++) { const i = k + j; if (i < 0 || i >= camN) continue; const g = Math.exp(-(j * j) / (2 * soft * soft)); a += held[i] * g; n += g; } return (a / n) * fence(k); });
     };
+    // 0. the whole close-up on the dice, from the throw to the landing,
+    // stands a quarter further back (same move, same view, smaller dice),
+    // and the pull below may back the lens off up to PULL cm more: the aim
+    // stays between the two dice and both stay in the frame, rather than
+    // the lens chasing one of them
+    for (let k = 0; k < camN; k++) {
+      const { e, A } = basis(k), tt = k * CAM_DT;
+      const zf = 1 + 0.25 * smoother((tt - Rrel) / Math.max(0.1, Rwall - Rrel)) * (1 - smoother((tt - (Rrest + 0.3)) / 0.8));
+      if (zf > 1.0001) for (let j = 0; j < 3; j++) e[j] = A[j] + (e[j] - A[j]) * zf;
+    }
     // 1. the lean, where pulling back PULL cm would not be enough. It
     // follows one die for the whole strike (the one nearer the lens over
     // it), never swapping between them mid-shot.
@@ -1299,11 +1309,6 @@ async function buildIntro(opts, undo, teardown) {
         const bk = [e[0] - A[0], e[1] - A[1], e[2] - A[2]], bl = Math.hypot(...bk) || 1;
         for (let j = 0; j < 3; j++) e[j] += (bk[j] / bl) * pull[k];
       }
-      // 3. the whole close-up on the dice, from the throw to the landing,
-      // stands a fifth further back (same move, same view, smaller dice)
-      const tt = k * CAM_DT;
-      const zf = 1 + 0.2 * smoother((tt - Rrel) / Math.max(0.1, Rwall - Rrel)) * (1 - smoother((tt - (Rrest + 0.3)) / 0.8));
-      if (zf > 1.0001) for (let j = 0; j < 3; j++) e[j] = A[j] + (e[j] - A[j]) * zf;
       e[1] = Math.max(e[1], 2.5);
       // 4. the ceiling: the float rises into it and rests there
       if (e[1] > CEIL - 20) e[1] = CEIL - 20 * Math.exp(-(e[1] - (CEIL - 20)) / 20);
@@ -1397,7 +1402,7 @@ async function buildIntro(opts, undo, teardown) {
     const back = new THREE.Vector3(eye[0] - aim[0], eye[1] - aim[1], eye[2] - aim[2]).normalize();
     lensLight.position.set(eye[0] + back.x * 18, eye[1] + back.y * 18 + 14, eye[2] + back.z * 18);
     lensLight.target.position.set(aim[0], aim[1], aim[2]);
-    lensLight.intensity = 0.5 + 1.0 * gleam;
+    lensLight.intensity = 0.4 + 0.7 * gleam;
   };
   // The camera at real time t, from the path worked out above.
   const cameraAt = t => {
@@ -1452,12 +1457,22 @@ async function buildIntro(opts, undo, teardown) {
         pose = { p: [pose.p[0], VIS_ROUND - low, pose.p[2]], q };
       }
       setPose(d.g, pose.p, pose.q);
-      const shown = w >= P.RELEASE.t - 0.07 && !(burst > 0.06);
+      // (out of the cup only once they have left its mouth)
+      const shown = w >= P.RELEASE.t && !(burst > 0.06);
       d.g.visible = shown;
       const s = burst > 0 ? 1 + burst * 5 : 1;
       d.g.scale.setScalar(s);
       d.mat.emissiveIntensity = glow * 0.8;
       d.glow.intensity = glow * 3.5;
+      // Seen from afar a die is a few pixels, and its glass-hard gloss and
+      // the studio in it average out to a pale pink: the gloss goes as the
+      // lens pulls back, leaving the resin's own red.
+      const far = Math.hypot(pose.p[0] - camera.position.x, pose.p[1] - camera.position.y, pose.p[2] - camera.position.z) / s;
+      const kg = 1 - smoother((far - 48) / 55);
+      d.mat.envMapIntensity = 0.3 + 2.0 * kg;
+      d.mat.clearcoat = kg;
+      d.mat.specularIntensity = 0.25 + 0.75 * kg;
+      d.mat.roughness = 0.03 + 0.5 * (1 - kg);
     }
     // Stick.
     if (stick) {
@@ -1723,7 +1738,7 @@ async function buildIntro(opts, undo, teardown) {
     finish: still,
     // A look at the running scene (the table builds into it while the
     // intro floats), without stopping anything.
-    peek() { return { scene, renderer, camera }; },
+    peek() { return { scene, renderer, camera, composer, bloom, dbg: { camEye, camAim, CAM_DT, W, plan, dicePose } }; },
     // The fly-in takes the scene over: the loop stops and the set, the
     // renderer and the camera are handed on, as they are this moment.
     release() {
