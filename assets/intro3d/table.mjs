@@ -51,11 +51,12 @@ const CARD = { w: 6.35, h: 8.89, px: 50 };
 // Where the dealt cards lie: three to a row, rows away from the player.
 const SLOTS = { cols: 3, gapX: 1.3, gapZ: 2.4, max: 9 };
 // The destination's layout in its seat frame: the seat camera (portrait,
-// landscape), the first row of cards, the rail's panel, the shoe and the
-// discard rack.
+// landscape - on a phone, wide enough to hold the whole chip rack and the
+// dealer's arm at work above the cards), the first row of cards, the
+// rail's panel, the shoe and the discard rack.
 const LAYOUT = {
   card: {
-    view: [{ eye: [0, 54, -22], aim: [0, 0, 21], fov: 50 }, { eye: [0, 46, -24], aim: [0, 0, 25], fov: 40 }],
+    view: [{ eye: [0, 54, -22], aim: [0, 0, 24], fov: 54 }, { eye: [0, 46, -24], aim: [0, 0, 27], fov: 44 }],
     z0: 18.5, rail: { x: 3.4, y: 7.2, z: -4.2, tilt: 28 }, shoe: [-15.5, 54], discard: [16, 55]
   }
 };
@@ -196,6 +197,34 @@ function canvasTex(w, h, paint) {
   t.anisotropy = 8;
   return t;
 }
+// A normal map from white-on-black artwork (a canvas): its strokes raised,
+// their edges softened over a few pixels first, `strength` how steep.
+function embossTex(src, strength) {
+  const W = src.width, H = src.height;
+  const a = src.getContext('2d').getImageData(0, 0, W, H).data;
+  let h = new Float32Array(W * H), t = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) h[i] = a[i * 4 + 1] / 255;
+  // (a box blur, twice, across then down)
+  const R = 2;
+  for (let pass = 0; pass < 2; pass++) {
+    for (let y = 0; y < H; y++) { let acc = 0; for (let x = -R; x <= R; x++) acc += h[y * W + Math.min(W - 1, Math.max(0, x))]; for (let x = 0; x < W; x++) { t[y * W + x] = acc / (2 * R + 1); acc += h[y * W + Math.min(W - 1, x + R + 1)] - h[y * W + Math.max(0, x - R)]; } }
+    for (let x = 0; x < W; x++) { let acc = 0; for (let y = -R; y <= R; y++) acc += t[Math.min(H - 1, Math.max(0, y)) * W + x]; for (let y = 0; y < H; y++) { h[y * W + x] = acc / (2 * R + 1); acc += t[Math.min(H - 1, y + R + 1) * W + x] - t[Math.max(0, y - R) * W + x]; } }
+  }
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const ctx = c.getContext('2d'), img = ctx.createImageData(W, H), d = img.data;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x;
+    const dx = (h[y * W + Math.min(W - 1, x + 1)] - h[y * W + Math.max(0, x - 1)]) * strength;
+    const dy = (h[Math.min(H - 1, y + 1) * W + x] - h[Math.max(0, y - 1) * W + x]) * strength;
+    const l = Math.hypot(dx, dy, 1);
+    // (canvas y runs down, a normal map's green up)
+    d[i * 4] = (-dx / l * 0.5 + 0.5) * 255; d[i * 4 + 1] = (dy / l * 0.5 + 0.5) * 255; d[i * 4 + 2] = (1 / l * 0.5 + 0.5) * 255; d[i * 4 + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.NoColorSpace; tex.anisotropy = 16;
+  return tex;
+}
 // A rounded rectangle as a Shape (centred), for the phone and the tray.
 function roundRect(w, h, r) {
   const s = new THREE.Shape(), x = -w / 2, y = -h / 2;
@@ -247,6 +276,11 @@ function buildCardTable(set) {
   const shape = new THREE.Shape();
   rim.forEach(([x, z], i) => (i ? shape.lineTo(x, -z) : shape.moveTo(x, -z)));
   shape.closePath();
+  // (the dealer's port: a hole through the felt and the table, closed by
+  // its iris - see buildPort)
+  const hole = new THREE.Path();
+  hole.absarc(PORT.x, -PORT.z, PORT.r, 0, Math.PI * 2, true);
+  shape.holes.push(hole);
   const feltMat = set.felt.clone();
   feltMat.normalMap = retile(set.tex.feltN, 1, 1);
   const feltGeo = scaleUV(new THREE.ShapeGeometry(shape, 48), 1 / 8, 1 / 8);
@@ -284,10 +318,25 @@ function buildCardTable(set) {
   const lineGeo = sweep(rim, [[12.85, -3.0], [13.05, -3.0], [13.05, -3.5], [12.85, -3.5]], 30);
   g.add(new THREE.Mesh(lineGeo, set.brass));
   // The gold filigree inlaid round the felt, inside the rail.
+  // (blended at its edges, not cut at a threshold: cut, its fine scrolls
+  // break up into a shimmer of jagged pixels as the rail recedes)
   const satinGold = set.gold.clone();
   satinGold.roughness = 0.5; satinGold.envMapIntensity = 0.6; satinGold.color = new THREE.Color(0.82, 0.78, 0.72);
+  satinGold.alphaTest = 0; satinGold.transparent = true; satinGold.depthWrite = false;
   const goldBand = new THREE.Mesh(strip(rim, -2.6, -5.0, 0.012, 19.2), satinGold);
-  goldBand.receiveShadow = true; g.add(goldBand);
+  goldBand.receiveShadow = true; goldBand.renderOrder = 1; g.add(goldBand);
+  // a brass line let into the felt either side of it
+  [[-2.42, -2.54], [-5.06, -5.18]].forEach(([o0, o1]) => { const l = new THREE.Mesh(strip(rim, o0, o1, 0.014, 20), set.brass); l.receiveShadow = true; g.add(l); });
+  // the rail's stitching: two rows of gold thread either side of its crest
+  const stitch = canvasTex(8, 64, (c, W, H) => { c.clearRect(0, 0, W, H); c.fillStyle = '#8f6f36'; c.fillRect(1, 14, W - 2, 34); c.fillStyle = 'rgba(214,180,110,0.7)'; c.fillRect(2, 16, W - 4, 8); });
+  stitch.wrapS = stitch.wrapT = THREE.RepeatWrapping;
+  const stitchMat = new THREE.MeshStandardMaterial({ map: stitch, transparent: true, alphaTest: 0.3, roughness: 0.75, metalness: 0.1, side: THREE.DoubleSide });
+  [66, 114].forEach(deg => {
+    const t0 = (deg - 0.7) * DEG, t1 = (deg + 0.7) * DEG;
+    const at = t => [5.6 + 5.82 * Math.cos(t), 3.1 + 4.32 * Math.sin(t)];
+    const row = new THREE.Mesh(sweep(rim, [at(t0), at(t1)], 0.5), stitchMat);
+    g.add(row);
+  });
   // The printed felt: a fine gold arc, the house line round it, the
   // wordmark by the dealer.
   // (alpha maps read the green channel: white ink on a black ground, so
@@ -339,6 +388,9 @@ function buildCardTable(set) {
   const ink = new THREE.Mesh(new THREE.PlaneGeometry(168, 84), inkMat);
   ink.rotation.x = -Math.PI / 2; ink.rotation.z = Math.PI; ink.position.set(0, 0.006, 38); ink.receiveShadow = true; g.add(ink);
   const markMat = inkMat.clone(); markMat.alphaMap = mark;
+  // (pressed into the felt: a normal map from the lettering's own edges, so
+  // the foil's raised strokes catch the lamp)
+  markMat.normalMap = embossTex(mark.image, 3.2); markMat.normalScale = new THREE.Vector2(1, 1);
   const markMesh = new THREE.Mesh(new THREE.PlaneGeometry(WM.w, WM.h), markMat);
   markMesh.rotation.x = -Math.PI / 2; markMesh.rotation.z = Math.PI; markMesh.position.set(0, 0.008, WM.z); markMesh.receiveShadow = true; g.add(markMesh);
   g.userData.mark = markMesh;
@@ -353,9 +405,13 @@ function buildCardTable(set) {
   return { group: g, rim, focus: [0, 0, 30] };
 }
 
-// The chip rack: a black lacquer well let into the dealer's bar, brass
-// rails and dividers, and stacks of chips whose faces are the house's
-// coins (assets/intro3d/icons, the chip's colour under the gold).
+// The chip float, as a dealer keeps it: a black lacquer rack let into the
+// dealer's bar, its top scalloped into ten troughs that run toward the
+// player, the chips standing on edge in them by colour - more of the small
+// ones, fewer of the large - each trough's value engraved on a brass strip
+// along the front, brass rails along the top. A chip is a clay disc with
+// eight inserts round its edge and the house's coin on its faces
+// (assets/intro3d/icons). All the chips of a colour are one instanced mesh.
 const CHIPS = ['onyx', 'oxblood', 'emerald', 'ivory', 'plum', 'gold'];
 const chipFaces = {};
 function chipFace(name) {
@@ -368,111 +424,347 @@ function chipFace(name) {
 }
 function chipTray(set) {
   const g = new THREE.Group();
-  const lacquer = new THREE.MeshPhysicalMaterial({ color: 0x0b0a0a, roughness: 0.28, clearcoat: 0.8, clearcoatRoughness: 0.12 });
-  const well = new THREE.Mesh(new THREE.BoxGeometry(63, 1.2, 10.4), lacquer);
-  well.position.y = 1.3; g.add(well);
-  // the rails along the front and back, and the dividers between stacks
-  [-5.5, 5.5].forEach(z => { const r = new THREE.Mesh(new THREE.BoxGeometry(64, 0.5, 0.7), set.brass); r.position.set(0, 2.1, z); g.add(r); });
-  [-32, 32].forEach(x => { const r = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.5, 11.7), set.brass); r.position.set(x, 2.1, 0); g.add(r); });
-  for (let k = 1; k < 12; k++) { const d = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.9, 10.4), set.brass); d.position.set(-30 + k * 5, 2.2, 0); g.add(d); }
-  const spots = { onyx: ['#101012', '#e8e2d2'], oxblood: ['#5b1622', '#f1e7d0'], emerald: ['#1d3a2a', '#f1e7d0'], ivory: ['#e6dfcb', '#6b1320'], plum: ['#3a2352', '#f1e7d0'], gold: ['#b58a2e', '#1a1208'] };
-  const mats = CHIPS.map(name => {
-    const [base, spot] = spots[name];
-    const side = canvasTex(256, 16, (c, W, H) => { c.fillStyle = base; c.fillRect(0, 0, W, H); c.fillStyle = spot; for (let k = 0; k < 6; k++) c.fillRect(k * 42.7 + 16, 0, 9, H); });
-    const sideM = new THREE.MeshStandardMaterial({ map: side, roughness: 0.5 });
-    const topM = new THREE.MeshStandardMaterial({ map: chipFace(name), roughness: 0.42, metalness: 0.15 });
-    return [sideM, topM, topM];
-  });
-  const chipGeo = new THREE.CylinderGeometry(1.95, 1.95, 0.33, 40);
-  for (let k = 0; k < 12; k++) {
-    const x = -27.5 + k * 5, m = mats[k % mats.length], n = 5 + ((k * 7) % 5);
-    for (let j = 0; j < n; j++) {
-      const chip = new THREE.Mesh(chipGeo, m);
-      chip.position.set(x + Math.sin(j * 2.1 + k) * 0.07, 1.9 + j * 0.34, Math.cos(j * 1.7 + k) * 0.07);
-      chip.rotation.y = j * 0.9 + k;
-      chip.castShadow = j === n - 1;
-      g.add(chip);
-    }
+  const lacquer = new THREE.MeshPhysicalMaterial({ color: 0x0b0a0a, roughness: 0.3, clearcoat: 0.9, clearcoatRoughness: 0.1 });
+  // (troughs deeper than their radius above the top: a chip stands in its
+  // trough to a little past half its height)
+  const TR = { n: 10, pitch: 5.95, r: 2.1, sink: 0.55, len: 10.4, h: 3.1 };
+  const W = TR.n * TR.pitch + 1.4;
+  // the rack: its section across the troughs, drawn and extruded along z
+  const prof = new THREE.Shape();
+  prof.moveTo(-W / 2, 0); prof.lineTo(W / 2, 0); prof.lineTo(W / 2, TR.h);
+  const cxOf = i => -W / 2 + 0.7 + TR.pitch * (i + 0.5);
+  for (let i = TR.n - 1; i >= 0; i--) {
+    const cx = cxOf(i);
+    const a0 = Math.asin(TR.sink / TR.r);
+    prof.lineTo(cx + TR.r * Math.cos(a0), TR.h);
+    prof.absarc(cx, TR.h - TR.sink, TR.r, a0, Math.PI - a0, true);
   }
+  prof.lineTo(-W / 2, TR.h); prof.closePath();
+  const rackGeo = new THREE.ExtrudeGeometry(prof, { depth: TR.len, bevelEnabled: true, bevelThickness: 0.12, bevelSize: 0.12, bevelSegments: 2, curveSegments: 18 });
+  rackGeo.translate(0, 0, -TR.len / 2);
+  const rack = new THREE.Mesh(rackGeo, lacquer); rack.receiveShadow = true; rack.castShadow = true;
+  rack.position.y = 0.4; g.add(rack);
+  const top = 0.4 + TR.h;
+  // brass: a rail along the back and the front of the top, end plates
+  [-1, 1].forEach(sz => { const r = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, W + 0.2, 12), set.brass); r.rotation.z = Math.PI / 2; r.position.set(0, top + 0.06, sz * (TR.len / 2 + 0.05)); g.add(r); });
+  [-1, 1].forEach(sx => { const e = new THREE.Mesh(new THREE.BoxGeometry(0.4, TR.h + 0.5, TR.len + 0.5), set.brass); e.position.set(sx * (W / 2 + 0.2), 0.4 + (TR.h + 0.5) / 2 - 0.1, 0); g.add(e); });
+  // the value of each trough, on a brass strip along the front
+  const COL = ['gold', 'plum', 'onyx', 'onyx', 'emerald', 'emerald', 'oxblood', 'oxblood', 'ivory', 'ivory'];
+  const VAL = { gold: '1000', plum: '500', onyx: '100', emerald: '25', oxblood: '5', ivory: '1' };
+  const FILL = { gold: 13, plum: 16, onyx: 22, emerald: 25, oxblood: 27, ivory: 28 };
+  const plate = canvasTex(2048, 64, (c, Wc, Hc) => {
+    c.fillStyle = '#d8ae58'; c.fillRect(0, 0, Wc, Hc);
+    c.fillStyle = 'rgba(58,36,8,0.9)'; c.strokeStyle = 'rgba(58,36,8,0.9)';
+    c.lineWidth = 2; c.strokeRect(6, 6, Wc - 12, Hc - 12);
+    c.font = `700 ${Hc * 0.52}px Georgia, "Times New Roman", serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
+    // (the strip is seen from the front: x runs from the player's right)
+    for (let i = 0; i < TR.n; i++) { const u = 0.5 - cxOf(i) / (W + 0.2); c.fillText(VAL[COL[i]], u * Wc, Hc / 2 + 2); }
+    for (let i = 1; i < TR.n; i++) { const u = 0.5 - (cxOf(i) - TR.pitch / 2) / (W + 0.2); c.fillRect(u * Wc - 1, 14, 2, Hc - 28); }
+  });
+  const strip = new THREE.Mesh(new THREE.PlaneGeometry(W + 0.2, 0.9), new THREE.MeshStandardMaterial({ map: plate, metalness: 1, roughness: 0.32 }));
+  strip.position.set(0, 0.4 + TR.h * 0.45, -(TR.len / 2 + 0.13)); strip.rotation.y = Math.PI; g.add(strip);
+  // the chips: the edge texture, eight inserts; the faces, the house coin
+  const spots = { onyx: ['#121214', '#e8e2d2', '#b8914a'], oxblood: ['#5b1622', '#f1e7d0', '#c9a45a'], emerald: ['#1d3a2a', '#f1e7d0', '#c9a45a'], ivory: ['#e6dfcb', '#6b1320', '#b8914a'], plum: ['#3a2352', '#f1e7d0', '#c9a45a'], gold: ['#b58a2e', '#1a1208', '#f6e2a8'] };
+  const chipGeo = new THREE.CylinderGeometry(1.95, 1.95, 0.33, 48, 1);
+  chipGeo.rotateX(Math.PI / 2);           // (on edge, its axis along z)
+  const R = new THREE.Object3D();
+  CHIPS.forEach(name => {
+    const [base, spot, line] = spots[name];
+    const side = canvasTex(1024, 32, (c, Wc, Hc) => {
+      c.fillStyle = base; c.fillRect(0, 0, Wc, Hc);
+      for (let k = 0; k < 8; k++) {
+        const x0 = k * Wc / 8 + Wc / 32, w = Wc / 16;
+        c.fillStyle = spot; c.fillRect(x0, 0, w, Hc);
+        c.fillStyle = base; c.fillRect(x0 + w * 0.3, 0, w * 0.08, Hc); c.fillRect(x0 + w * 0.62, 0, w * 0.08, Hc);
+        c.fillStyle = line; c.fillRect(x0 + w + Wc / 64 - 1, Hc * 0.35, 3, Hc * 0.3);
+      }
+      const gr = c.createLinearGradient(0, 0, 0, Hc); gr.addColorStop(0, 'rgba(0,0,0,0.35)'); gr.addColorStop(0.2, 'rgba(0,0,0,0)'); gr.addColorStop(0.8, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,0.35)');
+      c.fillStyle = gr; c.fillRect(0, 0, Wc, Hc);
+    });
+    const sideM = new THREE.MeshStandardMaterial({ map: side, roughness: 0.55 });
+    const faceM = new THREE.MeshStandardMaterial({ map: chipFace(name), roughness: 0.45, metalness: 0.12 });
+    const troughs = COL.map((c, i) => (c === name ? i : -1)).filter(i => i >= 0);
+    if (!troughs.length) return;
+    const count = troughs.reduce((sum, i) => sum + FILL[COL[i]], 0);
+    const inst = new THREE.InstancedMesh(chipGeo, [sideM, faceM, faceM], count);
+    inst.castShadow = true; inst.receiveShadow = true;
+    let k = 0;
+    troughs.forEach(i => {
+      const cx = cxOf(i), n = FILL[COL[i]];
+      for (let j = 0; j < n; j++) {
+        // (filled from the back; the front chip leans back on the row)
+        const z = TR.len / 2 - 0.25 - (j + 0.5) * 0.335;
+        const lean = j === n - 1 ? -0.16 : 0;
+        R.position.set(cx + Math.sin(j * 2.3 + i) * 0.03, top - TR.sink - TR.r + 1.94 + (j === n - 1 ? -0.03 : 0), z + (j === n - 1 ? -0.04 : 0));
+        R.rotation.set(lean, 0, j * 1.7 + i * 0.9);
+        R.updateMatrix(); inst.setMatrixAt(k++, R.matrix);
+      }
+    });
+    g.add(inst);
+  });
   g.position.set(0, 0, FELT.b + 5.6);
   return g;
 }
 
 // ------------------------------------------------------------ the props
-// The shoe: smoked acrylic, the deck showing through it, a brass plate
-// at the mouth with the roller the cards come out under; the discard rack.
+// Shared by them: a flat slab from a Shape (lying on the felt, h thick,
+// bevelled), brass tubing along a path, the gilt edges of a deck, and an
+// engraved brass face (the DRO seal, or a plaque's words).
+function slab(shape, h, mat, bevel = 0.12) {
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: h - 2 * bevel, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 3, curveSegments: 16 });
+  geo.rotateX(-Math.PI / 2); geo.translate(0, bevel, 0);
+  const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true;
+  return m;
+}
+function tube(points, r, mat, closed = false) {
+  return new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points, closed, 'catmullrom', 0.1), Math.max(8, points.length * 6), r, 8, closed), mat);
+}
+function rodBetween(a, b, r, mat) { return laid(new THREE.Mesh(new THREE.CylinderGeometry(r, r, 1, 14), mat), a, b, true); }
+// (the outline of a rounded rectangle on the felt, as points at height y)
+function outline(w, d, r, y, cz = 0) { return roundRect(w, d, r).getSpacedPoints(96).map(p => V(p.x, y, cz - p.y)); }
+let giltM = null;
+function giltEdges() {
+  if (!giltM) {
+    const t = canvasTex(64, 256, (c, W, H) => { const g = c.createLinearGradient(0, 0, W, 0); g.addColorStop(0, '#b8914a'); g.addColorStop(0.5, '#e8c77e'); g.addColorStop(1, '#b8914a'); c.fillStyle = g; c.fillRect(0, 0, W, H); c.fillStyle = 'rgba(80,52,16,0.35)'; for (let y = 0; y < H; y += 3) c.fillRect(0, y, W, 1); });
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    giltM = new THREE.MeshStandardMaterial({ map: t, metalness: 0.7, roughness: 0.38 });
+  }
+  return giltM;
+}
+function engraved(w, h, draw) {
+  return canvasTex(w, h, (c, W, H) => {
+    c.fillStyle = '#d8ae58'; c.fillRect(0, 0, W, H);
+    c.fillStyle = c.strokeStyle = 'rgba(56,34,8,0.9)';
+    draw(c, W, H);
+  });
+}
+function sealTex() {
+  return engraved(512, 512, (c, W, H) => {
+    const cx = W / 2, cy = H / 2;
+    c.lineWidth = 6; c.beginPath(); c.arc(cx, cy, W * 0.46, 0, 7); c.stroke();
+    c.lineWidth = 2.5; c.beginPath(); c.arc(cx, cy, W * 0.42, 0, 7); c.stroke();
+    c.beginPath(); c.arc(cx, cy, W * 0.29, 0, 7); c.stroke();
+    for (let k = 0; k < 72; k++) { const a = k / 72 * Math.PI * 2; c.beginPath(); c.moveTo(cx + Math.cos(a) * W * 0.3, cy + Math.sin(a) * W * 0.3); c.lineTo(cx + Math.cos(a) * W * (k % 2 ? 0.315 : 0.33), cy + Math.sin(a) * W * (k % 2 ? 0.315 : 0.33)); c.stroke(); }
+    c.font = `700 ${W * 0.05}px Georgia, "Times New Roman", serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
+    const t = 'DAILY ✦ ROLL ✦ OVER ✦ '.repeat(2);
+    for (let i = 0; i < t.length; i++) { const a = -Math.PI / 2 + i / t.length * Math.PI * 2; c.save(); c.translate(cx + Math.cos(a) * W * 0.36, cy + Math.sin(a) * W * 0.36); c.rotate(a + Math.PI / 2); c.fillText(t[i], 0, 0); c.restore(); }
+    c.font = `700 ${W * 0.16}px Georgia, "Times New Roman", serif`;
+    c.fillText('DRO', cx, cy + W * 0.012);
+  });
+}
+
+// The shoe: a lacquered base on brass feet; smoked acrylic walls, their
+// top sloping down to the mouth, edged in brass; the deck inside tilted to
+// the mouth, a lacquered follower with a brass knob behind it; at the mouth
+// a brass plate with a thumb notch over the slot and a roller, the top card
+// out on the tongue; on the back, toward you, the house's engraved seal.
+// (Its mouth is its -z end; the cards come out at local z -11.6, y 0.9.)
 function buildShoe(set) {
   const g = new THREE.Group();
-  const acrylic = new THREE.MeshPhysicalMaterial({ color: 0x2a2320, roughness: 0.06, metalness: 0, transparent: true, opacity: 0.38, clearcoat: 1, clearcoatRoughness: 0.04, depthWrite: false, side: THREE.DoubleSide });
+  const acrylic = new THREE.MeshPhysicalMaterial({ color: 0x3a302a, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.3, clearcoat: 1, clearcoatRoughness: 0.03, depthWrite: false, side: THREE.DoubleSide });
   const lac = new THREE.MeshPhysicalMaterial({ color: 0x0c0a0a, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.08 });
-  // the base: black lacquer, the mouth end open
-  const base = new THREE.Mesh(new THREE.BoxGeometry(9.2, 0.9, 17), lac); base.position.set(0, 0.45, 0.4); base.castShadow = true; g.add(base);
-  // the deck inside: a block of card edges, the top card's back on top
-  const edges = canvasTex(64, 256, (c, W, H) => { c.fillStyle = '#e9e1cf'; c.fillRect(0, 0, W, H); c.fillStyle = 'rgba(120,100,80,0.35)'; for (let y = 0; y < H; y += 3) c.fillRect(0, y, W, 1); });
-  edges.wrapS = edges.wrapT = THREE.RepeatWrapping;
-  const edgeM = new THREE.MeshStandardMaterial({ map: edges, roughness: 0.75 });
+  const X = 4.85, Z0 = -10.2, Z1 = 7.0, Y0 = 0.9;
+  // feet and base
+  [[-X + 0.5, Z0 + 0.6], [X - 0.5, Z0 + 0.6], [-X + 0.5, Z1 - 0.6], [X - 0.5, Z1 - 0.6]].forEach(([x, z]) => { const f = new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 10), set.brass); f.scale.y = 0.7; f.position.set(x, 0.28, z); g.add(f); });
+  const baseShape = roundRect(2 * X + 0.3, Z1 - Z0 + 2.3, 0.9);
+  const base = slab(baseShape, Y0 - 0.35, lac, 0.12); base.position.set(0, 0.35, (Z0 - 2 + Z1) / 2); g.add(base);
+  g.add(tube(outline(2 * X + 0.34, Z1 - Z0 + 2.34, 0.92, Y0 - 0.02, (Z0 - 2 + Z1) / 2), 0.05, set.brass, true));
+  // the walls: the side profile, extruded across
+  const side = new THREE.Shape();
+  side.moveTo(Z0, Y0); side.lineTo(Z1, Y0); side.lineTo(Z1, 6.1); side.quadraticCurveTo(Z1, 6.9, Z1 - 0.8, 6.9); side.lineTo(Z0 + 1.8, 3.5); side.quadraticCurveTo(Z0, 3.1, Z0, 2.7); side.closePath();
+  const sideGeo = new THREE.ExtrudeGeometry(side, { depth: 0.26, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.03, bevelSegments: 2, curveSegments: 10 });
+  sideGeo.rotateY(-Math.PI / 2);         // (profile x -> z; across -> -x)
+  [X, -X + 0.32].forEach(x => { const w = new THREE.Mesh(sideGeo, acrylic); w.position.x = x; g.add(w); });
+  const back = new THREE.Mesh(new THREE.BoxGeometry(2 * X - 0.6, 6.1 - Y0, 0.28), acrylic); back.position.set(0, (6.1 + Y0) / 2, Z1 - 0.14); g.add(back);
+  const lidA = V(0, 3.5, Z0 + 1.8), lidB = V(0, 6.9, Z1 - 0.8);
+  const lid = new THREE.Mesh(new THREE.BoxGeometry(2 * X - 0.1, 0.24, lidA.distanceTo(lidB)), acrylic);
+  lid.position.copy(lidA).lerp(lidB, 0.5); lid.rotation.x = -Math.atan2(lidB.y - lidA.y, lidB.z - lidA.z); g.add(lid);
+  // brass along the edges
+  [X - 0.05, -X + 0.05].forEach(x => {
+    g.add(rodBetween(V(x, lidA.y + 0.05, lidA.z), V(x, lidB.y + 0.05, lidB.z), 0.11, set.brass));
+    g.add(rodBetween(V(x, Y0, Z1 - 0.05), V(x, 6.2, Z1 - 0.05), 0.11, set.brass));
+    g.add(rodBetween(V(x, Y0, Z0 + 0.05), V(x, 2.8, Z0 + 0.05), 0.11, set.brass));
+  });
+  g.add(rodBetween(V(-X, 6.62, Z1 - 0.3), V(X, 6.62, Z1 - 0.3), 0.14, set.brass));
+  // the deck, tilted down to the mouth, and the follower behind it
   const backM = new THREE.MeshStandardMaterial({ map: backTex(), roughness: 0.5 });
-  const deck = new THREE.Mesh(new THREE.BoxGeometry(6.4, 2.6, 9), [edgeM, edgeM, backM, edgeM, edgeM, edgeM]);
-  deck.position.set(0, 0.9 + 1.3, 1.2); deck.rotation.x = 4 * DEG; g.add(deck);
-  // the acrylic hood: sloping lid, sides, back
-  const hood = new THREE.Shape();
-  hood.moveTo(-8.2, 0.9); hood.lineTo(8.2, 0.9); hood.lineTo(8.2, 6.4); hood.lineTo(-6.4, 3.4); hood.lineTo(-8.2, 3.4); hood.closePath();
-  const hoodGeo = new THREE.ExtrudeGeometry(hood, { depth: 8.9, bevelEnabled: false });
-  hoodGeo.translate(0, 0, -4.45);
-  const hoodM = new THREE.Mesh(hoodGeo, acrylic);
-  hoodM.rotation.y = -Math.PI / 2; g.add(hoodM);
-  // (the hood's ends: a back, and a strip over the mouth above the roller)
-  const back = new THREE.Mesh(new THREE.BoxGeometry(8.9, 5.5, 0.3), acrylic); back.position.set(0, 3.65, 8.2); g.add(back);
-  // the brass at the mouth: a plate with the finger slot, the roller, corner caps
-  const face = new THREE.Mesh(new THREE.BoxGeometry(9.2, 2.2, 0.4), set.brass); face.position.set(0, 1.8, -8.3); g.add(face);
-  const slot = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.5, 0.5), new THREE.MeshBasicMaterial({ color: 0x050403 })); slot.position.set(0, 1.25, -8.4); g.add(slot);
-  const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 8.6, 20), set.brass);
-  roller.rotation.z = Math.PI / 2; roller.position.set(0, 3.4, -8.1); g.add(roller);
-  [[-4.6, -8.2], [4.6, -8.2], [-4.6, 8.2], [4.6, 8.2]].forEach(([x, z]) => { const cap = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.4, 0.6), set.brass); cap.position.set(x, 1.1, z); g.add(cap); });
-  // the top card, out at the mouth, ready to be drawn
-  const card = new THREE.Mesh(new THREE.BoxGeometry(6.35, 0.03, 8.89), [0, 0, backM, 0, 0, 0].map(m => m || new THREE.MeshStandardMaterial({ color: 0xece4d2 })));
-  card.position.set(0, 0.95, -6.5); card.rotation.x = 3 * DEG; card.castShadow = true; g.add(card);
+  const edgeM = giltEdges();
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(6.4, 3.0, 8.9), [edgeM, edgeM, backM, edgeM, edgeM, edgeM]);
+  deck.rotation.x = -7 * DEG; deck.position.set(0, Y0 + 1.75, Z0 + 5.4); g.add(deck);
+  const follower = new THREE.Mesh(new THREE.BoxGeometry(7.2, 3.8, 2.0), lac);
+  follower.rotation.x = -7 * DEG; follower.position.set(0, Y0 + 2.4, Z0 + 11.1); g.add(follower);
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 1.2, 12), set.brass); stem.position.set(0, Y0 + 4.8, Z0 + 11.25); g.add(stem);
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.55, 20, 14), set.brass); knob.position.set(0, Y0 + 5.5, Z0 + 11.25); g.add(knob);
+  // the mouth: a brass plate with a thumb notch, over the slot, a roller
+  const plate = new THREE.Shape();
+  plate.moveTo(-X, Y0); plate.lineTo(-3.4, Y0); plate.lineTo(-3.4, 1.38); plate.lineTo(3.4, 1.38); plate.lineTo(3.4, Y0); plate.lineTo(X, Y0);
+  plate.lineTo(X, 2.95); plate.lineTo(1.2, 2.95); plate.absarc(0, 2.95, 1.2, 0, Math.PI, true); plate.lineTo(-X, 2.95); plate.closePath();
+  const plateGeo = new THREE.ExtrudeGeometry(plate, { depth: 0.22, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.05, bevelSegments: 2, curveSegments: 16 });
+  const face = new THREE.Mesh(plateGeo, set.brass); face.position.z = Z0 - 0.28; g.add(face);
+  const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 7.0, 20), set.brass); roller.rotation.z = Math.PI / 2; roller.position.set(0, 1.62, Z0 - 0.62); g.add(roller);
+  // the top card, out on the tongue, ready to be drawn
+  const card = new THREE.Mesh(new THREE.BoxGeometry(6.35, 0.03, 8.89), [edgeM, edgeM, backM, edgeM, edgeM, edgeM]);
+  card.position.set(0, Y0 + 0.03, Z0 + 1.5); card.rotation.x = 2 * DEG; card.castShadow = true; g.add(card);
+  // the seal on the back, toward you
+  const seal = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.35, 0.14, 48), [set.brass, new THREE.MeshStandardMaterial({ map: sealTex(), metalness: 1, roughness: 0.3 }), set.brass]);
+  seal.rotation.set(Math.PI / 2, Math.PI / 2, 0); seal.position.set(0, 3.5, Z1 + 0.1); g.add(seal);
   return g;
 }
+// The discard rack: a walnut plinth with a brass line round it and a felt
+// pad on top; smoked acrylic walls, low at the front, edged in brass; the
+// played cards stacked in it, a few lying loose, and the house's brass
+// medallion on them as a weight.
 function buildDiscard(set) {
-  // the discard rack: smoked acrylic on a walnut base, what has been played
-  // today stacked in it under a brass weight
   const g = new THREE.Group();
-  const smoke = new THREE.MeshPhysicalMaterial({ color: 0x2a221c, roughness: 0.06, metalness: 0, transparent: true, opacity: 0.4, clearcoat: 1, clearcoatRoughness: 0.05, depthWrite: false });
-  const base = new THREE.Mesh(new THREE.BoxGeometry(8.6, 0.8, 11.2), set.wood); base.position.y = 0.4; base.castShadow = true; g.add(base);
-  const lip = new THREE.Mesh(new THREE.BoxGeometry(8.8, 0.25, 11.4), set.brass); lip.position.y = 0.85; g.add(lip);
-  [-4.0, 4.0].forEach(x => { const w = new THREE.Mesh(new THREE.BoxGeometry(0.3, 4.6, 10.6), smoke); w.position.set(x, 3.2, 0); g.add(w); });
-  const backW = new THREE.Mesh(new THREE.BoxGeometry(8.0, 4.6, 0.3), smoke); backW.position.set(0, 3.2, 5.3); g.add(backW);
-  const edges = canvasTex(64, 256, (c, W, H) => { c.fillStyle = '#e9e1cf'; c.fillRect(0, 0, W, H); c.fillStyle = 'rgba(120,100,80,0.35)'; for (let y = 0; y < H; y += 3) c.fillRect(0, y, W, 1); });
-  const edgeM = new THREE.MeshStandardMaterial({ map: edges, roughness: 0.75 });
+  const smoke = new THREE.MeshPhysicalMaterial({ color: 0x3a302a, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.32, clearcoat: 1, clearcoatRoughness: 0.04, depthWrite: false, side: THREE.DoubleSide });
+  const X = 4.3, Z = 5.6, Y0 = 1.0;
+  // (the walnut's grain at its own scale: the slab's UVs are in cm)
+  const wood = set.wood.clone(); wood.map = retile(set.tex.walnut, 1 / 18, 1 / 18); wood.normalMap = retile(set.tex.walnutN, 1 / 18, 1 / 18);
+  const plinth = slab(roundRect(2 * X + 1.2, 2 * Z + 1.0, 0.8), Y0, wood, 0.18); g.add(plinth);
+  g.add(tube(outline(2 * X + 1.24, 2 * Z + 1.04, 0.82, 0.55), 0.06, set.brass, true));
+  const pad = new THREE.Mesh(new THREE.ShapeGeometry(roundRect(2 * X - 0.4, 2 * Z - 0.4, 0.4), 8), new THREE.MeshStandardMaterial({ color: 0x0b0a0c, roughness: 0.95 }));
+  pad.rotation.x = -Math.PI / 2; pad.position.y = Y0 + 0.01; g.add(pad);
+  const side = new THREE.Shape();
+  side.moveTo(-Z, Y0); side.lineTo(Z, Y0); side.lineTo(Z, 5.6); side.lineTo(Z - 0.6, 5.6); side.lineTo(-Z, 2.4); side.closePath();
+  const sideGeo = new THREE.ExtrudeGeometry(side, { depth: 0.26, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.03, bevelSegments: 2 });
+  sideGeo.rotateY(-Math.PI / 2);
+  [X, -X + 0.26].forEach(x => { const w = new THREE.Mesh(sideGeo, smoke); w.position.x = x; g.add(w); });
+  const back = new THREE.Mesh(new THREE.BoxGeometry(2 * X - 0.5, 5.6 - Y0, 0.26), smoke); back.position.set(0, (5.6 + Y0) / 2, Z - 0.13); g.add(back);
+  [X - 0.1, -X + 0.1].forEach(x => {
+    g.add(rodBetween(V(x, 2.45, -Z), V(x, 5.65, Z - 0.6), 0.1, set.brass));
+    g.add(rodBetween(V(x, Y0, -Z + 0.05), V(x, 2.45, -Z + 0.05), 0.1, set.brass));
+  });
+  g.add(rodBetween(V(-X, 5.62, Z - 0.3), V(X, 5.62, Z - 0.3), 0.12, set.brass));
+  // the stack, a few loose on top, and the weight
   const backM = new THREE.MeshStandardMaterial({ map: backTex(), roughness: 0.5 });
-  // the stack: a block of card edges with a few loose cards on top
-  const stack = new THREE.Mesh(new THREE.BoxGeometry(6.35, 1.4, 8.89), [edgeM, edgeM, backM, edgeM, edgeM, edgeM]);
-  stack.position.set(0, 0.98 + 0.7, 0.4); g.add(stack);
-  for (let k = 0; k < 3; k++) {
-    const c = new THREE.Mesh(new THREE.BoxGeometry(6.35, 0.06, 8.89), [edgeM, edgeM, backM, edgeM, edgeM, edgeM]);
-    c.position.set(Math.sin(k * 2.3) * 0.25, 2.42 + k * 0.07, 0.4 + Math.cos(k * 1.7) * 0.25);
-    c.rotation.y = Math.sin(k * 1.9) * 0.06;
-    g.add(c);
+  const edgeM = giltEdges();
+  const stack = new THREE.Mesh(new THREE.BoxGeometry(6.35, 1.1, 8.89), [edgeM, edgeM, backM, edgeM, edgeM, edgeM]);
+  stack.position.set(0, Y0 + 0.57, 0.3); g.add(stack);
+  let y = Y0 + 1.12;
+  for (let k = 0; k < 5; k++) {
+    const c = new THREE.Mesh(new THREE.BoxGeometry(6.35, 0.04, 8.89), [edgeM, edgeM, backM, edgeM, edgeM, edgeM]);
+    c.position.set(Math.sin(k * 2.3) * 0.22, y + 0.02, 0.3 + Math.cos(k * 1.7) * 0.2);
+    c.rotation.y = Math.sin(k * 1.9 + 0.4) * 0.05; c.castShadow = k === 4;
+    g.add(c); y += 0.045;
   }
-  // the weight: a brass bar across the stack
-  const weight = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.7, 2.2), set.brass); weight.position.set(0, 3.0, 0.4); weight.castShadow = true; g.add(weight);
+  const medal = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.78, 0.5, 64), [set.brass, new THREE.MeshStandardMaterial({ map: sealTex(), metalness: 1, roughness: 0.28 }), set.brass]);
+  // (turned to read from the seat, a little askew)
+  medal.position.set(0.7, y + 0.26, -1.1); medal.rotation.y = Math.PI + 0.35; medal.castShadow = true; g.add(medal);
   return g;
 }
-// The dealer is a machine: a white ceramic arm traced with fine gold
-// circuitry, stowed under a port in the felt by the shoe. As the deal
-// begins the port opens and the arm rises out of the table. It deals each
-// card with quick, exact moves on smooth curves, then sinks back once the
-// hand is out. The arm is solved every frame from the port to the wrist:
-// two bones, the elbow held back toward the dealer and a little up. Its hand keeps
-// the old glove's frame - at the fingertips, +z along the fingers, +y the
-// back of the hand, +x the thumb's side - so a pose is still where the
-// fingertips are and which way they point.
+// The port the dealer's arm rises through (see prepareTable): the felt
+// and the table under it have a hole here (buildCardTable); this is the
+// iris that closes it, the bezel round it and the well below. An iris
+// blade is the part of the hole's disc inside a large circle whose edge
+// runs past the centre: nine of them, turned 40 degrees apart and each
+// tilted a hair about its own radius, so each lies over the next and
+// under the one before, and the gold edges meet in a spiral. Opening, each
+// slides out along its radius and turns, back under the felt.
+function buildPort(set) {
+  const g = new THREE.Group();
+  const R = PORT.r, N = 9, Rc = 9, dC = -1.1, Rb = R + 3;
+  // the blade, closed: inside circle A (centre (dC + Rc, 0), radius Rc)
+  // and inside the disc Rb, as a polygon in the blade's own x-z plane
+  const ang = x => Math.atan2(x[1], x[0]);
+  const cA = dC + Rc;
+  // (where A and B cross: x from the two circles' equations)
+  const xi = (Rb * Rb - Rc * Rc + cA * cA) / (2 * cA), yi = Math.sqrt(Math.max(0, Rb * Rb - xi * xi));
+  const aA0 = Math.atan2(yi, xi - cA), aB0 = Math.atan2(yi, xi);
+  const pts = [];
+  for (let i = 0; i <= 40; i++) { const t = aA0 + (2 * Math.PI - 2 * aA0) * i / 40; pts.push([cA + Rc * Math.cos(t), Rc * Math.sin(t)]); }
+  for (let i = 1; i < 24; i++) { const t = -aB0 + 2 * aB0 * i / 24; pts.push([Rb * Math.cos(t), Rb * Math.sin(t)]); }
+  const shape = new THREE.Shape();
+  pts.forEach(([x, y], i) => (i ? shape.lineTo(x, y) : shape.moveTo(x, y)));
+  shape.closePath();
+  const bladeGeo = new THREE.ShapeGeometry(shape, 1);
+  bladeGeo.rotateX(Math.PI / 2);          // (shape y -> world z)
+  // the gold edge: a ribbon along A's arc, just inside the blade
+  const edge = [];
+  for (let i = 0; i <= 64; i++) { const t = Math.PI - 1.2 + 2.4 * i / 64; edge.push([cA + Rc * Math.cos(t), Rc * Math.sin(t)]); }
+  const ribPos = [], ribIdx = [];
+  edge.forEach(([x, y]) => { const nx = (x - cA) / Rc, ny = y / Rc; ribPos.push(x, 0.012, y, x - nx * 0.16, 0.012, y - ny * 0.16); });
+  for (let i = 0; i < edge.length - 1; i++) { const a = 2 * i; ribIdx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+  const ribGeo = new THREE.BufferGeometry();
+  ribGeo.setAttribute('position', new THREE.Float32BufferAttribute(ribPos, 3)); ribGeo.setIndex(ribIdx); ribGeo.computeVertexNormals();
+  const bladeMat = new THREE.MeshStandardMaterial({ color: 0x14110f, metalness: 0.75, roughness: 0.42, envMapIntensity: 0.55, side: THREE.DoubleSide });
+  const ribMat = set.brass.clone(); ribMat.side = THREE.DoubleSide;
+  const blades = [];
+  for (let i = 0; i < N; i++) {
+    const pivot = new THREE.Group();
+    const slide = new THREE.Group();
+    const tilt = new THREE.Group(); tilt.rotation.x = 0.014;
+    const mesh = new THREE.Mesh(bladeGeo, bladeMat); mesh.receiveShadow = true;
+    const rib = new THREE.Mesh(ribGeo, ribMat);
+    tilt.add(mesh, rib); slide.add(tilt); pivot.add(slide);
+    pivot.position.y = -0.22;
+    g.add(pivot);
+    blades.push({ pivot, slide, base: i * 2 * Math.PI / N });
+  }
+  // the bezel: a brass ring on the felt, its top engraved
+  const prof = [[R - 0.02, -0.4], [R - 0.02, 0.1], [R + 0.14, 0.24], [R + 0.86, 0.24], [R + 1.06, 0.12], [R + 1.12, 0.0]].map(([x, y]) => new THREE.Vector2(x, y));
+  const bezel = new THREE.Mesh(new THREE.LatheGeometry(prof, 120), set.brass);
+  bezel.castShadow = false; bezel.receiveShadow = true; g.add(bezel);
+  const ringTex = canvasTex(1024, 1024, (c, W, H) => {
+    const cx = W / 2, cy = H / 2, s = W / 2 / (R + 0.84);
+    c.fillStyle = '#d9b062'; c.fillRect(0, 0, W, H);
+    c.strokeStyle = 'rgba(60,38,10,0.85)'; c.fillStyle = 'rgba(60,38,10,0.85)';
+    // two fine rules, and ticks between them
+    c.lineWidth = 2.2;
+    [R + 0.2, R + 0.78].forEach(r => { c.beginPath(); c.arc(cx, cy, r * s, 0, 7); c.stroke(); });
+    for (let k = 0; k < 90; k++) {
+      const a = k / 90 * Math.PI * 2, r0 = (R + 0.24) * s, r1 = (R + (k % 5 ? 0.36 : 0.46)) * s;
+      c.lineWidth = k % 5 ? 1.4 : 2.4;
+      c.beginPath(); c.moveTo(cx + r0 * Math.cos(a), cy + r0 * Math.sin(a)); c.lineTo(cx + r1 * Math.cos(a), cy + r1 * Math.sin(a)); c.stroke();
+    }
+    // the lettering, round the outer half of the band
+    const text = 'DAILY ✦ ROLL ✦ OVER ✦ THE DEALER ✦ '.repeat(2);
+    c.font = `700 ${Math.round(0.2 * s)}px Georgia, "Times New Roman", serif`;
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    const rt = (R + 0.6) * s;
+    for (let i = 0; i < text.length; i++) {
+      const a = -Math.PI / 2 + i / text.length * Math.PI * 2;
+      c.save(); c.translate(cx + rt * Math.cos(a), cy + rt * Math.sin(a)); c.rotate(a + Math.PI / 2); c.fillText(text[i], 0, 0); c.restore();
+    }
+  });
+  const ringMat = new THREE.MeshStandardMaterial({ map: ringTex, metalness: 1, roughness: 0.3, envMapIntensity: 1.0, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(R + 0.16, R + 0.84, 120, 1), ringMat);
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.241; g.add(ring);
+  // the well: dark walls, a floor, and a ring of warm light round its lip
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x0a0908, roughness: 0.6, metalness: 0.3, side: THREE.BackSide });
+  const wall = new THREE.Mesh(new THREE.CylinderGeometry(R - 0.03, R - 0.03, 8.8, 48, 1, true), wallMat); wall.position.y = -4.45; g.add(wall);
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(R, 40), new THREE.MeshBasicMaterial({ color: 0x030202 })); floor.rotation.x = -Math.PI / 2; floor.position.y = -8.8; g.add(floor);
+  const glowMat = new THREE.MeshBasicMaterial({ color: 0x000000, fog: false });
+  const glow = new THREE.Mesh(new THREE.TorusGeometry(R - 0.18, 0.08, 6, 64), glowMat); glow.rotation.x = Math.PI / 2; glow.position.y = -0.9; g.add(glow);
+  const set01 = k => {
+    k = clamp01(k);
+    const e = smoother(k);
+    blades.forEach(b => {
+      b.pivot.rotation.y = b.base + e * 0.72;
+      b.slide.position.x = e * (R + 1.4 - dC);
+      b.pivot.visible = e < 0.999;
+    });
+    glowMat.color.setRGB(1.1 * e, 0.62 * e, 0.22 * e);
+  };
+  return { group: g, set: set01 };
+}
+
+// The dealer is a machine: a six-axis arm in white ceramic traced with fine
+// gold circuitry, stowed under a port in the felt by the shoe. As the deal
+// begins the port's iris opens and the arm rises out of the table on a
+// telescoping lift. It is built the way the finest such arms are, with
+// seven axes (see buildDealerArm), so the hand can take any pose while the
+// arm stays one rigid chain; it is solved every frame from the shoulder to
+// the wrist, and nothing on it ever stretches. Its hand keeps the old glove's frame - at the fingertips, +z
+// along the fingers, +y the back of the hand, +x the thumb's side - so a
+// pose is still where the fingertips are and which way they point.
 const PORT = { x: -4, z: 58.5, r: 5.4 };
-// shoulder heights (up: dealing; down: stowed under the felt) and the bones
-const ARM = { up: 10, down: -50, upper: 16, fore: 16 };
-// the wrist, in the hand's frame
-const WRIST = V(0, 0.6, -13.0);
+// shoulder heights (up: dealing; down: stowed under the felt) and the two
+// links, shoulder to elbow and elbow to wrist (with room to spare for the
+// farthest card: nothing is ever pulled out of true)
+const ARM = { up: 7.5, down: -56, upper: 16, fore: 16 };
+// the wrist (J6's centre), in the hand's frame: behind the heel of the palm,
+// past the tool flange
+const WRIST = V(0, 0.6, -15.0);
 // Gold traces on ceramic (glow: the same traces alone, for the light in them).
 function circuitTex(glow) {
   let seed = 20260928;
@@ -523,7 +815,11 @@ function dealerMaterials() {
   const graphite = new THREE.MeshStandardMaterial({ color: 0x1c1b1e, metalness: 0.55, roughness: 0.36 });
   const chrome = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, metalness: 1, roughness: 0.12 });
   const led = new THREE.MeshBasicMaterial({ color: 0xffb860 });
-  return { ceramic, plain, clear, gold, graphite, chrome, led, pulse };
+  // (under each drum's glass cap: a disc of gold circuitry on graphite,
+  // lit from within while the arm works)
+  const circuit = new THREE.MeshStandardMaterial({ color: 0x1b1916, metalness: 0.4, roughness: 0.45, map: circuitTex(false), emissive: 0xffc877, emissiveMap: circuitTex(true), emissiveIntensity: 0.3 });
+  circuit.map.repeat.set(0.5, 1);
+  return { ceramic, plain, clear, gold, graphite, chrome, led, circuit, pulse };
 }
 // A mesh laid from a to b along its own y (a unit-height cylinder, or a
 // capsule built to the length).
@@ -534,16 +830,28 @@ function laid(mesh, a, b, unit) {
   if (unit) mesh.scale.set(1, l, 1);
   return mesh;
 }
-// A joint: a clear shell over a gold core, on a graphite axle.
-function joint(m, r, axis) {
+// A drum: one joint's motor housing - a ceramic barrel on its axis (local
+// y), a graphite band round its middle, and at each end a white rim and a
+// shallow glass cap over a disc of gold circuitry, a graphite hub in it.
+function drum(m, r, len) {
   const g = new THREE.Group();
-  g.add(new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16), m.clear));
-  g.add(new THREE.Mesh(new THREE.SphereGeometry(r * 0.52, 16, 12), m.gold));
-  const axle = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.36, r * 0.36, r * 2.3, 16), m.graphite);
-  if (axis === 'x') axle.rotation.z = Math.PI / 2;
-  g.add(axle);
+  g.add(new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 44, 1), m.ceramic));
+  g.add(new THREE.Mesh(new THREE.CylinderGeometry(r * 1.015, r * 1.015, len * 0.18, 44, 1, true), m.graphite));
+  const R = r * 0.86 / Math.sin(0.5);
+  [-1, 1].forEach(s => {
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(r * 0.93, r * 0.075, 10, 44), m.plain);
+    rim.rotation.x = Math.PI / 2; rim.position.y = s * len / 2; g.add(rim);
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(r * 0.87, 44), m.circuit);
+    disc.rotation.x = -s * Math.PI / 2; disc.position.y = s * (len / 2 + 0.01); g.add(disc);
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(R, 44, 6, 0, Math.PI * 2, 0, 0.5), m.clear);
+    cap.position.y = s * (len / 2 - R * Math.cos(0.5)); if (s < 0) cap.rotation.x = Math.PI; g.add(cap);
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.2, r * 0.2, 0.24, 20), m.graphite);
+    hub.position.y = s * (len / 2 + 0.12); g.add(hub);
+  });
   return g;
 }
+// (a drum, or anything built along its local y, turned onto an axis)
+const onAxis = (obj, axis) => obj.quaternion.setFromUnitVectors(V(0, 1, 0), axis);
 function buildDealerHand(m) {
   const g = new THREE.Group();
   // (modelled from the fingertips up; set down 0.7 cm so the fingers lie
@@ -608,9 +916,14 @@ function buildDealerHand(m) {
   const thumb = new THREE.Group(); thumb.position.copy(t0); hand.add(thumb);
   thumb.add(bone(0.5, V(0, 0, 0), t1.clone().sub(t0), m.plain), bone(0.44, t1.clone().sub(t0), t2.clone().sub(t0), m.plain), hinge(t1.clone().sub(t0), 0.37));
   { const c = new THREE.Mesh(new THREE.SphereGeometry(0.62, 16, 12), m.clear); thumb.add(c); }
-  // the wrist, and a gold collar turning in it
-  const w = joint(m, 1.35, 'x'); w.position.copy(WRIST); g.add(w);
-  const collar = new THREE.Mesh(new THREE.TorusGeometry(1.2, 0.12, 8, 28), m.gold); collar.position.copy(WRIST).add(V(0, 0, 0.9)); g.add(collar);
+  // the tool plate the arm's flange bolts to, at the heel of the palm: a
+  // graphite disc on a ceramic neck, six bolt heads round a gold ring
+  { const plate = new THREE.Mesh(new THREE.CylinderGeometry(1.32, 1.32, 0.55, 36), m.graphite);
+    plate.rotation.x = Math.PI / 2; plate.position.copy(WRIST).add(V(0, 0, 1.45)); g.add(plate);
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.2, 1.2, 36), m.plain);
+    neck.rotation.x = Math.PI / 2; neck.position.copy(WRIST).add(V(0, 0, 2.3)); g.add(neck);
+    const ringG = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.07, 8, 36), m.gold); ringG.position.copy(WRIST).add(V(0, 0, 1.18)); g.add(ringG);
+    for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2; const b = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.2, 8), m.graphite); b.rotation.x = Math.PI / 2; b.position.copy(WRIST).add(V(Math.cos(a) * 1.0, Math.sin(a) * 1.0, 1.12)); g.add(b); } }
   // curl: 0 straight, 1 a grip, below 0 opened back; spread: 0 together, 1 splayed
   g.userData.curl = (curl, spread) => {
     fingers.forEach(f => {
@@ -624,120 +937,129 @@ function buildDealerHand(m) {
   g.userData.leds = (on, tt) => leds.forEach((l, i) => { const k = on * (0.25 + 0.75 * Math.pow(0.5 + 0.5 * Math.sin(tt * 9 - i * 1.4), 3)); l.material.color.setRGB(1 * k + 0.08, 0.72 * k + 0.05, 0.36 * k + 0.03); });
   return g;
 }
-// The arm between the port and the wrist: a telescoping column; on it a
-// turret (a toothed ring and a yoke that turns to face the reach) holding
-// the shoulder; the upper arm, the elbow and the forearm; a hydraulic ram
-// over each joint, a cable harness down the outside and a row of status
-// lights by the wrist - all placed by pose() each frame.
+// The arm between the port and the wrist, placed by pose() each frame. It
+// is a seven-axis arm, as the finest of them are: J1, the base drum on the
+// lift, turning it to face its work; J2, the shoulder; J3, a roll of the
+// upper link; J4, the elbow; J5, a roll of the forearm; J6, the wrist; J7,
+// the tool flange the hand bolts to. With seven axes the elbow is free to
+// swing round the line from shoulder to wrist without moving either, so it
+// is carried out to the side and up, as a dealer's is - where you can see
+// it work - while the chain stays exact. A cable dress runs down the outside of it in
+// clamps, a lit ring breathes on J1, and a row of status lights on the
+// forearm chases while it works.
 function buildDealerArm(m) {
   const g = new THREE.Group();
-  const cyl = (rt, rb, mat, seg = 24) => new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, 1, seg, 1), mat);
-  const ring = (r, mat = m.gold, t = 0.13) => new THREE.Mesh(new THREE.TorusGeometry(r, t, 8, 32), mat);
-  const column = [cyl(1.9, 1.9, m.ceramic), cyl(2.3, 2.3, m.ceramic), cyl(2.7, 2.7, m.ceramic)];
-  const collars = [ring(1.95), ring(2.35), ring(2.75)];
-  // the turret: a toothed ring round the top of the column, and the yoke
-  const turret = new THREE.Group();
-  { const disc = cyl(2.95, 2.95, m.graphite, 40); disc.scale.y = 0.55; turret.add(disc);
-    const teeth = new THREE.InstancedMesh(new THREE.BoxGeometry(0.34, 0.5, 0.42), m.gold, 40);
-    const d = new THREE.Object3D();
-    for (let i = 0; i < 40; i++) { const a = i / 40 * Math.PI * 2; d.position.set(Math.sin(a) * 3.05, 0, Math.cos(a) * 3.05); d.rotation.set(0, a, 0); d.updateMatrix(); teeth.setMatrixAt(i, d.matrix); }
-    turret.add(teeth);
-    const trim = ring(2.95, m.gold, 0.07); trim.rotation.x = Math.PI / 2; trim.position.y = 0.3; turret.add(trim); }
-  const yoke = new THREE.Group();
-  { // two cheeks either side of the shoulder, on a plinth over the turret
-    const plinth = cyl(2.2, 2.6, m.ceramic, 32); plinth.scale.y = 1.2; plinth.position.y = -1.7; yoke.add(plinth);
-    [-1, 1].forEach(sd => {
-      const cheek = new THREE.Mesh(new THREE.BoxGeometry(0.55, 3.6, 3.4), m.plain); cheek.position.set(sd * 2.55, -0.6, 0); yoke.add(cheek);
-      const boss = cyl(1.15, 1.15, m.gold, 24); boss.rotation.z = Math.PI / 2; boss.scale.y = 0.3; boss.position.set(sd * 2.88, 0, 0); yoke.add(boss);
-      const bolt = cyl(0.3, 0.3, m.graphite, 6); bolt.rotation.z = Math.PI / 2; bolt.scale.y = 0.2; bolt.position.set(sd * 3.0, 0, 0); yoke.add(bolt);
-    });
-    yoke.add(joint(m, 2.2, 'x'));
-  }
-  const upper = cyl(1.3, 1.6, m.ceramic), fore = cyl(1.0, 1.25, m.ceramic);
-  const elbow = joint(m, 1.65, 'x');
-  const bands = [ring(1.65), ring(1.36), ring(1.31), ring(1.05)];
-  // (panel seams: fine dark rings between the gold bands)
-  const seams = [ring(1.52, m.graphite, 0.05), ring(1.4, m.graphite, 0.05), ring(1.2, m.graphite, 0.05), ring(1.1, m.graphite, 0.05)];
-  // the rams: a graphite barrel, a chrome rod out of it, a gold eye each end
-  const ram = () => {
-    const r = { barrel: cyl(0.4, 0.4, m.graphite, 16), rod: cyl(0.17, 0.17, m.chrome, 12), eyes: [new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 8), m.gold), new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 8), m.gold)], gland: ring(0.4, m.gold, 0.09) };
-    g.add(r.barrel, r.rod, ...r.eyes, r.gland);
-    r.set = (a, b, len) => {
-      const d = b.clone().sub(a), L = d.length() || 1e-4, e = a.clone().addScaledVector(d, Math.min(len, L - 0.8) / L);
-      laid(r.barrel, a, e, true); laid(r.rod, e, b, true);
-      r.eyes[0].position.copy(a); r.eyes[1].position.copy(b);
-      r.gland.position.copy(e); r.gland.quaternion.setFromUnitVectors(V(0, 0, 1), d.multiplyScalar(1 / L));
-    };
-    return r;
-  };
-  const rams = [ram(), ram()];
-  // the harness: a braided cable and a fine gold line beside it, bent
-  // through the arm's joints (rebuilt each frame as the arm moves)
+  const cyl = (rt, rb, mat, seg = 36) => new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, 1, seg, 1), mat);
+  const ring = (r, t, mat) => new THREE.Mesh(new THREE.TorusGeometry(r, t, 8, 44), mat);
+  // the lift: three sleeves, each drawn out of the one below, a graphite
+  // seal at each mouth
+  const column = [cyl(2.0, 2.0, m.ceramic), cyl(2.35, 2.35, m.ceramic), cyl(2.7, 2.7, m.ceramic)];
+  const seals = [ring(2.04, 0.17, m.graphite), ring(2.39, 0.17, m.graphite), ring(2.74, 0.17, m.graphite)];
+  // J1: upright, a lit ring round it
+  const base = drum(m, 3.0, 3.0);
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(3.06, 0.1, 8, 64), m.led.clone());
+  halo.rotation.x = Math.PI / 2; halo.position.y = 0.95; base.add(halo);
+  // J2, J4, J6: the drums the arm bends at
+  const shoulder = drum(m, 2.5, 5.2), elbow = drum(m, 2.05, 4.5), wrist = drum(m, 1.42, 3.0);
+  // J3, J5: the rolls, a collar on each link between two graphite breaks
+  const collar = r => { const c = new THREE.Group(); const b = cyl(r, r, m.plain); b.scale.y = 1.5; c.add(b); [-0.8, 0.8].forEach(y => { const k = ring(r * 1.01, 0.1, m.graphite); k.rotation.x = Math.PI / 2; k.position.y = y; c.add(k); }); const gl = ring(r * 1.02, 0.045, m.gold); gl.rotation.x = Math.PI / 2; c.add(gl); return c; };
+  const roll3 = collar(2.0), roll5 = collar(1.5);
+  // the links: tapered, a gold spine let into the top of each, two seams
+  const upper = cyl(1.62, 1.92, m.ceramic), fore = cyl(1.12, 1.42, m.ceramic);
+  const spines = [cyl(0.07, 0.07, m.gold, 6), cyl(0.07, 0.07, m.gold, 6)];
+  const seams = [ring(1.72, 0.045, m.graphite), ring(1.25, 0.045, m.graphite)];
+  // J7: the tool flange, out of the wrist drum toward the hand
+  const flange = new THREE.Group();
+  { const c = cyl(1.22, 1.3, m.plain); c.scale.y = 1.35; c.position.y = 0.68; flange.add(c);
+    const r = ring(1.24, 0.09, m.gold); r.rotation.x = Math.PI / 2; r.position.y = 1.3; flange.add(r); }
+  // the cable dress, and its clamps
   const cable = new THREE.Mesh(new THREE.BufferGeometry(), m.graphite), wire = new THREE.Mesh(new THREE.BufferGeometry(), m.gold);
+  const CLAMP_AT = [0.2, 0.44, 0.8];
+  const clamps = CLAMP_AT.map(() => { const c = new THREE.Group(); c.add(ring(0.4, 0.1, m.plain)); const foot = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.55, 0.3), m.graphite); foot.position.y = -0.52; c.add(foot); g.add(c); return c; });
   // status lights along the forearm
-  const lights = [0, 1, 2].map(() => { const l = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), m.led.clone()); g.add(l); return l; });
-  g.add(...column, ...collars, turret, yoke, upper, fore, elbow, ...bands, ...seams, cable, wire);
-  const up = V(0, 1, 0), bend = V(0, 0.5, 1).normalize();
+  const lights = [0, 1, 2].map(() => { const l = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 8), m.led.clone()); g.add(l); return l; });
+  g.add(...column, ...seals, base, shoulder, roll3, elbow, roll5, wrist, upper, fore, ...spines, ...seams, flange, cable, wire);
+  const up = V(0, 1, 0);
+  // (where the elbow is carried: out to its right - the player's left -
+  // and up, a dealer's arm, so from the seat you see the whole of it)
+  const PREF = V(0.9, 0.75, -0.25).normalize();
   const S = V(0, 0, 0), E = V(0, 0, 0), dir = V(0, 0, 0), n = V(0, 0, 0);
-  const u = V(0, 0, 0), f = V(0, 0, 0), ax = V(0, 0, 0), pu = V(0, 0, 0), pf = V(0, 0, 0);
+  const u = V(0, 0, 0), f = V(0, 0, 0), h = V(0, 0, 0), ax = V(1, 0, 0), fwd = V(0, 0, 1);
+  const a4 = V(1, 0, 0), a6 = V(1, 0, 0), su = V(0, 1, 0), sf = V(0, 1, 0);
   const band = (b, a, c, k) => { b.position.copy(a).lerp(c, k); b.quaternion.setFromUnitVectors(V(0, 0, 1), c.clone().sub(a).normalize()); };
   const at = (a, b, k, side, d) => a.clone().lerp(b, k).addScaledVector(side, d);
+  const perp = (out, v, axis) => { out.copy(v).addScaledVector(axis, -v.dot(axis)); return out.lengthSq() > 1e-6 ? out.normalize() : null; };
   let yaw = 0;
   return {
     group: g,
-    // the shoulder at height y over the port, the wrist at W (seat frame)
-    pose(y, W, tt = 0, on = 0) {
+    // the shoulder at height y over the port, the wrist at W and the hand
+    // turned by q (seat frame); tt and on for the lights
+    pose(y, W, q, tt = 0, on = 0) {
       S.set(PORT.x, y, PORT.z);
-      // the column: three sleeves, each drawn out of the one below
-      const base = ARM.down - 6, span = y - base;
+      // the lift: three sleeves, each drawn out of the one below, up to J1
+      const top = y - 4.9, base0 = ARM.down - 6, span = top - base0;
       column.forEach((c, i) => {
-        const a = base + span * (2 - i) / 3, b = Math.min(y - 2.2, a + span / 3 + 1.2);
+        const a = base0 + span * (2 - i) / 3, b = Math.min(top, a + span / 3 + 1.2);
         laid(c, V(PORT.x, a, PORT.z), V(PORT.x, b, PORT.z), true);
-        collars[i].position.set(PORT.x, b, PORT.z); collars[i].quaternion.setFromUnitVectors(V(0, 0, 1), up);
+        seals[i].position.set(PORT.x, b, PORT.z); seals[i].quaternion.setFromUnitVectors(V(0, 0, 1), up);
       });
-      // two bones: the elbow in the plane of the reach, back and a little up
+      // shoulder to wrist: the elbow on the circle round that line, as near
+      // the preferred side as it goes
       dir.copy(W).sub(S);
       const len0 = dir.length() || 1e-4;
       dir.multiplyScalar(1 / len0);
       const L1 = ARM.upper, L2 = ARM.fore;
       const len = THREE.MathUtils.clamp(len0, Math.abs(L1 - L2) + 0.5, L1 + L2 - 0.05);
-      const a = (L1 * L1 - L2 * L2 + len * len) / (2 * len), h = Math.sqrt(Math.max(0, L1 * L1 - a * a));
-      n.copy(bend).addScaledVector(dir, -bend.dot(dir));
-      if (n.lengthSq() < 1e-6) n.set(0, 0, 1);
-      n.normalize();
-      E.copy(S).addScaledVector(dir, a).addScaledVector(n, h);
+      const a = (L1 * L1 - L2 * L2 + len * len) / (2 * len), hh = Math.sqrt(Math.max(0, L1 * L1 - a * a));
+      if (!perp(n, PREF, dir) && !perp(n, up, dir)) n.copy(fwd).negate();
+      E.copy(S).addScaledVector(dir, a).addScaledVector(n, hh);
       u.copy(E).sub(S).normalize(); f.copy(W).sub(E).normalize();
-      // the turret turns to face the upper arm (held where it was when the
-      // arm stands straight up)
+      // J1 faces the upper link; J2 bends it across that plane
       if (u.x * u.x + u.z * u.z > 1e-3) yaw = Math.atan2(u.x, u.z);
-      turret.position.set(PORT.x, y - 2.2, PORT.z); turret.rotation.y = yaw;
-      yoke.position.copy(S); yoke.rotation.y = yaw;
-      ax.set(Math.cos(yaw), 0, -Math.sin(yaw));
+      fwd.set(Math.sin(yaw), 0, Math.cos(yaw)); ax.set(Math.cos(yaw), 0, -Math.sin(yaw));
+      base.position.set(PORT.x, y - 3.4, PORT.z); base.rotation.set(0, yaw, 0);
+      shoulder.position.copy(S); onAxis(shoulder, ax);
       laid(upper, S, E, true);
+      roll3.position.copy(S).addScaledVector(u, 4.6); onAxis(roll3, u);
+      // J4 bends across the two links; J5 rolls the forearm
+      const c4 = V(0, 0, 0).crossVectors(u, f);
+      if (c4.lengthSq() > 1e-4) a4.copy(c4).normalize();
+      elbow.position.copy(E); onAxis(elbow, a4);
       laid(fore, E, W, true);
-      elbow.position.copy(E);
-      { const k = V(0, 0, 0).crossVectors(u, f); if (k.lengthSq() > 1e-6) elbow.quaternion.setFromUnitVectors(V(1, 0, 0), k.normalize()); }
-      band(bands[0], S, E, 0.1); band(bands[1], S, E, 0.9); band(bands[2], E, W, 0.1); band(bands[3], E, W, 0.9);
-      band(seams[0], S, E, 0.36); band(seams[1], S, E, 0.66); band(seams[2], E, W, 0.4); band(seams[3], E, W, 0.7);
-      // (the underside of each bone, in the arm's plane)
-      pu.crossVectors(ax, u).normalize(); if (pu.y > 0) pu.negate();
-      pf.crossVectors(ax, f).normalize(); if (pf.dot(pu) < 0) pf.negate();
-      rams[0].set(S.clone().add(V(0, -2.4, 0)).addScaledVector(V(Math.sin(yaw), 0, Math.cos(yaw)), -1.2), at(S, E, 0.46, pu, 1.55), 5.2);
-      rams[1].set(at(S, E, 0.66, pu, 1.45), at(E, W, 0.32, pf, 1.2), 4.4);
-      // the harness, out of the turret's back, down the outside of the arm
-      // (only while it is out: under the felt nothing of it shows)
+      roll5.position.copy(E).addScaledVector(f, 4.4); onAxis(roll5, f);
+      // (the top of each link: toward the elbow's side)
+      perp(su, n, u) || su.copy(up); perp(sf, n, f) || sf.copy(up);
+      laid(spines[0], at(S, E, 0.36, su, 1.8), at(S, E, 0.86, su, 1.66), true);
+      laid(spines[1], at(E, W, 0.4, sf, 1.32), at(E, W, 0.74, sf, 1.2), true);
+      band(seams[0], S, E, 0.68); band(seams[1], E, W, 0.66);
+      // J6 bends across the forearm and the hand; J7 rolls the flange
+      h.set(0, 0, 1).applyQuaternion(q);
+      const c6 = V(0, 0, 0).crossVectors(f, h);
+      if (c6.lengthSq() > 1e-4) a6.copy(c6).normalize();
+      wrist.position.copy(W); onAxis(wrist, a6);
+      flange.position.copy(W); onAxis(flange, h);
+      // the cable dress, out of J1's back, over the outside of the arm into
+      // the wrist (only while the arm is out: under the felt none shows)
       if (on) {
-        const side = ax.clone().multiplyScalar(0.9), el = pu.clone().add(pf).normalize();
-        const pts = [S.clone().add(V(0, -2.2, 0)).addScaledVector(V(Math.sin(yaw), 0, Math.cos(yaw)), -2.6), at(S, E, 0.3, pu, 1.9).add(side), at(S, E, 0.75, pu, 1.9).add(side), E.clone().addScaledVector(el, 2.2).add(side), at(E, W, 0.5, pf, 1.6).add(side), W.clone().addScaledVector(pf, 1.1).addScaledVector(ax, 0.6)];
+        const pts = [
+          V(PORT.x, y - 2.8, PORT.z).addScaledVector(fwd, -2.9).addScaledVector(ax, 1.2),
+          S.clone().addScaledVector(su, 2.9).addScaledVector(a4, 1.1).addScaledVector(u, 1.5),
+          at(S, E, 0.55, su, 2.05).addScaledVector(a4, 0.9),
+          E.clone().addScaledVector(n, 2.6).addScaledVector(a4, 1.4),
+          at(E, W, 0.45, sf, 1.55).addScaledVector(a4, 0.8),
+          W.clone().addScaledVector(f, -2.0).addScaledVector(sf, 1.35).addScaledVector(a4, 0.6)
+        ];
         const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
-        cable.geometry.dispose(); cable.geometry = new THREE.TubeGeometry(curve, 44, 0.24, 7, false);
-        const wcurve = new THREE.CatmullRomCurve3(pts.map(p => p.clone().addScaledVector(ax, 0.42)), false, 'centripetal');
-        wire.geometry.dispose(); wire.geometry = new THREE.TubeGeometry(wcurve, 44, 0.07, 5, false);
+        cable.geometry.dispose(); cable.geometry = new THREE.TubeGeometry(curve, 52, 0.25, 8, false);
+        const wcurve = new THREE.CatmullRomCurve3(pts.map(p => p.clone().addScaledVector(a4, -0.4)), false, 'centripetal');
+        wire.geometry.dispose(); wire.geometry = new THREE.TubeGeometry(wcurve, 52, 0.07, 5, false);
+        clamps.forEach((c, i) => { const t = CLAMP_AT[i]; c.position.copy(curve.getPointAt(t)); c.quaternion.setFromUnitVectors(V(0, 0, 1), curve.getTangentAt(t)); });
       }
-      // the lights on top of the forearm, near the wrist
-      const top = pf.clone().negate();
+      // the lights: J1's ring breathing, and a chase along the forearm
+      const glowK = on * (0.55 + 0.45 * Math.sin(tt * 3.2));
+      halo.material.color.setRGB(1 * glowK + 0.06, 0.72 * glowK + 0.05, 0.38 * glowK + 0.04);
       lights.forEach((l, i) => {
-        l.position.copy(at(E, W, 0.62 + i * 0.07, top, 1.08 - i * 0.02));
+        l.position.copy(at(E, W, 0.5 + i * 0.07, sf, 1.26 - i * 0.03)).addScaledVector(a4, -0.55);
         const k = on * (0.2 + 0.8 * Math.pow(0.5 + 0.5 * Math.sin(tt * 9 - i * 1.4 - 2.2), 3));
         l.material.color.setRGB(1 * k + 0.08, 0.72 * k + 0.05, 0.36 * k + 0.03);
       });
@@ -1012,28 +1334,14 @@ export async function prepareTable(opts) {
   const handShadow = new THREE.Mesh(new THREE.PlaneGeometry(16, 22), new THREE.MeshBasicMaterial({ map: canvasTex(128, 128, (c, W, H) => { const g = c.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, W / 2); g.addColorStop(0, 'rgba(0,0,0,0.9)'); g.addColorStop(0.45, 'rgba(0,0,0,0.5)'); g.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = g; c.fillRect(0, 0, W, H); }), transparent: true, depthWrite: false, opacity: 0 }));
   handShadow.rotation.x = -Math.PI / 2; handShadow.position.y = 0.02; handShadow.renderOrder = 2;
   seat.add(handShadow);
-  // The dealer's port: a brass ring let into the felt by the shoe, a dark
-  // well, and two ceramic leaves that draw back into the rim while the arm
-  // is up (setPort: 0 shut, 1 open).
-  const port = new THREE.Group();
-  port.position.set(PORT.x, 0, PORT.z);
-  const portRing = new THREE.Mesh(new THREE.TorusGeometry(PORT.r, 0.2, 10, 48), set.brass);
-  portRing.rotation.x = Math.PI / 2; portRing.position.y = 0.1;
-  const portWell = new THREE.Mesh(new THREE.CircleGeometry(PORT.r, 40), new THREE.MeshBasicMaterial({ color: 0x040303 }));
-  portWell.rotation.x = -Math.PI / 2; portWell.position.y = 0.03;
-  // (black lacquer like the rack, so shut it is only a ring in the felt)
-  const leafMat = new THREE.MeshPhysicalMaterial({ color: 0x100e0d, roughness: 0.3, clearcoat: 0.9, clearcoatRoughness: 0.12 });
-  const leaves = [0, 1].map(i => {
-    const m = new THREE.Mesh(new THREE.CircleGeometry(PORT.r - 0.08, 32, Math.PI / 2 + i * Math.PI, Math.PI), leafMat);
-    m.rotation.x = -Math.PI / 2; m.position.y = 0.06; m.receiveShadow = true;
-    return m;
-  });
-  port.add(portWell, portRing, ...leaves);
-  seat.add(port);
-  const setPort = k => leaves.forEach((m, i) => {
-    const w = Math.max(0.002, 1 - clamp01(k));
-    m.scale.x = w; m.position.x = (i ? 1 : -1) * PORT.r * (1 - w);
-  });
+  // The dealer's port: a round hole in the felt by the shoe, closed by an
+  // iris of nine satin-black blades, each edged in gold, that turn back
+  // under the felt as it opens (setPort: 0 shut, 1 open); a brass bezel
+  // round it, engraved; below, a dark well with a ring of warm light in it.
+  const port = buildPort(set);
+  port.group.position.set(PORT.x, 0, PORT.z);
+  seat.add(port.group);
+  const setPort = port.set;
   setPort(0);
   const shoeMouth = V(0, 0.9, -11.6).applyAxisAngle(V(0, 1, 0), shoe.rotation.y).add(shoe.position);
   const mouthDir = V(0, 0, -1).applyAxisAngle(V(0, 1, 0), shoe.rotation.y);
@@ -1091,11 +1399,23 @@ export async function prepareTable(opts) {
     // (anything of the arm below the felt is inside the table: clipped)
     handGL.localClippingEnabled = true;
     const dealerMats = dealerMaterials();
-    const underFelt = [new THREE.Plane(V(0, 1, 0), -0.05)];
+    // (below the well's floor nothing of it is ever seen)
+    const underFelt = [new THREE.Plane(V(0, 1, 0), 8.6)];
     Object.values(dealerMats).forEach(mat => { if (mat.isMaterial) mat.clippingPlanes = underFelt; });
     const dealer = buildDealerHand(dealerMats);
     const arm = buildDealerArm(dealerMats);
     handSeat.add(dealer, arm.group);
+    // The table as the arm's canvas sees it, in depth alone: the felt with
+    // the port's hole in it and the well's wall, so what of the arm is down
+    // the well shows through the hole and nowhere else.
+    {
+      const hide = new THREE.MeshBasicMaterial({ colorWrite: false });
+      const top = new THREE.Shape(); top.moveTo(-200, -200); top.lineTo(200, -200); top.lineTo(200, 200); top.lineTo(-200, 200); top.closePath();
+      const h = new THREE.Path(); h.absarc(PORT.x, -PORT.z, PORT.r, 0, Math.PI * 2, true); top.holes.push(h);
+      const felt = new THREE.Mesh(new THREE.ShapeGeometry(top, 48), hide); felt.rotation.x = -Math.PI / 2; felt.position.y = -0.02; felt.renderOrder = -1;
+      const wall = new THREE.Mesh(new THREE.CylinderGeometry(PORT.r - 0.03, PORT.r - 0.03, 8.8, 48, 1, true), hide); wall.position.set(PORT.x, -4.45, PORT.z); wall.renderOrder = -1;
+      handSeat.add(felt, wall);
+    }
     handScene.add(handSeat);
     {
       const key = new THREE.DirectionalLight(0xffeedd, 2.4); key.position.set(-8, 40, 12); handSeat.add(key, key.target);
@@ -1178,7 +1498,9 @@ export async function prepareTable(opts) {
     // up toward the dealer, to make room)
     const rows = Math.ceil(cards.length / SLOTS.cols);
     const z0 = rows >= 3 ? L.z0 - 4 : L.z0;
-    if (table.group.userData.mark) table.group.userData.mark.position.z = FELT.b - (rows >= 3 ? 15 : 23);
+    // (with a third row the wordmark moves up toward the dealer, a little
+    // smaller, clear of both the cards and the port's bezel)
+    if (table.group.userData.mark) { const m = table.group.userData.mark; m.position.z = FELT.b - (rows >= 3 ? 16.8 : 23); m.scale.setScalar(rows >= 3 ? 0.84 : 1); }
     const slotAt = i => {
       const r = Math.floor(i / SLOTS.cols), c = i % SLOTS.cols;
       const inRow = Math.min(SLOTS.cols, cards.length - r * SLOTS.cols);
@@ -1300,8 +1622,14 @@ export async function prepareTable(opts) {
     const tmpQ = new THREE.Quaternion(), camQ = new THREE.Quaternion();
     const up = V(0, 1, 0);
     const flyEye = V(0, 0, 0), qTable = new THREE.Quaternion(), qSeat = new THREE.Quaternion();
+    let lookAt = null;
     const placeCamera = tt => {
-      if (tt < FLY) {
+      if (lookAt) {
+        camera.up.copy(up);
+        camera.position.copy(toWorld(lookAt.eye));
+        camera.lookAt(toWorld(lookAt.aim));
+        camera.fov = lookAt.fov;
+      } else if (tt < FLY) {
         // (smootherstep: it eases away from the float and into the seat
         // with no jolt at either end)
         const u = smoother(tt / FLY);
@@ -1362,8 +1690,8 @@ export async function prepareTable(opts) {
     // through the port's ring)
     const reachUp = ARM.upper + ARM.fore - 0.1;
     const upright = y => handPose(V(PORT.x, y + reachUp - WRIST.z, PORT.z - WRIST.y), V(0, 1, 0), V(0, 0, 1));
-    const RISE = { open: 0.95, up: 0.85, swing: 0.45 };         // seconds before dealAt
-    const SINK = { fold: 0.4, down: 0.35, shut: 0.15 };           // seconds after the deal
+    const RISE = { open: 1.2, up: 0.85, swing: 0.45 };          // seconds before dealAt
+    const SINK = { fold: 0.4, down: 0.35, shut: 0.32 };           // seconds after the deal
     // A turning card's angle: pushed to 62 degrees by the hand, then over
     // on its own; or flicked (a sweep, a cascade) and over on its own.
     const angleAt = (ci, tt) => {
@@ -1611,7 +1939,7 @@ export async function prepareTable(opts) {
       const n = cardObjs.length;
       let hp = upright(ARM.down), y = ARM.down, open = 0, f = FIN.rest, free = false;
       if (n && !fo.reduced && tt >= dealAt - RISE.open) {
-        open = smoother((tt - (dealAt - RISE.open)) / 0.15);
+        open = clamp01((tt - (dealAt - RISE.open)) / 0.32);
         const S = deal.segs;
         const firstT = S.length ? S[0].t0 : dealAt, endT = S.length ? S[S.length - 1].t1 : dealAt;
         if (tt < firstT) {
@@ -1636,7 +1964,7 @@ export async function prepareTable(opts) {
           const k = tt - endT;
           y = lerp(ARM.up, ARM.down, smoother(k / SINK.down));
           hp = upright(y);
-          open = 1 - smoother((k - SINK.down + 0.05) / SINK.shut);
+          open = 1 - clamp01((k - SINK.down + 0.02) / SINK.shut);
         }
       }
       return { hp, y, open, f, free };
@@ -1661,7 +1989,7 @@ export async function prepareTable(opts) {
       dealer.quaternion.copy(hp.q);
       wristW.copy(WRIST).applyQuaternion(hp.q).add(hp.p);
       const shown = y > ARM.down + 1;
-      arm.pose(y, wristW, tt, shown ? 1 : 0);
+      arm.pose(y, wristW, hp.q, tt, shown ? 1 : 0);
       setPort(open);
       dealer.visible = arm.group.visible = shown;
       // the fingers: opening to reach, closed on the cards it carries,
@@ -1674,6 +2002,7 @@ export async function prepareTable(opts) {
       const speed = prevPalm && dt > 0 && dt < 0.2 ? prevPalm.distanceTo(palm) / dt : 0;
       glow = lerp(glow, shown ? 0.3 + Math.min(0.6, speed / 140) : 0, 0.35);
       dealerMats.ceramic.emissiveIntensity = glow;
+      dealerMats.circuit.emissiveIntensity = 0.15 + glow * 1.8;
       dealerMats.pulse.value = tt;
       prevPalm = palm; prevT = tt;
       // its shadow on the felt, under the palm, fading as the hand rises
@@ -1861,6 +2190,9 @@ export async function prepareTable(opts) {
       // focused card as a drag would give it)
       deal: deal.style,
       turnCard(dx, dy) { spinBy(dx, dy); wake(); },
+      // (lab: the camera anywhere in the seat's frame, to look a prop over;
+      // look() with nothing puts it back in the seat)
+      look(eye, aim, fov) { lookAt = eye ? { eye: V(...eye), aim: V(...aim), fov: fov || sv.fov } : null; update(tNow); draw(); },
       putDown,
       dispose() {
         disposed = true; running = false; cancelAnimationFrame(raf);
