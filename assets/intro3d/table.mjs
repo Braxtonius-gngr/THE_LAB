@@ -117,11 +117,13 @@ function resample(path, step) {
 // is [[out, up], ...]: `out` along the path's outward normal (to the right of
 // its direction of travel), `up` along +y. UVs: u runs round the profile
 // (0..1), v along the path in `tile` cm.
-function sweep(path, profile, tile, caps = false) {
+function sweep(path, profile, tile, caps = false, open = false) {
   const pos = [], uv = [], idx = [];
-  const n = path.length, m = profile.length;
+  // (open: the profile is a line, not a loop - a ribbon, one face, no
+  // closing edge back to its start)
+  const n = path.length, m = open ? profile.length - 1 : profile.length;
   const plen = [0];
-  for (let j = 1; j <= m; j++) { const a = profile[j - 1], b = profile[j % m]; plen.push(plen[j - 1] + Math.hypot(b[0] - a[0], b[1] - a[1])); }
+  for (let j = 1; j <= m; j++) { const a = profile[j - 1], b = profile[j % profile.length]; plen.push(plen[j - 1] + Math.hypot(b[0] - a[0], b[1] - a[1])); }
   let along = 0;
   for (let i = 0; i < n; i++) {
     const a = path[Math.max(0, i - 1)], b = path[Math.min(n - 1, i + 1)];
@@ -130,7 +132,7 @@ function sweep(path, profile, tile, caps = false) {
     const nx = tz, nz = -tx;             // right of the direction of travel
     if (i > 0) along += Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]);
     for (let j = 0; j <= m; j++) {
-      const [o, u] = profile[j % m];
+      const [o, u] = profile[j % profile.length];
       pos.push(path[i][0] + nx * o, u, path[i][1] + nz * o);
       uv.push(plen[j] / plen[m], along / tile);
     }
@@ -225,6 +227,102 @@ function embossTex(src, strength) {
   tex.colorSpace = THREE.NoColorSpace; tex.anisotropy = 16;
   return tex;
 }
+// ---- The finishes. Up close every surface has a texture of its own that
+// catches the light: brass is brushed, fine lines running along the part
+// (round a turned one); lacquer, lacquered walnut and glazed ceramic carry
+// the faint orange peel of a sprayed coat under their clear; the iris
+// blades are bead-blasted; clay chips are grained. Each is a small height
+// field that tiles, made once from a fixed seed, turned into a normal map
+// and a roughness map to go with it (a roughness map scales the
+// material's roughness by its green).
+const FINISHES = {};
+function seeded(seed) { return () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; }; }
+// (value noise that wraps: a lattice of cells x cells, smoothly joined)
+function wrapNoise(N, cells, rnd) {
+  const L = Float32Array.from({ length: cells * cells }, rnd), out = new Float32Array(N * N);
+  const s = t => t * t * (3 - 2 * t);
+  for (let y = 0; y < N; y++) {
+    const fy = y / N * cells, y0 = Math.floor(fy), ty = s(fy - y0), y1 = (y0 + 1) % cells;
+    for (let x = 0; x < N; x++) {
+      const fx = x / N * cells, x0 = Math.floor(fx), tx = s(fx - x0), x1 = (x0 + 1) % cells;
+      out[y * N + x] = lerp(lerp(L[y0 * cells + x0], L[y0 * cells + x1], tx), lerp(L[y1 * cells + x0], L[y1 * cells + x1], tx), ty);
+    }
+  }
+  return out;
+}
+function dataTex(N, fill) {
+  const c = document.createElement('canvas'); c.width = c.height = N;
+  const ctx = c.getContext('2d'), img = ctx.createImageData(N, N);
+  fill(img.data);
+  ctx.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.NoColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8;
+  return t;
+}
+function finish(kind) {
+  if (FINISHES[kind]) return FINISHES[kind];
+  const N = 256, h = new Float32Array(N * N);
+  const rnd = seeded({ brushed: 11, peel: 23, blast: 37, clay: 41 }[kind] || 5);
+  const add = (src, k) => { for (let i = 0; i < h.length; i++) h[i] += src[i] * k; };
+  let strength = 1, lo = 0.8, hi = 1;
+  if (kind === 'brushed') {
+    // each row its own depth, then scratches over them, fading in and out
+    const row = Float32Array.from({ length: N }, rnd);
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) h[y * N + x] = row[y] * 0.5;
+    for (let k = 0; k < 520; k++) {
+      const y = Math.floor(rnd() * N), x0 = Math.floor(rnd() * N), len = 24 + rnd() * 200, a = (rnd() - 0.5) * 0.9;
+      for (let i = 0; i < len; i++) h[y * N + (x0 + i) % N] += a * Math.sin(Math.PI * i / len);
+    }
+    // (and a broad cloud, the part's own unevenness, felt mostly as sheen)
+    const cloud = wrapNoise(N, 4, rnd); add(cloud, 0.6);
+    strength = 0.9; lo = 0.62; hi = 1;
+  } else if (kind === 'peel') {
+    add(wrapNoise(N, 16, rnd), 0.6); add(wrapNoise(N, 32, rnd), 0.3); add(wrapNoise(N, 64, rnd), 0.1);
+    strength = 2.2; lo = 0.85; hi = 1;
+  } else if (kind === 'blast') {
+    for (let i = 0; i < h.length; i++) h[i] = rnd() * 0.5;
+    add(wrapNoise(N, 64, rnd), 0.5); add(wrapNoise(N, 8, rnd), 0.4);
+    strength = 1.6; lo = 0.8; hi = 1;
+  } else {
+    // clay: a fine grain, pressed, with a looser mottle through it
+    for (let i = 0; i < h.length; i++) h[i] = rnd() * 0.45;
+    add(wrapNoise(N, 96, rnd), 0.35); add(wrapNoise(N, 12, rnd), 0.35);
+    strength = 1.8; lo = 0.78; hi = 1;
+  }
+  let mn = Infinity, mx = -Infinity;
+  for (const v of h) { if (v < mn) mn = v; if (v > mx) mx = v; }
+  for (let i = 0; i < h.length; i++) h[i] = (h[i] - mn) / (mx - mn || 1);
+  const at = (x, y) => h[((y + N) % N) * N + (x + N) % N];
+  const normal = dataTex(N, d => {
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const dx = (at(x + 1, y) - at(x - 1, y)) * strength, dy = (at(x, y + 1) - at(x, y - 1)) * strength, l = Math.hypot(dx, dy, 1), i = (y * N + x) * 4;
+      d[i] = (-dx / l * 0.5 + 0.5) * 255; d[i + 1] = (dy / l * 0.5 + 0.5) * 255; d[i + 2] = (1 / l * 0.5 + 0.5) * 255; d[i + 3] = 255;
+    }
+  });
+  const rough = dataTex(N, d => { for (let i = 0; i < N * N; i++) { const v = (lo + (hi - lo) * h[i]) * 255; d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v; d[i * 4 + 3] = 255; } });
+  return (FINISHES[kind] = { normal, rough });
+}
+// A material given a finish: its normal map (under the clear coat, if it
+// has one: the coat is what the peel is in) and roughness map, at a repeat.
+function finished(mat, kind, rx, ry, depth) {
+  const f = finish(kind);
+  const n = retile(f.normal, rx, ry), r = retile(f.rough, rx, ry);
+  if (mat.isMeshPhysicalMaterial && mat.clearcoat > 0 && kind === 'peel') {
+    mat.clearcoatNormalMap = n; mat.clearcoatNormalScale = new THREE.Vector2(depth, depth);
+  } else if (!mat.normalMap) {
+    mat.normalMap = n; mat.normalScale = new THREE.Vector2(depth, depth);
+  }
+  if (!mat.roughnessMap) mat.roughnessMap = r;
+  mat.needsUpdate = true;
+  return mat;
+}
+// The house's finished set: the intro's materials, the brass brushed (a
+// copy: the intro's own brass is left as it is).
+function fineSet(set) {
+  const brass = finished(set.brass.clone(), 'brushed', 1, 1, 0.18);
+  brass.roughness = 0.34;
+  return Object.assign({}, set, { brass });
+}
 // A rounded rectangle as a Shape (centred), for the phone and the tray.
 function roundRect(w, h, r) {
   const s = new THREE.Shape(), x = -w / 2, y = -h / 2;
@@ -307,6 +405,8 @@ function buildCardTable(set) {
   const woodMat = set.wood.clone();
   woodMat.map = retile(set.tex.walnut, 1, 1);
   woodMat.normalMap = retile(set.tex.walnutN, 1, 1);
+  // (its lacquer's peel at 3 cm a tile: u here is 60 cm, v 15)
+  finished(woodMat, 'peel', 20, 5, 0.05);
   // (the edge's u runs round its section; the grain wants to run along the
   // rail, so the section is walked in v: see the swapped tile below)
   const edgeSection = [[0.5, -0.6], [12.2, -0.6], [12.8, -1.6], [12.8, -8.2], [12.2, -9.2], [0.5, -9.2]];
@@ -332,9 +432,9 @@ function buildCardTable(set) {
   stitch.wrapS = stitch.wrapT = THREE.RepeatWrapping;
   const stitchMat = new THREE.MeshStandardMaterial({ map: stitch, transparent: true, alphaTest: 0.3, roughness: 0.75, metalness: 0.1, side: THREE.DoubleSide });
   [66, 114].forEach(deg => {
-    const t0 = (deg - 0.7) * DEG, t1 = (deg + 0.7) * DEG;
+    const t0 = (deg - 0.5) * DEG, t1 = (deg + 0.5) * DEG;
     const at = t => [5.6 + 5.82 * Math.cos(t), 3.1 + 4.32 * Math.sin(t)];
-    const row = new THREE.Mesh(sweep(rim, [at(t0), at(t1)], 0.5), stitchMat);
+    const row = new THREE.Mesh(sweep(rim, [at(t0), at(t1)], 0.5, false, true), stitchMat);
     g.add(row);
   });
   // The printed felt: a fine gold arc, the house line round it, the
@@ -424,7 +524,7 @@ function chipFace(name) {
 }
 function chipTray(set) {
   const g = new THREE.Group();
-  const lacquer = new THREE.MeshPhysicalMaterial({ color: 0x0b0a0a, roughness: 0.3, clearcoat: 0.9, clearcoatRoughness: 0.1 });
+  const lacquer = finished(new THREE.MeshPhysicalMaterial({ color: 0x0b0a0a, roughness: 0.3, clearcoat: 0.9, clearcoatRoughness: 0.1 }), 'peel', 1 / 3, 1 / 3, 0.05);
   // (troughs deeper than their radius above the top: a chip stands in its
   // trough to a little past half its height)
   const TR = { n: 10, pitch: 5.95, r: 2.1, sink: 0.55, len: 10.4, h: 3.1 };
@@ -461,7 +561,7 @@ function chipTray(set) {
     for (let i = 0; i < TR.n; i++) { const u = 0.5 - cxOf(i) / (W + 0.2); c.fillText(VAL[COL[i]], u * Wc, Hc / 2 + 2); }
     for (let i = 1; i < TR.n; i++) { const u = 0.5 - (cxOf(i) - TR.pitch / 2) / (W + 0.2); c.fillRect(u * Wc - 1, 14, 2, Hc - 28); }
   });
-  const strip = new THREE.Mesh(new THREE.PlaneGeometry(W + 0.2, 0.9), new THREE.MeshStandardMaterial({ map: plate, metalness: 1, roughness: 0.32 }));
+  const strip = new THREE.Mesh(new THREE.PlaneGeometry(W + 0.2, 0.9), finished(new THREE.MeshStandardMaterial({ map: plate, metalness: 1, roughness: 0.36 }), 'brushed', 1, 1 / 40, 0.12));
   strip.position.set(0, 0.4 + TR.h * 0.45, -(TR.len / 2 + 0.13)); strip.rotation.y = Math.PI; g.add(strip);
   // the chips: the edge texture, eight inserts; the faces, the house coin
   const spots = { onyx: ['#121214', '#e8e2d2', '#b8914a'], oxblood: ['#5b1622', '#f1e7d0', '#c9a45a'], emerald: ['#1d3a2a', '#f1e7d0', '#c9a45a'], ivory: ['#e6dfcb', '#6b1320', '#b8914a'], plum: ['#3a2352', '#f1e7d0', '#c9a45a'], gold: ['#b58a2e', '#1a1208', '#f6e2a8'] };
@@ -481,8 +581,10 @@ function chipTray(set) {
       const gr = c.createLinearGradient(0, 0, 0, Hc); gr.addColorStop(0, 'rgba(0,0,0,0.35)'); gr.addColorStop(0.2, 'rgba(0,0,0,0)'); gr.addColorStop(0.8, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,0.35)');
       c.fillStyle = gr; c.fillRect(0, 0, Wc, Hc);
     });
-    const sideM = new THREE.MeshStandardMaterial({ map: side, roughness: 0.55 });
-    const faceM = new THREE.MeshStandardMaterial({ map: chipFace(name), roughness: 0.45, metalness: 0.12 });
+    // (the clay's grain at 2 cm a tile: round the edge 12.3 cm, across it
+    // 0.33; on a face, 3.9 across)
+    const sideM = finished(new THREE.MeshStandardMaterial({ map: side, roughness: 0.6 }), 'clay', 6, 0.16, 0.45);
+    const faceM = finished(new THREE.MeshStandardMaterial({ map: chipFace(name), roughness: 0.5, metalness: 0.12 }), 'clay', 2, 2, 0.35);
     const troughs = COL.map((c, i) => (c === name ? i : -1)).filter(i => i >= 0);
     if (!troughs.length) return;
     const count = troughs.reduce((sum, i) => sum + FILL[COL[i]], 0);
@@ -562,7 +664,7 @@ function sealTex() {
 function buildShoe(set) {
   const g = new THREE.Group();
   const acrylic = new THREE.MeshPhysicalMaterial({ color: 0x3a302a, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.3, clearcoat: 1, clearcoatRoughness: 0.03, depthWrite: false, side: THREE.DoubleSide });
-  const lac = new THREE.MeshPhysicalMaterial({ color: 0x0c0a0a, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.08 });
+  const lac = finished(new THREE.MeshPhysicalMaterial({ color: 0x0c0a0a, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.08 }), 'peel', 1 / 3, 1 / 3, 0.05);
   const X = 4.85, Z0 = -10.2, Z1 = 7.0, Y0 = 0.9;
   // feet and base
   [[-X + 0.5, Z0 + 0.6], [X - 0.5, Z0 + 0.6], [-X + 0.5, Z1 - 0.6], [X - 0.5, Z1 - 0.6]].forEach(([x, z]) => { const f = new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 10), set.brass); f.scale.y = 0.7; f.position.set(x, 0.28, z); g.add(f); });
@@ -606,7 +708,7 @@ function buildShoe(set) {
   const card = new THREE.Mesh(new THREE.BoxGeometry(6.35, 0.03, 8.89), [edgeM, edgeM, backM, edgeM, edgeM, edgeM]);
   card.position.set(0, Y0 + 0.03, Z0 + 1.5); card.rotation.x = 2 * DEG; card.castShadow = true; g.add(card);
   // the seal on the back, toward you
-  const seal = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.35, 0.14, 48), [set.brass, new THREE.MeshStandardMaterial({ map: sealTex(), metalness: 1, roughness: 0.3 }), set.brass]);
+  const seal = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.35, 0.14, 48), [set.brass, finished(new THREE.MeshStandardMaterial({ map: sealTex(), metalness: 1, roughness: 0.34 }), 'brushed', 1, 1, 0.1), set.brass]);
   seal.rotation.set(Math.PI / 2, Math.PI / 2, 0); seal.position.set(0, 3.5, Z1 + 0.1); g.add(seal);
   return g;
 }
@@ -620,6 +722,7 @@ function buildDiscard(set) {
   const X = 4.3, Z = 5.6, Y0 = 1.0;
   // (the walnut's grain at its own scale: the slab's UVs are in cm)
   const wood = set.wood.clone(); wood.map = retile(set.tex.walnut, 1 / 18, 1 / 18); wood.normalMap = retile(set.tex.walnutN, 1 / 18, 1 / 18);
+  finished(wood, 'peel', 1 / 3, 1 / 3, 0.05);
   const plinth = slab(roundRect(2 * X + 1.2, 2 * Z + 1.0, 0.8), Y0, wood, 0.18); g.add(plinth);
   g.add(tube(outline(2 * X + 1.24, 2 * Z + 1.04, 0.82, 0.55), 0.06, set.brass, true));
   const pad = new THREE.Mesh(new THREE.ShapeGeometry(roundRect(2 * X - 0.4, 2 * Z - 0.4, 0.4), 8), new THREE.MeshStandardMaterial({ color: 0x0b0a0c, roughness: 0.95 }));
@@ -647,7 +750,7 @@ function buildDiscard(set) {
     c.rotation.y = Math.sin(k * 1.9 + 0.4) * 0.05; c.castShadow = k === 4;
     g.add(c); y += 0.045;
   }
-  const medal = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.78, 0.5, 64), [set.brass, new THREE.MeshStandardMaterial({ map: sealTex(), metalness: 1, roughness: 0.28 }), set.brass]);
+  const medal = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.78, 0.5, 64), [set.brass, finished(new THREE.MeshStandardMaterial({ map: sealTex(), metalness: 1, roughness: 0.32 }), 'brushed', 1, 1, 0.1), set.brass]);
   // (turned to read from the seat, a little askew)
   medal.position.set(0.7, y + 0.26, -1.1); medal.rotation.y = Math.PI + 0.35; medal.castShadow = true; g.add(medal);
   return g;
@@ -686,7 +789,7 @@ function buildPort(set) {
   for (let i = 0; i < edge.length - 1; i++) { const a = 2 * i; ribIdx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
   const ribGeo = new THREE.BufferGeometry();
   ribGeo.setAttribute('position', new THREE.Float32BufferAttribute(ribPos, 3)); ribGeo.setIndex(ribIdx); ribGeo.computeVertexNormals();
-  const bladeMat = new THREE.MeshStandardMaterial({ color: 0x14110f, metalness: 0.75, roughness: 0.42, envMapIntensity: 0.55, side: THREE.DoubleSide });
+  const bladeMat = finished(new THREE.MeshStandardMaterial({ color: 0x14110f, metalness: 0.75, roughness: 0.46, envMapIntensity: 0.55, side: THREE.DoubleSide }), 'blast', 1 / 3, 1 / 3, 0.22);
   const ribMat = set.brass.clone(); ribMat.side = THREE.DoubleSide;
   const blades = [];
   for (let i = 0; i < N; i++) {
@@ -748,20 +851,22 @@ function buildPort(set) {
   return { group: g, set: set01 };
 }
 
-// The dealer is a machine: a six-axis arm in white ceramic traced with fine
+// The dealer is a machine: a seven-axis arm in white ceramic traced with fine
 // gold circuitry, stowed under a port in the felt by the shoe. As the deal
 // begins the port's iris opens and the arm rises out of the table on a
 // telescoping lift. It is built the way the finest such arms are, with
 // seven axes (see buildDealerArm), so the hand can take any pose while the
 // arm stays one rigid chain; it is solved every frame from the shoulder to
-// the wrist, and nothing on it ever stretches. Its hand keeps the old glove's frame - at the fingertips, +z
-// along the fingers, +y the back of the hand, +x the thumb's side - so a
-// pose is still where the fingertips are and which way they point.
+// the wrist, its links long enough for the farthest card (see ARM). Its
+// hand keeps the old glove's frame - at the fingertips, +z along the
+// fingers, +y the back of the hand, +x the thumb's side - so a pose is
+// still where the fingertips are and which way they point.
 const PORT = { x: -4, z: 58.5, r: 5.4 };
 // shoulder heights (up: dealing; down: stowed under the felt) and the two
 // links, shoulder to elbow and elbow to wrist (with room to spare for the
-// farthest card: nothing is ever pulled out of true)
-const ARM = { up: 7.5, down: -56, upper: 16, fore: 16 };
+// farthest card - 35.3 cm, shoulder to wrist, in a single deal of nine -
+// so nothing is ever pulled out of true)
+const ARM = { up: 7.5, down: -60, upper: 18, fore: 18 };
 // the wrist (J6's centre), in the hand's frame: behind the heel of the palm,
 // past the tool flange
 const WRIST = V(0, 0.6, -15.0);
@@ -818,7 +923,11 @@ function dealerMaterials() {
   // (under each drum's glass cap: a disc of gold circuitry on graphite,
   // lit from within while the arm works)
   const circuit = new THREE.MeshStandardMaterial({ color: 0x1b1916, metalness: 0.4, roughness: 0.45, map: circuitTex(false), emissive: 0xffc877, emissiveMap: circuitTex(true), emissiveIntensity: 0.3 });
-  circuit.map.repeat.set(0.5, 1);
+  circuit.map.repeat.set(0.5, 1); circuit.emissiveMap.repeat.set(0.5, 1);
+  // (the glaze's peel under its clear; the graphite bead-blasted, the gold
+  // and the chrome brushed)
+  finished(ceramic, 'peel', 4, 4, 0.05); finished(plain, 'peel', 4, 4, 0.05);
+  finished(graphite, 'blast', 2, 2, 0.3); finished(gold, 'brushed', 1, 1, 0.12); finished(chrome, 'brushed', 1, 1, 0.1);
   return { ceramic, plain, clear, gold, graphite, chrome, led, circuit, pulse };
 }
 // A mesh laid from a to b along its own y (a unit-height cylinder, or a
@@ -924,14 +1033,25 @@ function buildDealerHand(m) {
     neck.rotation.x = Math.PI / 2; neck.position.copy(WRIST).add(V(0, 0, 2.3)); g.add(neck);
     const ringG = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.07, 8, 36), m.gold); ringG.position.copy(WRIST).add(V(0, 0, 1.18)); g.add(ringG);
     for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2; const b = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.2, 8), m.graphite); b.rotation.x = Math.PI / 2; b.position.copy(WRIST).add(V(Math.cos(a) * 1.0, Math.sin(a) * 1.0, 1.12)); g.add(b); } }
-  // curl: 0 straight, 1 a grip, below 0 opened back; spread: 0 together, 1 splayed
-  g.userData.curl = (curl, spread) => {
-    fingers.forEach(f => {
-      f.root.rotation.set(curl * 0.16, spread * f.side * 0.075, 0);
-      f.mid.rotation.x = curl * 0.26;
-      f.tip.rotation.x = curl * 0.3;
+  // The fingers, each its own: per[i] = [curl, spread] for index, middle,
+  // ring and little finger. Curl 0 is straight; 1 a pinch - each finger
+  // arched, its knuckle joint lifting as the two joints past it bend, so
+  // the pads come straight down onto the card's end rather than digging
+  // through it (a grip that closes this way stays clear of the felt: the
+  // pads sit on the card at a pinch, no lower at a hook); past 1 a hook;
+  // below 0 the finger opens back from its knuckle alone. Spread fans the
+  // fingers apart at their knuckles. The thumb follows the grip: it swings
+  // in under the palm, rolled to face the fingers, and out as they open.
+  g.userData.fingers = (per, thumbCurl, thumbSpread) => {
+    fingers.forEach((f, i) => {
+      const [c, sp] = per[i];
+      const cp = Math.max(0, c), cn = Math.min(0, c);
+      f.root.rotation.set(-cp * 0.4 + cn * 0.3, sp * f.side * 0.12, 0);
+      f.mid.rotation.x = cp * 0.55 + cn * 0.05;
+      f.tip.rotation.x = cp * 0.65;
     });
-    thumb.rotation.set(curl * 0.1, -0.05 - spread * 0.12 + Math.max(0, curl) * 0.1, 0);
+    const o = clamp01(thumbCurl / 0.9);
+    thumb.rotation.set(o * 0.05 + Math.min(0, thumbCurl) * 0.2, -0.05 - o * 0.55 + thumbSpread * 0.25, -o * 0.15);
   };
   // the status lights: a chase while it works, dark at rest
   g.userData.leds = (on, tt) => leds.forEach((l, i) => { const k = on * (0.25 + 0.75 * Math.pow(0.5 + 0.5 * Math.sin(tt * 9 - i * 1.4), 3)); l.material.color.setRGB(1 * k + 0.08, 0.72 * k + 0.05, 0.36 * k + 0.03); });
@@ -1280,8 +1400,8 @@ function phoneHTML(asset) {
 export async function prepareTable(opts) {
   const o = Object.assign({ scene: null, dest: 'card', hooks: {} }, opts);
   const scene = o.scene;
-  const set = scene.userData.set;
-  if (!set) throw new Error('table: the intro set is missing');
+  if (!scene.userData.set) throw new Error('table: the intro set is missing');
+  const set = fineSet(scene.userData.set);
   const dest = DESTS.includes(o.dest) ? o.dest : 'card';
   const hooks = o.hooks || {};
   const made = [];                        // everything added, for dispose()
@@ -1716,30 +1836,45 @@ export async function prepareTable(opts) {
     // it flows through into the next (a card drawn and carried off, a sweep
     // swung into and out of): the path is joined smooth through those. And
     // the fingers: how far curled (below 0, opened back) and how spread.
-    const FIN = { rest: [0, 0], reach: [-0.55, 0.7], grip: [0.38, 0.05], flick: [0.75, 0.3], open: [-0.8, 1] };
+    const FIN = { rest: [0, 0], reach: [-0.35, 0.85], grip: [0.85, 0.08], flick: [1.15, 0.28], open: [-0.5, 1], relax: [0.32, 0.35] };
+    // And the wrist: the hand's attitude, [pitch, roll] about its
+    // fingertips (pitch over 0 tips the fingers down, the wrist up; roll
+    // turns it about its length). Every grab and placement is made level,
+    // so a card is taken and laid true; in between the hand leans into its
+    // work - reaching down into the shoe, lifting a card's end as it draws
+    // it, banking as it swings, hooking its fingers down to flick a row
+    // over - and each move can carry a lean that comes and goes with it.
     const makeDeal = style => {
       const n = cardObjs.length;
       const segs = [], cardsP = cardObjs.map(() => ({ pull: Infinity, j: 0, lay: Infinity, turn: Infinity, push: false }));
       // (the plan starts as the arm, risen, swings down to the shoe)
       let t = dealAt - RISE.swing;
-      let at = upright(ARM.up), fin = FIN.rest;
+      let at = upright(ARM.up), fin = FIN.rest, att = [0, 0];
       // a move of the hand to b over dur, arcing up by lift; settle: a
       // servo's small shiver on arrival; via: on through b without a stop;
-      // to: the fingers by the end of it
-      const move = (b, dur, { lift = 0, settle = false, via = false, to = fin } = {}) => { segs.push({ kind: 'move', t0: t, t1: t + dur, a: at, b, lift, settle, via, f0: fin, f1: to }); t += dur; at = b; fin = to; };
+      // to: the fingers by the end of it; lean: the wrist's attitude by the
+      // end of it; dip: an attitude that comes and goes over it
+      const move = (b, dur, { lift = 0, settle = false, via = false, to = fin, lean = att, dip = [0, 0] } = {}) => { segs.push({ kind: 'move', t0: t, t1: t + dur, a: at, b, lift, settle, via, f0: fin, f1: to, att0: att, att1: lean, dip }); t += dur; at = b; fin = to; att = lean; };
+      // (a bank for a move from a to b: into the turn, as the hand swings
+      // across itself)
+      const bank = (a, b, k = 0.012) => { const d = b.p.clone().sub(a.p).applyQuaternion(a.q.clone().invert()); return THREE.MathUtils.clamp(-d.x * k, -0.3, 0.3); };
       const hold = dur => move(at, dur);
       const grabAt = j => handFor(shoePose(inShoe), j), outAt = j => handFor(shoePose(pulled), j);
       // draw card i into slot j (from wherever the hand is): in open, the
       // fingers close on it, and it comes out of the shoe on the move
       const draw = (i, j, first) => {
-        move(grabAt(j), first ? RISE.swing + 0.08 : (j ? DEAL.regrab : DEAL.grab), { lift: first ? 2 : (j ? 0.6 : 4.5), to: j ? FIN.grip : FIN.reach });
+        // (reaching down into the shoe, level at the grab; then drawing the
+        // card out by its end, lifting it a little)
+        const g0 = grabAt(j);
+        move(g0, first ? RISE.swing + 0.08 : (j ? DEAL.regrab : DEAL.grab), { lift: first ? 2 : (j ? 0.6 : 4.5), to: j ? FIN.grip : FIN.reach, lean: [0, 0], dip: j ? [0.08, 0] : [0.3, bank(at, g0)] });
         cardsP[i].pull = t; cardsP[i].j = j;
-        move(outAt(j), DEAL.pull, { via: true, to: FIN.grip });
+        move(outAt(j), DEAL.pull, { via: true, to: FIN.grip, lean: [-0.12, 0] });
       };
-      // lay the card in slot j at its face-down place
-      const lay = (i, dur, lift) => { move(handFor(faceDown(cardObjs[i]), cardsP[i].j), dur, { lift, settle: true, to: FIN.grip }); cardsP[i].lay = t; };
-      // (and the fingers open off it)
-      const letGo = (dur = 0.09) => move(at, dur, { to: FIN.open });
+      // lay the card in slot j at its face-down place (carried leading edge
+      // up, banking into the swing, set down level)
+      const lay = (i, dur, lift) => { const b = handFor(faceDown(cardObjs[i]), cardsP[i].j); move(b, dur, { lift, settle: true, to: FIN.grip, lean: [0, 0], dip: [-0.16, bank(at, b, 0.018)] }); cardsP[i].lay = t; };
+      // (and the fingers open off it, spreading as they lift)
+      const letGo = (dur = 0.1) => move(at, dur, { to: FIN.open });
       // the rows and the columns of the hand, as card indices
       const rows = [], cols = [];
       cardObjs.forEach((o, i) => { const r = Math.floor(i / SLOTS.cols), c = i % SLOTS.cols; (rows[r] = rows[r] || []).push(i); (cols[c] = cols[c] || []).push(i); });
@@ -1752,11 +1887,13 @@ export async function prepareTable(opts) {
         from.y = to.y = 1.2;
         const fingers = V(0, -0.18, -1);
         const A = handPose(from, fingers, up), B = handPose(to, fingers, up);
-        move(A, 0.22, { lift: 2.5, via: true, to: FIN.flick });
+        // (fingers hooked down, the hand rolled a little into the sweep)
+        const roll = bank(A, B, 0.01);
+        move(A, 0.22, { lift: 2.5, via: true, to: FIN.flick, lean: [0.3, roll], dip: [-0.2, 0] });
         const dur = DEAL.sweep * line.length + 0.12;
         const t0 = t, d0 = from.distanceTo(to) || 1;
         line.forEach((i, k) => { cardsP[i].turn = t0 + dur * clamp01(from.distanceTo(ends[k]) / d0) - 0.03; });
-        move(B, dur, { via: true, to: FIN.flick });
+        move(B, dur, { via: true, to: FIN.flick, lean: [0.34, roll], dip: [0.06, 0] });
       };
       if (!n) return { segs, cards: cardsP, end: t };
       if (style === 'single') {
@@ -1766,7 +1903,7 @@ export async function prepareTable(opts) {
           hold(DEAL.settle);
           cardsP[i].turn = t; cardsP[i].push = true;
           segs.push({ kind: 'push', t0: t, t1: t + DEAL.push, card: i, f0: fin, f1: FIN.flick });
-          t += DEAL.push; fin = FIN.flick;
+          t += DEAL.push; fin = FIN.flick; att = [0, 0];
           at = handFor(turned(o, 62 * DEG, { p: V(0, 0, 0), q: new THREE.Quaternion() }), 0);
         });
       } else if (style === 'rows' || style === 'columns') {
@@ -1788,20 +1925,20 @@ export async function prepareTable(opts) {
         // (back behind the spread, low, to let the backs be seen a moment)
         const mid = V(0, 0, 0); cardObjs.forEach(o => mid.add(faceDown(o).p)); mid.multiplyScalar(1 / n);
         const far = Math.max(...cardObjs.map(o => faceDown(o).p.z)) + CARD.h / 2 + 3;
-        move(handPose(V(mid.x, 4.5, far), V(0, -0.35, -1), up), 0.32, { to: FIN.rest });
+        move(handPose(V(mid.x, 4.5, far), V(0, -0.35, -1), up), 0.32, { to: FIN.relax, lean: [-0.1, 0], dip: [-0.2, 0] });
         hold(DEAL.show);
         // one touch on the first card's far end, and the cascade
         const first = faceDown(cardObjs[0]).p.clone().addScaledVector(topOf(cardObjs[0]), CARD.h / 2 + 0.3); first.y = 1.1;
-        move(handPose(first, V(0, -0.2, -1), up), 0.22, { lift: 1.5, settle: true, to: FIN.flick });
+        move(handPose(first, V(0, -0.2, -1), up), 0.22, { lift: 1.5, settle: true, to: FIN.flick, lean: [0.34, 0] });
         const t0 = t;
         const order = cardObjs.map((o, i) => i).sort((a, b) => (Math.floor(a / SLOTS.cols) - Math.floor(b / SLOTS.cols)) || (cardObjs[b].userData.slot.x - cardObjs[a].userData.slot.x));
         order.forEach((i, k) => { cardsP[i].turn = t0 + 0.04 + k * DEAL.cascade; });
         // (and away, with a turn of the wrist)
-        move(handPose(first.clone().add(V(0, 7, 5)), V(0.5, 0.4, -1), V(-0.3, 1, 0)), 0.34, { via: true, to: FIN.open });
+        move(handPose(first.clone().add(V(0, 7, 5)), V(0.5, 0.4, -1), V(-0.3, 1, 0)), 0.34, { via: true, to: FIN.open, lean: [-0.2, 0.25] });
       }
       // the hand straightens up over the port once the last card is over
       const lastTurn = Math.max(...cardsP.map(turnEnd));
-      move(upright(ARM.up), SINK.fold, { lift: 3, to: FIN.rest });
+      move(upright(ARM.up), SINK.fold, { lift: 3, to: FIN.rest, lean: [0, 0], dip: [-0.2, 0] });
       // (through each via point at the mean of the speeds either side of
       // it; dead still at every stop)
       segs.forEach(sg => { sg.v0 = V(0, 0, 0); sg.v1 = V(0, 0, 0); sg.s0 = sg.s1 = 0; });
@@ -1930,9 +2067,22 @@ export async function prepareTable(opts) {
       const h0 = 1 - 10 * k3 + 15 * k4 - 6 * k5, h1 = k - 6 * k3 + 8 * k4 - 3 * k5, h2 = -4 * k3 + 7 * k4 - 3 * k5, h3 = 10 * k3 - 15 * k4 + 6 * k5;
       const p = sg.a.p.clone().multiplyScalar(h0).addScaledVector(sg.v0, h1 * dt).addScaledVector(sg.v1, h2 * dt).addScaledVector(sg.b.p, h3);
       p.y += sg.lift * Math.pow(Math.sin(Math.PI * k), 2);
-      return { p, q: sg.a.q.clone().slerp(sg.b.q, clamp01(h1 * sg.s0 + h2 * sg.s1 + h3)) };
+      const q = sg.a.q.clone().slerp(sg.b.q, clamp01(h1 * sg.s0 + h2 * sg.s1 + h3));
+      // (the wrist's attitude, about the fingertips)
+      const e = smoother(k), bump = Math.pow(Math.sin(Math.PI * k), 2);
+      const pitch = lerp(sg.att0[0], sg.att1[0], e) + sg.dip[0] * bump, roll = lerp(sg.att0[1], sg.att1[1], e) + sg.dip[1] * bump;
+      if (pitch || roll) q.multiply(_attQ.setFromEuler(_attE.set(pitch, 0, roll)));
+      return { p, q };
     };
+    const _attQ = new THREE.Quaternion(), _attE = new THREE.Euler();
     const fingersAt = (sg, k) => { const e = smoother(clamp01(k * 2.4)); return [lerp(sg.f0[0], sg.f1[0], e), lerp(sg.f0[1], sg.f1[1], e)]; };
+    // (the fingers alone at any moment: at rest outside the deal)
+    const fingersNow = tt => {
+      const S = deal.segs;
+      if (fo.reduced || !S.length || tt < S[0].t0 || tt >= S[S.length - 1].t1) return FIN.rest;
+      const sg = segAt(tt);
+      return sg ? fingersAt(sg, clamp01((tt - sg.t0) / Math.max(1e-4, sg.t1 - sg.t0))) : FIN.rest;
+    };
     // the hand's pose from the plan alone (no trailing), the shoulder's
     // height, the port, the fingers
     const planned = tt => {
@@ -1993,8 +2143,16 @@ export async function prepareTable(opts) {
       setPort(open);
       dealer.visible = arm.group.visible = shown;
       // the fingers: opening to reach, closed on the cards it carries,
-      // curled to flick one over, opened and spread as it lets go
-      dealer.userData.curl(f[0], f[1]);
+      // curled to flick one over, opened and spread as it lets go - the
+      // index finger first, the others each a beat behind it, never quite
+      // still (a servo's hold is a live one), the thumb opposing the grip
+      const per = [0, 1, 2, 3].map(i => {
+        const fi = i ? fingersNow(tt - i * 0.028) : f;
+        const live = shown ? 0.03 * Math.sin(tt * 2.6 + i * 1.3) + 0.015 * Math.sin(tt * 7.1 + i * 2.1) : 0;
+        return [fi[0] * (1 + 0.04 * i) + live, fi[1]];
+      });
+      const ft = fingersNow(tt + 0.02);
+      dealer.userData.fingers(per, ft[0], ft[1]);
       dealer.userData.leds(shown ? 1 : 0, tt);
       // the light in its circuits: up while it works, brighter as it moves
       const palm = V(0, 1.2, -9.8).applyQuaternion(hp.q).add(hp.p);
