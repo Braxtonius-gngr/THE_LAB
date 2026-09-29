@@ -7,10 +7,12 @@
 //
 // The seat is the home screen of the Refinement x Realization skin. The rail
 // in front of you holds the clock and the Daily Run; the deck waits in its
-// shoe. The dealer is a white ceramic arm that rises out of a port in the
-// felt: it deals your ready platforms onto the felt as cards, face down,
-// turns them, and sinks back - the higher a platform's tier, the finer its
-// card. Tap a card to lift it and read its Keen Info. Your phone lies by the
+// shoe. The dealer is a machine in white ceramic - a torso with two arms -
+// that rises out of a port in the felt: it deals your ready platforms onto
+// the felt as cards, hand to hand, face down, and turns them (the higher a
+// platform's tier, the finer its card), then stays up on the table, waiting
+// on you - more and more plainly while a card you could collect sits there.
+// Tap a card to lift it and read its Keen Info. Your phone lies by the
 // rail: pick it up for the freebies and the community drops.
 //
 // The table is WebGL: it shares the intro's renderer, scene, set and lights
@@ -52,7 +54,7 @@ const CARD = { w: 6.35, h: 8.89, px: 50 };
 const SLOTS = { cols: 3, gapX: 1.3, gapZ: 2.4, max: 9 };
 // The destination's layout in its seat frame: the seat camera (portrait,
 // landscape - on a phone, wide enough to hold the whole chip rack and the
-// dealer's arm at work above the cards), the first row of cards, the
+// dealer's arms at work above the cards), the first row of cards, the
 // rail's panel, the shoe and the discard rack.
 const LAYOUT = {
   card: {
@@ -62,19 +64,24 @@ const LAYOUT = {
 };
 // The shot's timings (seconds from the tap).
 const T = { cardFly: 4.8, uiIn: 0.6 };
-// The deal, by the dealer's arm: seconds per card, and its phases - the
-// reach to the shoe, the pull out of it, the carry to the card's place
-// (face down, a length short of it), the settle onto its near edge, the push
-// that lifts it over onto its face-up place, and the fall it finishes on
-// its own while the hand goes back for the next.
+// The deal, by the dealer's two arms, hand to hand: seconds per card, and
+// its phases. The shoe's arm reaches into the shoe (the first time from the
+// upright it rose in), draws the card out by its end, and brings it out over
+// the table to the pass; the other hand, waiting a hand's width off, comes
+// in and takes it, closes on it, and the shoe's hand lets go. It carries the
+// card to its place face down (a length short of it) and settles it onto its
+// near edge; the push lifts it over onto its face-up place, and it finishes
+// the fall on its own while the hand goes back to the pass for the next. A
+// card flicked over (a sweep, a cascade) turns on its own; the spread's backs
+// are shown a beat first. At the end both hands go down to rest.
 // (the machine's pace, in seconds: quick enough to be just past what a
 // person could do - see makeDeal)
-const DEAL = { grab: 0.16, regrab: 0.1, pull: 0.07, carry: 0.26, settle: 0.07, push: 0.09, fall: 0.22, turn: 0.34,
-  lay: 0.13, back: 0.28, show: 0.55, sweep: 0.14, cascade: 0.075 };
+const DEAL = { first: 0.72, grab: 0.24, pull: 0.07, out: 0.26, take: 0.12, close: 0.08, release: 0.08, carry: 0.3,
+  settle: 0.07, push: 0.09, fall: 0.22, back: 0.24, turn: 0.34, show: 0.55, sweep: 0.14, cascade: 0.075, rest: 0.6 };
 // The ways it deals (a deal picks one, or ?deal= names it):
 //   single  - one card at a time, drawn, carried and pushed over
-//   rows    - a row's cards drawn together, laid face down across the row,
-//             then swept over in one pass
+//   rows    - a row's cards laid face down across it one by one, then
+//             swept over in one pass
 //   columns - the same by columns, the column swept from front to back
 //   spread  - every card laid face down, a beat to see the backs, then one
 //             touch and the whole spread turns over in a cascade
@@ -681,6 +688,8 @@ function buildShoe(set) {
   const lidA = V(0, 3.5, Z0 + 1.8), lidB = V(0, 6.9, Z1 - 0.8);
   const lid = new THREE.Mesh(new THREE.BoxGeometry(2 * X - 0.1, 0.24, lidA.distanceTo(lidB)), acrylic);
   lid.position.copy(lidA).lerp(lidB, 0.5); lid.rotation.x = -Math.atan2(lidB.y - lidA.y, lidB.z - lidA.z); g.add(lid);
+  // (the lid's top, front to back, for a hand to rest on)
+  g.userData.lid = [lidA.clone().add(V(0, 0.12, 0)), lidB.clone().add(V(0, 0.12, 0))];
   // brass along the edges
   [X - 0.05, -X + 0.05].forEach(x => {
     g.add(rodBetween(V(x, lidA.y + 0.05, lidA.z), V(x, lidB.y + 0.05, lidB.z), 0.11, set.brass));
@@ -755,7 +764,7 @@ function buildDiscard(set) {
   medal.position.set(0.7, y + 0.26, -1.1); medal.rotation.y = Math.PI + 0.35; medal.castShadow = true; g.add(medal);
   return g;
 }
-// The port the dealer's arm rises through (see prepareTable): the felt
+// The port the dealer rises through (see prepareTable): the felt
 // and the table under it have a hole here (buildCardTable); this is the
 // iris that closes it, the bezel round it and the well below. An iris
 // blade is the part of the hole's disc inside a large circle whose edge
@@ -848,25 +857,45 @@ function buildPort(set) {
     });
     glowMat.color.setRGB(1.1 * e, 0.62 * e, 0.22 * e);
   };
-  return { group: g, set: set01 };
+  // (the radius of the opening at k: the blades' inner edges drawn back)
+  const aperture = k => dC + smoother(clamp01(k)) * (R + 1.4 - dC);
+  return { group: g, set: set01, aperture };
 }
 
-// The dealer is a machine: a seven-axis arm in white ceramic traced with fine
-// gold circuitry, stowed under a port in the felt by the shoe. As the deal
-// begins the port's iris opens and the arm rises out of the table on a
-// telescoping lift. It is built the way the finest such arms are, with
-// seven axes (see buildDealerArm), so the hand can take any pose while the
-// arm stays one rigid chain; it is solved every frame from the shoulder to
-// the wrist, its links long enough for the farthest card (see ARM). Its
-// hand keeps the old glove's frame - at the fingertips, +z along the
-// fingers, +y the back of the hand, +x the thumb's side - so a pose is
-// still where the fingertips are and which way they point.
-const PORT = { x: -4, z: 58.5, r: 5.4 };
-// shoulder heights (up: dealing; down: stowed under the felt) and the two
-// links, shoulder to elbow and elbow to wrist (with room to spare for the
-// farthest card - 35.3 cm, shoulder to wrist, in a single deal of nine -
-// so nothing is ever pulled out of true)
-const ARM = { up: 7.5, down: -60, upper: 18, fore: 18 };
+// The dealer is a machine: a two-armed torso in white ceramic traced with
+// fine gold circuitry, stowed under a port in the middle of the dealer's
+// side. As the deal begins the port's iris opens and it rises out of the
+// table on a telescoping lift, both arms straight up and the hands
+// together, like a diver surfacing. Each arm is built the way the finest
+// such arms are, with seven axes (see buildDealerArm), so its hand can take
+// any pose while the arm stays one rigid chain; it is solved every frame
+// from its shoulder to its wrist, its links long enough for the farthest
+// card (see ARM). The arm on the shoe's side (the dealer's left) draws the
+// cards and passes each one, hand to hand, to the other, which lays it and
+// turns it over; once the deal is done they stay up on the table. A hand
+// keeps the old glove's frame - at the fingertips, +z along the fingers,
+// +y the back of the hand, +x the thumb's side (the left hand is the right
+// one mirrored, its thumb on -x) - so a pose is still where the fingertips
+// are and which way they point.
+const PORT = { x: 0, z: 57.6, r: 6.2 };
+// shoulder heights (up: dealing; down: stowed under the felt), each
+// shoulder's distance out from the torso's middle, and the two links,
+// shoulder to elbow and elbow to wrist (with room to spare for the
+// farthest reach of any deal - see rollTable.reach() - so nothing is ever
+// pulled out of true)
+const ARM = { up: 14, down: -62, shoulder: 3.7, upper: 15.2, fore: 15.2 };
+// The two arms: which side of the torso each is on (the seat's x: -1 the
+// shoe's side, the player's right).
+const SIDES = [-1, 1];
+// Which way an arm carries its elbow (the seven axes leave that free): at
+// work (0) out to its own side and a little up, as a dealer's elbows are,
+// where you can see them work; at rest (1) out to the side and a little
+// back, easy - and anything between.
+const ELBOW = { work: [0.95, 0.28, 0.02], rest: [0.95, 0.04, 0.3] };
+function elbowWay(k, side, out) {
+  const a = ELBOW.work, b = ELBOW.rest;
+  return out.set(lerp(a[0], b[0], k) * side, lerp(a[1], b[1], k), lerp(a[2], b[2], k)).normalize();
+}
 // the wrist (J6's centre), in the hand's frame: behind the heel of the palm,
 // past the tool flange
 const WRIST = V(0, 0.6, -15.0);
@@ -961,11 +990,13 @@ function drum(m, r, len) {
 }
 // (a drum, or anything built along its local y, turned onto an axis)
 const onAxis = (obj, axis) => obj.quaternion.setFromUnitVectors(V(0, 1, 0), axis);
-function buildDealerHand(m) {
+function buildDealerHand(m, mirror = false) {
   const g = new THREE.Group();
+  // (built as a right hand; a left hand is the same mirrored across its x)
+  const body = new THREE.Group(); body.scale.x = mirror ? -1 : 1; g.add(body);
   // (modelled from the fingertips up; set down 0.7 cm so the fingers lie
   // on the card the pose puts them over rather than hovering above it)
-  const hand = new THREE.Group(); hand.position.y = -0.7; g.add(hand);
+  const hand = new THREE.Group(); hand.position.y = -0.7; body.add(hand);
   const bone = (r, a, b, mat) => laid(new THREE.Mesh(new THREE.CapsuleGeometry(r, Math.max(0.01, a.distanceTo(b) - 2 * r), 4, 14), mat), a, b);
   const hinge = (p, r) => { const h = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 1.0, 14), m.graphite); h.rotation.z = Math.PI / 2; h.position.copy(p); return h; };
   // (a gold trace along the top of a segment)
@@ -1028,11 +1059,11 @@ function buildDealerHand(m) {
   // the tool plate the arm's flange bolts to, at the heel of the palm: a
   // graphite disc on a ceramic neck, six bolt heads round a gold ring
   { const plate = new THREE.Mesh(new THREE.CylinderGeometry(1.32, 1.32, 0.55, 36), m.graphite);
-    plate.rotation.x = Math.PI / 2; plate.position.copy(WRIST).add(V(0, 0, 1.45)); g.add(plate);
+    plate.rotation.x = Math.PI / 2; plate.position.copy(WRIST).add(V(0, 0, 1.45)); body.add(plate);
     const neck = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.2, 1.2, 36), m.plain);
-    neck.rotation.x = Math.PI / 2; neck.position.copy(WRIST).add(V(0, 0, 2.3)); g.add(neck);
-    const ringG = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.07, 8, 36), m.gold); ringG.position.copy(WRIST).add(V(0, 0, 1.18)); g.add(ringG);
-    for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2; const b = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.2, 8), m.graphite); b.rotation.x = Math.PI / 2; b.position.copy(WRIST).add(V(Math.cos(a) * 1.0, Math.sin(a) * 1.0, 1.12)); g.add(b); } }
+    neck.rotation.x = Math.PI / 2; neck.position.copy(WRIST).add(V(0, 0, 2.3)); body.add(neck);
+    const ringG = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.07, 8, 36), m.gold); ringG.position.copy(WRIST).add(V(0, 0, 1.18)); body.add(ringG);
+    for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2; const b = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.2, 8), m.graphite); b.rotation.x = Math.PI / 2; b.position.copy(WRIST).add(V(Math.cos(a) * 1.0, Math.sin(a) * 1.0, 1.12)); body.add(b); } }
   // The fingers, each its own: per[i] = [curl, spread] for index, middle,
   // ring and little finger. Curl 0 is straight; 1 a pinch - each finger
   // arched, its knuckle joint lifting as the two joints past it bend, so
@@ -1057,37 +1088,85 @@ function buildDealerHand(m) {
   g.userData.leds = (on, tt) => leds.forEach((l, i) => { const k = on * (0.25 + 0.75 * Math.pow(0.5 + 0.5 * Math.sin(tt * 9 - i * 1.4), 3)); l.material.color.setRGB(1 * k + 0.08, 0.72 * k + 0.05, 0.36 * k + 0.03); });
   return g;
 }
-// The arm between the port and the wrist, placed by pose() each frame. It
-// is a seven-axis arm, as the finest of them are: J1, the base drum on the
-// lift, turning it to face its work; J2, the shoulder; J3, a roll of the
-// upper link; J4, the elbow; J5, a roll of the forearm; J6, the wrist; J7,
-// the tool flange the hand bolts to. With seven axes the elbow is free to
-// swing round the line from shoulder to wrist without moving either, so it
-// is carried out to the side and up, as a dealer's is - where you can see
-// it work - while the chain stays exact. A cable dress runs down the outside of it in
-// clamps, a lit ring breathes on J1, and a row of status lights on the
-// forearm chases while it works.
-function buildDealerArm(m) {
+// The torso, placed by pose() each frame: the lift (three sleeves, each
+// drawn out of the one below), J1 on top of it - the waist, turning the
+// body a little toward its work, a lit ring round it - and across it the
+// yoke that carries the two shoulders: a ceramic capsule with a graphite
+// waistband, a gold spine along its top and a status light at its heart.
+function buildDealerTorso(m) {
   const g = new THREE.Group();
   const cyl = (rt, rb, mat, seg = 36) => new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, 1, seg, 1), mat);
   const ring = (r, t, mat) => new THREE.Mesh(new THREE.TorusGeometry(r, t, 8, 44), mat);
-  // the lift: three sleeves, each drawn out of the one below, a graphite
-  // seal at each mouth
   const column = [cyl(2.0, 2.0, m.ceramic), cyl(2.35, 2.35, m.ceramic), cyl(2.7, 2.7, m.ceramic)];
   const seals = [ring(2.04, 0.17, m.graphite), ring(2.39, 0.17, m.graphite), ring(2.74, 0.17, m.graphite)];
-  // J1: upright, a lit ring round it
   const base = drum(m, 3.0, 3.0);
   const halo = new THREE.Mesh(new THREE.TorusGeometry(3.06, 0.1, 8, 64), m.led.clone());
   halo.rotation.x = Math.PI / 2; halo.position.y = 0.95; base.add(halo);
+  // the yoke, built along its own x (the torso's side to side)
+  const yoke = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(1.95, 2 * ARM.shoulder - 1.2, 8, 36), m.ceramic);
+  body.rotation.z = Math.PI / 2; yoke.add(body);
+  const waist = new THREE.Mesh(new THREE.CylinderGeometry(2.0, 2.0, 1.1, 40, 1, true), m.graphite);
+  waist.rotation.z = Math.PI / 2; yoke.add(waist);
+  [-0.62, 0.62].forEach(x => { const r = ring(2.0, 0.06, m.gold); r.rotation.y = Math.PI / 2; r.position.x = x; yoke.add(r); });
+  const spine = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 2 * ARM.shoulder - 1.6, 6), m.gold);
+  spine.rotation.z = Math.PI / 2; spine.position.y = 1.93; yoke.add(spine);
+  // (its heart: a lens of clear over a gold rosette, facing the player)
+  const heart = new THREE.Group();
+  const rosette = new THREE.Mesh(new THREE.CircleGeometry(0.62, 32), m.circuit); heart.add(rosette);
+  const lens = new THREE.Mesh(new THREE.SphereGeometry(0.72, 24, 8, 0, Math.PI * 2, 0, 0.9), m.clear); lens.rotation.x = Math.PI / 2; heart.add(lens);
+  const bezel = ring(0.72, 0.07, m.gold); heart.add(bezel);
+  const eye = new THREE.Mesh(new THREE.CircleGeometry(0.2, 20), m.led.clone()); eye.position.z = 0.02; heart.add(eye);
+  heart.position.set(0, 0.2, -1.97); heart.rotation.y = Math.PI; yoke.add(heart);
+  g.add(...column, ...seals, base, yoke);
+  const up = V(0, 1, 0), side = V(1, 0, 0);
+  const shoulders = [V(0, 0, 0), V(0, 0, 0)];
+  return {
+    group: g,
+    // the shoulders at height y over the port, the body turned by yaw
+    // (from facing the player); returns the two shoulders, [shoe side,
+    // other], and the torso's own side-to-side axis
+    pose(y, yaw, tt = 0, on = 0) {
+      const top = y - 4.9, base0 = ARM.down - 6, span = top - base0;
+      column.forEach((c, i) => {
+        const a = base0 + span * (2 - i) / 3, b = Math.min(top, a + span / 3 + 1.2);
+        laid(c, V(PORT.x, a, PORT.z), V(PORT.x, b, PORT.z), true);
+        seals[i].position.set(PORT.x, b, PORT.z); seals[i].quaternion.setFromUnitVectors(V(0, 0, 1), up);
+      });
+      base.position.set(PORT.x, y - 3.4, PORT.z); base.rotation.set(0, yaw, 0);
+      yoke.position.set(PORT.x, y, PORT.z); yoke.rotation.set(0, yaw, 0);
+      side.set(Math.cos(yaw), 0, -Math.sin(yaw));
+      shoulders.forEach((sh, k) => sh.set(PORT.x, y, PORT.z).addScaledVector(side, SIDES[k] * ARM.shoulder));
+      const glowK = on * (0.55 + 0.45 * Math.sin(tt * 3.2));
+      halo.material.color.setRGB(1 * glowK + 0.06, 0.72 * glowK + 0.05, 0.38 * glowK + 0.04);
+      eye.material.color.setRGB(1 * glowK + 0.08, 0.72 * glowK + 0.05, 0.36 * glowK + 0.03);
+      return { shoulders, side };
+    }
+  };
+}
+// One arm, from its shoulder on the yoke to its wrist, placed by pose()
+// each frame. It is a seven-axis arm, as the finest of them are: J1, its
+// shoulder's own yaw, let into the end of the yoke; J2, the shoulder; J3,
+// a roll of the upper link; J4, the elbow; J5, a roll of the forearm; J6,
+// the wrist; J7, the tool flange the hand bolts to. With seven axes the
+// elbow is free to swing round the line from shoulder to wrist without
+// moving either, so it is carried out to its own side and up, as a
+// dealer's is - where you can see it work - while the chain stays exact.
+// A cable dress runs down the outside of it in clamps, and a row of status
+// lights on the forearm chases while it works. side: -1 the shoe's side.
+function buildDealerArm(m, armSide) {
+  const g = new THREE.Group();
+  const cyl = (rt, rb, mat, seg = 36) => new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, 1, seg, 1), mat);
+  const ring = (r, t, mat) => new THREE.Mesh(new THREE.TorusGeometry(r, t, 8, 44), mat);
   // J2, J4, J6: the drums the arm bends at
-  const shoulder = drum(m, 2.5, 5.2), elbow = drum(m, 2.05, 4.5), wrist = drum(m, 1.42, 3.0);
+  const shoulder = drum(m, 2.15, 4.2), elbow = drum(m, 1.95, 4.3), wrist = drum(m, 1.42, 3.0);
   // J3, J5: the rolls, a collar on each link between two graphite breaks
   const collar = r => { const c = new THREE.Group(); const b = cyl(r, r, m.plain); b.scale.y = 1.5; c.add(b); [-0.8, 0.8].forEach(y => { const k = ring(r * 1.01, 0.1, m.graphite); k.rotation.x = Math.PI / 2; k.position.y = y; c.add(k); }); const gl = ring(r * 1.02, 0.045, m.gold); gl.rotation.x = Math.PI / 2; c.add(gl); return c; };
-  const roll3 = collar(2.0), roll5 = collar(1.5);
+  const roll3 = collar(1.85), roll5 = collar(1.45);
   // the links: tapered, a gold spine let into the top of each, two seams
-  const upper = cyl(1.62, 1.92, m.ceramic), fore = cyl(1.12, 1.42, m.ceramic);
+  const upper = cyl(1.52, 1.8, m.ceramic), fore = cyl(1.1, 1.38, m.ceramic);
   const spines = [cyl(0.07, 0.07, m.gold, 6), cyl(0.07, 0.07, m.gold, 6)];
-  const seams = [ring(1.72, 0.045, m.graphite), ring(1.25, 0.045, m.graphite)];
+  const seams = [ring(1.62, 0.045, m.graphite), ring(1.22, 0.045, m.graphite)];
   // J7: the tool flange, out of the wrist drum toward the hand
   const flange = new THREE.Group();
   { const c = cyl(1.22, 1.3, m.plain); c.scale.y = 1.35; c.position.y = 0.68; flange.add(c);
@@ -1098,31 +1177,24 @@ function buildDealerArm(m) {
   const clamps = CLAMP_AT.map(() => { const c = new THREE.Group(); c.add(ring(0.4, 0.1, m.plain)); const foot = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.55, 0.3), m.graphite); foot.position.y = -0.52; c.add(foot); g.add(c); return c; });
   // status lights along the forearm
   const lights = [0, 1, 2].map(() => { const l = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 8), m.led.clone()); g.add(l); return l; });
-  g.add(...column, ...seals, base, shoulder, roll3, elbow, roll5, wrist, upper, fore, ...spines, ...seams, flange, cable, wire);
+  g.add(shoulder, roll3, elbow, roll5, wrist, upper, fore, ...spines, ...seams, flange, cable, wire);
   const up = V(0, 1, 0);
-  // (where the elbow is carried: out to its right - the player's left -
-  // and up, a dealer's arm, so from the seat you see the whole of it)
-  const PREF = V(0.9, 0.75, -0.25).normalize();
-  const S = V(0, 0, 0), E = V(0, 0, 0), dir = V(0, 0, 0), n = V(0, 0, 0);
+  // (where the elbow is carried, by default: out to its own side and up)
+  const PREF = elbowWay(0, armSide, V(0, 0, 0));
+  const E = V(0, 0, 0), dir = V(0, 0, 0), n = V(0, 0, 0);
   const u = V(0, 0, 0), f = V(0, 0, 0), h = V(0, 0, 0), ax = V(1, 0, 0), fwd = V(0, 0, 1);
   const a4 = V(1, 0, 0), a6 = V(1, 0, 0), su = V(0, 1, 0), sf = V(0, 1, 0);
   const band = (b, a, c, k) => { b.position.copy(a).lerp(c, k); b.quaternion.setFromUnitVectors(V(0, 0, 1), c.clone().sub(a).normalize()); };
-  const at = (a, b, k, side, d) => a.clone().lerp(b, k).addScaledVector(side, d);
+  const at = (a, b, k, sd, d) => a.clone().lerp(b, k).addScaledVector(sd, d);
   const perp = (out, v, axis) => { out.copy(v).addScaledVector(axis, -v.dot(axis)); return out.lengthSq() > 1e-6 ? out.normalize() : null; };
   let yaw = 0;
   return {
     group: g,
-    // the shoulder at height y over the port, the wrist at W and the hand
-    // turned by q (seat frame); tt and on for the lights
-    pose(y, W, q, tt = 0, on = 0) {
-      S.set(PORT.x, y, PORT.z);
-      // the lift: three sleeves, each drawn out of the one below, up to J1
-      const top = y - 4.9, base0 = ARM.down - 6, span = top - base0;
-      column.forEach((c, i) => {
-        const a = base0 + span * (2 - i) / 3, b = Math.min(top, a + span / 3 + 1.2);
-        laid(c, V(PORT.x, a, PORT.z), V(PORT.x, b, PORT.z), true);
-        seals[i].position.set(PORT.x, b, PORT.z); seals[i].quaternion.setFromUnitVectors(V(0, 0, 1), up);
-      });
+    // the shoulder at S, the wrist at W and the hand turned by q (seat
+    // frame); across: the torso's side-to-side axis, for where the cables
+    // leave it; tt and on for the lights. Returns the shoulder-to-wrist
+    // distance it was asked for.
+    pose(S, W, q, across, tt = 0, on = 0, pref = PREF) {
       // shoulder to wrist: the elbow on the circle round that line, as near
       // the preferred side as it goes
       dir.copy(W).sub(S);
@@ -1131,16 +1203,15 @@ function buildDealerArm(m) {
       const L1 = ARM.upper, L2 = ARM.fore;
       const len = THREE.MathUtils.clamp(len0, Math.abs(L1 - L2) + 0.5, L1 + L2 - 0.05);
       const a = (L1 * L1 - L2 * L2 + len * len) / (2 * len), hh = Math.sqrt(Math.max(0, L1 * L1 - a * a));
-      if (!perp(n, PREF, dir) && !perp(n, up, dir)) n.copy(fwd).negate();
+      if (!perp(n, pref, dir) && !perp(n, up, dir)) n.copy(fwd).negate();
       E.copy(S).addScaledVector(dir, a).addScaledVector(n, hh);
       u.copy(E).sub(S).normalize(); f.copy(W).sub(E).normalize();
       // J1 faces the upper link; J2 bends it across that plane
       if (u.x * u.x + u.z * u.z > 1e-3) yaw = Math.atan2(u.x, u.z);
       fwd.set(Math.sin(yaw), 0, Math.cos(yaw)); ax.set(Math.cos(yaw), 0, -Math.sin(yaw));
-      base.position.set(PORT.x, y - 3.4, PORT.z); base.rotation.set(0, yaw, 0);
       shoulder.position.copy(S); onAxis(shoulder, ax);
       laid(upper, S, E, true);
-      roll3.position.copy(S).addScaledVector(u, 4.6); onAxis(roll3, u);
+      roll3.position.copy(S).addScaledVector(u, 4.4); onAxis(roll3, u);
       // J4 bends across the two links; J5 rolls the forearm
       const c4 = V(0, 0, 0).crossVectors(u, f);
       if (c4.lengthSq() > 1e-4) a4.copy(c4).normalize();
@@ -1149,8 +1220,8 @@ function buildDealerArm(m) {
       roll5.position.copy(E).addScaledVector(f, 4.4); onAxis(roll5, f);
       // (the top of each link: toward the elbow's side)
       perp(su, n, u) || su.copy(up); perp(sf, n, f) || sf.copy(up);
-      laid(spines[0], at(S, E, 0.36, su, 1.8), at(S, E, 0.86, su, 1.66), true);
-      laid(spines[1], at(E, W, 0.4, sf, 1.32), at(E, W, 0.74, sf, 1.2), true);
+      laid(spines[0], at(S, E, 0.36, su, 1.7), at(S, E, 0.86, su, 1.56), true);
+      laid(spines[1], at(E, W, 0.4, sf, 1.3), at(E, W, 0.74, sf, 1.18), true);
       band(seams[0], S, E, 0.68); band(seams[1], E, W, 0.66);
       // J6 bends across the forearm and the hand; J7 rolls the flange
       h.set(0, 0, 1).applyQuaternion(q);
@@ -1158,28 +1229,29 @@ function buildDealerArm(m) {
       if (c6.lengthSq() > 1e-4) a6.copy(c6).normalize();
       wrist.position.copy(W); onAxis(wrist, a6);
       flange.position.copy(W); onAxis(flange, h);
-      // the cable dress, out of J1's back, over the outside of the arm into
-      // the wrist (only while the arm is out: under the felt none shows)
+      // the cable dress, out of the back of the yoke by its shoulder, over
+      // the outside of the arm into the wrist (only while the arm is out:
+      // under the felt none shows)
       if (on) {
+        const behind = V(-across.z, 0, across.x);   // (the torso's back: away from the player)
+        if (behind.z < 0) behind.negate();
         const pts = [
-          V(PORT.x, y - 2.8, PORT.z).addScaledVector(fwd, -2.9).addScaledVector(ax, 1.2),
-          S.clone().addScaledVector(su, 2.9).addScaledVector(a4, 1.1).addScaledVector(u, 1.5),
-          at(S, E, 0.55, su, 2.05).addScaledVector(a4, 0.9),
-          E.clone().addScaledVector(n, 2.6).addScaledVector(a4, 1.4),
-          at(E, W, 0.45, sf, 1.55).addScaledVector(a4, 0.8),
-          W.clone().addScaledVector(f, -2.0).addScaledVector(sf, 1.35).addScaledVector(a4, 0.6)
+          S.clone().addScaledVector(across, -armSide * 1.2).addScaledVector(behind, 2.1).add(V(0, 0.8, 0)),
+          S.clone().addScaledVector(su, 2.7).addScaledVector(a4, 1.0 * armSide).addScaledVector(u, 1.5),
+          at(S, E, 0.55, su, 1.95).addScaledVector(a4, 0.85 * armSide),
+          E.clone().addScaledVector(n, 2.45).addScaledVector(a4, 1.3 * armSide),
+          at(E, W, 0.45, sf, 1.5).addScaledVector(a4, 0.75 * armSide),
+          W.clone().addScaledVector(f, -2.0).addScaledVector(sf, 1.33).addScaledVector(a4, 0.55 * armSide)
         ];
         const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
         cable.geometry.dispose(); cable.geometry = new THREE.TubeGeometry(curve, 52, 0.25, 8, false);
-        const wcurve = new THREE.CatmullRomCurve3(pts.map(p => p.clone().addScaledVector(a4, -0.4)), false, 'centripetal');
+        const wcurve = new THREE.CatmullRomCurve3(pts.map(p => p.clone().addScaledVector(a4, -0.4 * armSide)), false, 'centripetal');
         wire.geometry.dispose(); wire.geometry = new THREE.TubeGeometry(wcurve, 52, 0.07, 5, false);
         clamps.forEach((c, i) => { const t = CLAMP_AT[i]; c.position.copy(curve.getPointAt(t)); c.quaternion.setFromUnitVectors(V(0, 0, 1), curve.getTangentAt(t)); });
       }
-      // the lights: J1's ring breathing, and a chase along the forearm
-      const glowK = on * (0.55 + 0.45 * Math.sin(tt * 3.2));
-      halo.material.color.setRGB(1 * glowK + 0.06, 0.72 * glowK + 0.05, 0.38 * glowK + 0.04);
+      // the lights: a chase along the forearm
       lights.forEach((l, i) => {
-        l.position.copy(at(E, W, 0.5 + i * 0.07, sf, 1.26 - i * 0.03)).addScaledVector(a4, -0.55);
+        l.position.copy(at(E, W, 0.5 + i * 0.07, sf, 1.24 - i * 0.03)).addScaledVector(a4, -0.55 * armSide);
         const k = on * (0.2 + 0.8 * Math.pow(0.5 + 0.5 * Math.sin(tt * 9 - i * 1.4 - 2.2), 3));
         l.material.color.setRGB(1 * k + 0.08, 0.72 * k + 0.05, 0.36 * k + 0.03);
       });
@@ -1449,19 +1521,15 @@ export async function prepareTable(opts) {
   // The phone isn't on the table: it's yours, half out of your pocket at
   // the bottom right of the view, and pulled up in front of you on a tap.
   seat.add(shoe, discard);
-  // (the hand itself is drawn over the cards - see fly - so it is never
-  // painted under a card it is on; this is only its shadow on the felt)
-  const handShadow = new THREE.Mesh(new THREE.PlaneGeometry(16, 22), new THREE.MeshBasicMaterial({ map: canvasTex(128, 128, (c, W, H) => { const g = c.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, W / 2); g.addColorStop(0, 'rgba(0,0,0,0.9)'); g.addColorStop(0.45, 'rgba(0,0,0,0.5)'); g.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = g; c.fillRect(0, 0, W, H); }), transparent: true, depthWrite: false, opacity: 0 }));
-  handShadow.rotation.x = -Math.PI / 2; handShadow.position.y = 0.02; handShadow.renderOrder = 2;
-  seat.add(handShadow);
-  // The dealer's port: a round hole in the felt by the shoe, closed by an
-  // iris of nine satin-black blades, each edged in gold, that turn back
-  // under the felt as it opens (setPort: 0 shut, 1 open); a brass bezel
-  // round it, engraved; below, a dark well with a ring of warm light in it.
+  // The dealer's port: a round hole in the felt in the middle of the
+  // dealer's side, between the shoe and the rack, closed by an iris of nine
+  // satin-black blades, each edged in gold, that turn back under the felt
+  // as it opens (setPort: 0 shut, 1 open); a brass bezel round it,
+  // engraved; below, a dark well with a ring of warm light in it.
   const port = buildPort(set);
   port.group.position.set(PORT.x, 0, PORT.z);
   seat.add(port.group);
-  const setPort = port.set;
+  const setPort = port.set, portAperture = port.aperture;
   setPort(0);
   const shoeMouth = V(0, 0.9, -11.6).applyAxisAngle(V(0, 1, 0), shoe.rotation.y).add(shoe.position);
   const mouthDir = V(0, 0, -1).applyAxisAngle(V(0, 1, 0), shoe.rotation.y);
@@ -1486,7 +1554,7 @@ export async function prepareTable(opts) {
   // `duration` is a fly of its own length (the short sit-down when the
   // seat is taken without the shot).
   async function fly(world, flyOpts = {}) {
-    const fo = Object.assign({ manual: false, reduced: false, duration: 0, onArrive: null, host: null, seatView: null, dealStyle: null }, flyOpts);
+    const fo = Object.assign({ manual: false, reduced: false, duration: 0, onArrive: null, host: null, seatView: null, dealStyle: null, cards: 0 }, flyOpts);
     const { renderer, camera } = world;
     if (fo.reduced) lampT0 = -Infinity;   // (the lamp is simply on)
     const stageEl = fo.host || document.body;
@@ -1505,14 +1573,12 @@ export async function prepareTable(opts) {
       const box = world.canvas.parentElement || world.host;
       const w = box.clientWidth || window.innerWidth, h = box.clientHeight || window.innerHeight;
       css.setSize(w, h);
-      if (typeof sizeHand === 'function') sizeHand(w, h);
       return w / h;
     };
-    // The dealer's arm has a canvas of its own over the cards (the cards
-    // are page elements, always painted over the table's canvas, and the
-    // hand is on top of the cards it deals), under the phone in yours.
+    // The dealer has a canvas of its own over the cards (the cards are page
+    // elements, always painted over the table's canvas, and a hand is on
+    // top of the cards it deals), under the phone in yours.
     const handGL = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: 'low-power' });
-    handGL.setPixelRatio(world.pixelRatio || 1);
     handGL.toneMapping = renderer.toneMapping; handGL.toneMappingExposure = renderer.toneMappingExposure;
     handGL.outputColorSpace = renderer.outputColorSpace;
     handGL.domElement.className = 'r3t-hand';
@@ -1525,29 +1591,84 @@ export async function prepareTable(opts) {
     // (below the well's floor nothing of it is ever seen)
     const underFelt = [new THREE.Plane(V(0, 1, 0), 8.6)];
     Object.values(dealerMats).forEach(mat => { if (mat.isMaterial) mat.clippingPlanes = underFelt; });
-    const dealer = buildDealerHand(dealerMats);
-    const arm = buildDealerArm(dealerMats);
-    handSeat.add(dealer, arm.group);
-    // The table as the arm's canvas sees it, in depth alone: the felt with
-    // the port's hole in it and the well's wall, so what of the arm is down
-    // the well shows through the hole and nowhere else.
+    const torso = buildDealerTorso(dealerMats);
+    handSeat.add(torso.group);
+    // the two arms, [shoe side, other]: the shoe side's is the dealer's
+    // left (it faces you), so its hand is a left hand
+    const arms = SIDES.map(side => {
+      const hand = buildDealerHand(dealerMats, side < 0);
+      const arm = buildDealerArm(dealerMats, side);
+      handSeat.add(hand, arm.group);
+      return { side, hand, arm, now: { p: V(0, 0, 0), q: new THREE.Quaternion() }, wrist: V(0, 0, 0), pref: V(0, 0, 0), prevPalm: null };
+    });
+    // The table as the dealer's canvas sees it, in depth alone: the felt with
+    // the port's hole in it and the well's wall, so what of it is down the
+    // well shows through the hole and nowhere else.
+    const feltShape = new THREE.Shape(); feltShape.moveTo(-200, -200); feltShape.lineTo(200, -200); feltShape.lineTo(200, 200); feltShape.lineTo(-200, 200); feltShape.closePath();
+    { const h = new THREE.Path(); h.absarc(PORT.x, -PORT.z, PORT.r, 0, Math.PI * 2, true); feltShape.holes.push(h); }
+    const hide = new THREE.MeshBasicMaterial({ colorWrite: false });
     {
-      const hide = new THREE.MeshBasicMaterial({ colorWrite: false });
-      const top = new THREE.Shape(); top.moveTo(-200, -200); top.lineTo(200, -200); top.lineTo(200, 200); top.lineTo(-200, 200); top.closePath();
-      const h = new THREE.Path(); h.absarc(PORT.x, -PORT.z, PORT.r, 0, Math.PI * 2, true); top.holes.push(h);
-      const felt = new THREE.Mesh(new THREE.ShapeGeometry(top, 48), hide); felt.rotation.x = -Math.PI / 2; felt.position.y = -0.02; felt.renderOrder = -1;
+      const felt = new THREE.Mesh(new THREE.ShapeGeometry(feltShape, 48), hide); felt.rotation.x = -Math.PI / 2; felt.position.y = -0.02; felt.renderOrder = -1;
       const wall = new THREE.Mesh(new THREE.CylinderGeometry(PORT.r - 0.03, PORT.r - 0.03, 8.8, 48, 1, true), hide); wall.position.set(PORT.x, -4.45, PORT.z); wall.renderOrder = -1;
       handSeat.add(felt, wall);
     }
+    // (and while the iris is partly shut round the machine - a sulk - the
+    // part of the hole its blades cover hides the machine too)
+    const irisMask = new THREE.Mesh(new THREE.BufferGeometry(), hide);
+    irisMask.rotation.x = -Math.PI / 2; irisMask.position.set(PORT.x, -0.015, PORT.z); irisMask.renderOrder = -1; irisMask.visible = false;
+    handSeat.add(irisMask);
+    let maskR = PORT.r;
+    const maskIris = open => {
+      const r = Math.max(0, portAperture(open)), want = r >= PORT.r - 0.05 ? PORT.r : Math.round(r * 20) / 20;
+      if (want === maskR) return;
+      maskR = want;
+      irisMask.visible = want < PORT.r;
+      if (irisMask.visible) { irisMask.geometry.dispose(); irisMask.geometry = new THREE.RingGeometry(Math.max(0.01, want), PORT.r + 0.05, 48); }
+    };
     handScene.add(handSeat);
+    // Its light: a key from the lamp overhead (the same lamp the table is
+    // lit by), a cool fill from the room, and the room's own glow. The key
+    // casts the machine's own shadow - its arms, its hands, its fingers -
+    // onto the felt, onto the cards lying on it, and onto the shoe's lid
+    // where a hand rests on it: surfaces that only take a shadow and are
+    // otherwise clear, so the table's own canvas shows through them. (None
+    // once the device has stepped down to no shadows: the table has none
+    // of its own by then either.)
+    handGL.shadowMap.enabled = world.quality > 1; handGL.shadowMap.type = THREE.PCFShadowMap;
     {
-      const key = new THREE.DirectionalLight(0xffeedd, 2.4); key.position.set(-8, 40, 12); handSeat.add(key, key.target);
+      const key = new THREE.DirectionalLight(0xffeedd, 2.3); key.position.set(-6, 112, 30); key.target.position.set(0, 0, 40);
+      key.castShadow = true; key.shadow.mapSize.set(2048, 2048);
+      const sc = key.shadow.camera; sc.left = -48; sc.right = 48; sc.top = 48; sc.bottom = -48; sc.near = 70; sc.far = 135;
+      key.shadow.bias = -0.0005; key.shadow.normalBias = 0.03; key.shadow.radius = 2;
+      handSeat.add(key, key.target);
       const fill = new THREE.DirectionalLight(0xc9d2e6, 0.5); fill.position.set(6, 10, -30); handSeat.add(fill, fill.target);
-      handScene.add(new THREE.HemisphereLight(0xfff0e0, 0x1a1410, 0.5));
+      handScene.add(new THREE.HemisphereLight(0xfff0e0, 0x1a1410, 0.55));
+      const catcher = new THREE.ShadowMaterial({ opacity: 0.52 });
+      const onFelt = new THREE.Mesh(new THREE.ShapeGeometry(feltShape, 48), catcher); onFelt.rotation.x = -Math.PI / 2; onFelt.position.y = 0.05; onFelt.receiveShadow = true;
+      const [la, lb] = shoe.userData.lid.map(p => p.clone().applyEuler(shoe.rotation).add(shoe.position));
+      const lidLen = la.distanceTo(lb);
+      const onLid = new THREE.Mesh(new THREE.PlaneGeometry(9.4, lidLen), catcher);
+      onLid.position.copy(la).lerp(lb, 0.5).add(V(0, 0.02, 0));
+      { const d = lb.clone().sub(la).normalize(), sd = d.clone().cross(V(0, 1, 0)).normalize(); onLid.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(sd, d, sd.clone().cross(d))); }
+      onLid.receiveShadow = true;
+      handSeat.add(onFelt, onLid);
     }
-    // (the arm moves only while the table does: its canvas keeps the moving
-    // frames' resolution)
-    const sizeHand = (w, h) => handGL.setDrawingBufferSize(w, h, world.pixelRatio || 1);
+    // (what casts one: the machine's body - its links, drums, palms and
+    // fingers, its cable. Not its glass, its lights or its gold, nor any part
+    // thinner than a few millimetres - a screw, a seam, a trace - whose
+    // shadow falls inside the one it sits on: half the parts, and so half
+    // the shadow's draws, for the same shadow.)
+    const extent = new THREE.Vector3();
+    [torso.group, ...arms.flatMap(a => [a.hand, a.arm.group])].forEach(g => g.traverse(m => {
+      if (!m.isMesh || m.material.isMeshBasicMaterial || [dealerMats.clear, dealerMats.gold, dealerMats.circuit].includes(m.material)) return;
+      const geo = m.geometry;
+      if (!geo.boundingBox) geo.computeBoundingBox();
+      // (the cable's shape comes later, frame by frame: it casts)
+      if (geo.boundingBox.isEmpty()) { m.castShadow = true; return; }
+      geo.boundingBox.getSize(extent).multiply(m.scale);
+      m.castShadow = Math.min(Math.abs(extent.x), Math.abs(extent.y), Math.abs(extent.z)) >= 0.35;
+    }));
+    world.layer(handGL);
     let aspect = size();
     stageEl.appendChild(css.domElement);
     css.domElement.appendChild(handGL.domElement);
@@ -1594,8 +1715,8 @@ export async function prepareTable(opts) {
     const m4 = new THREE.Matrix4();
     const lookQ = (eye, at, out) => out.setFromRotationMatrix(m4.lookAt(eye, at, V(0, 1, 0)));
     const FLY = fo.reduced ? 0.01 : fo.duration > 0 ? fo.duration : T.cardFly;
-    // (motion off: the UI is simply there, and each card is on its place
-    // the moment the frame is - no deal, the arm stowed under the felt)
+    // (motion off: the UI is simply there, each card on its place the
+    // moment the frame is and the dealer up at rest - no deal)
     const UI_IN = fo.reduced ? 0.01 : T.uiIn;
     const fov0 = camera.fov;
     const lens0 = world.lights.lensLight.intensity;
@@ -1618,6 +1739,8 @@ export async function prepareTable(opts) {
     // the cards
     const hand = (hooks.deck && hooks.deck()) || [];
     const cards = (hand.length ? hand : demoHand()).slice(0, SLOTS.max);
+    // (lab: ?cards=N deals a hand of N, the ones there are repeated)
+    if (fo.cards > cards.length) { const base = cards.slice(); for (let i = cards.length; i < Math.min(SLOTS.max, fo.cards); i++) cards.push(Object.assign({}, base[i % base.length], { id: `${base[i % base.length].id}~${i}` })); }
     const sampleStatus = () => ({ ready: cards.length, value: cards.reduce((t, c) => t + (c.ev || 0), 0), next: null, done: 0 });
     // (a third row of cards moves the whole hand nearer, and the wordmark
     // up toward the dealer, to make room)
@@ -1731,6 +1854,7 @@ export async function prepareTable(opts) {
         const c = obj.userData.card, now = hooks.cardState(c.id);
         if (!now) return;
         c.remaining = now.remaining;
+        obj.userData.ready = !(c.remaining > 0);
         put(obj.element.querySelector('.r3t-state'), cardShown(c));
         obj.element.classList.toggle('r3t-spent', c.remaining > 0);
       });
@@ -1810,76 +1934,140 @@ export async function prepareTable(opts) {
     // pose in a hand at h
     const handFor = (c, j) => { const s0 = inHand(j); const q = c.q.clone().multiply(s0.q.clone().invert()); return { p: c.p.clone().sub(s0.p.clone().applyQuaternion(q)), q }; };
     const cardIn = (h, j, out) => { const s0 = inHand(j); out.q.copy(h.q).multiply(s0.q); out.p.copy(s0.p).applyQuaternion(h.q).add(h.p); return out; };
-    // straight up over the port, the shoulder at y: the arm at full length,
-    // the hand on top pointing up, its back to the dealer (so it all goes
-    // through the port's ring)
+    // The shoe arm draws a card by its top end (the cards lie in the shoe
+    // bottom end inward) and the other arm takes it by its bottom end, so
+    // the card rides in the shoe arm's hand turned end for end in its own
+    // plane: the same place, the other way round.
+    const ENDWISE = new THREE.Quaternion().setFromAxisAngle(V(0, 0, 1), Math.PI);
+    const cardInShoeHand = (h, out) => { cardIn(h, 0, out); out.q.multiply(ENDWISE); return out; };
+    // Both arms straight up, the hands together over the middle of the torso,
+    // the shoulders at y: how it comes up through the port and goes back
+    // down (the whole of it inside the port's ring). Arm k's hand, palm to
+    // the other's, fingertips up.
     const reachUp = ARM.upper + ARM.fore - 0.1;
-    const upright = y => handPose(V(PORT.x, y + reachUp - WRIST.z, PORT.z - WRIST.y), V(0, 1, 0), V(0, 0, 1));
-    const RISE = { open: 1.2, up: 0.85, swing: 0.45 };          // seconds before dealAt
-    const SINK = { fold: 0.4, down: 0.35, shut: 0.32 };           // seconds after the deal
-    // A turning card's angle: pushed to 62 degrees by the hand, then over
+    const upright = (k, y) => {
+      const sd = SIDES[k], dx = ARM.shoulder - 1.1;
+      return handPose(V(PORT.x + sd * 0.5, y + Math.sqrt(reachUp * reachUp - dx * dx) - WRIST.z, PORT.z), V(0, 1, 0), V(sd, 0, 0));
+    };
+    const RISE = { open: 1.5, up: 1.15, swing: 0.5 };            // seconds before dealAt
+    // A turning card's angle: pushed to 55 degrees by the hand, then over
     // on its own; or flicked (a sweep, a cascade) and over on its own.
     const angleAt = (ci, tt) => {
       const c = deal.cards[ci];
       if (tt < c.turn) return 0;
       if (c.push) {
-        if (tt < c.turn + DEAL.push) return 62 * DEG * smoother((tt - c.turn) / DEAL.push);
+        if (tt < c.turn + DEAL.push) return PUSH * smoother((tt - c.turn) / DEAL.push);
         const k = clamp01((tt - c.turn - DEAL.push) / DEAL.fall);
-        return 62 * DEG + (Math.PI - 62 * DEG) * Math.pow(k, 1.7);
+        return PUSH + (Math.PI - PUSH) * Math.pow(k, 1.7);
       }
       const k = clamp01((tt - c.turn) / DEAL.turn);
       // (up quickly off the felt, over, and falling faster onto its face)
       return Math.PI * (k < 0.5 ? 0.62 * easeOut(k / 0.5, 2) : 0.62 + 0.38 * Math.pow((k - 0.5) / 0.5, 1.6));
     };
     const turnEnd = c => c.turn + (c.push ? DEAL.push + DEAL.fall : DEAL.turn);
+    const PUSH = 55 * DEG;
 
-    // ---- The deal plan. The hand's moves (segs) and, for each card, when
-    // it is drawn (pull), which slot of the hand it rides in (j), when it is
-    // laid face down (lay) and when it starts to turn (turn, pushed or not).
-    // Worked out once, as times from the tap. A move ends either on a stop
-    // (a grab, a placement: there it arrives dead still) or on a via point
-    // it flows through into the next (a card drawn and carried off, a sweep
-    // swung into and out of): the path is joined smooth through those. And
-    // the fingers: how far curled (below 0, opened back) and how spread.
-    const FIN = { rest: [0, 0], reach: [-0.35, 0.85], grip: [0.85, 0.08], flick: [1.15, 0.28], open: [-0.5, 1], relax: [0.32, 0.35] };
+    // ---- The deal plan. Each arm's moves (segs) and, for each card, when it
+    // is drawn from the shoe (pull), when the shoe arm passes it to the other
+    // (hand), when that one lays it face down (lay) and when it starts to
+    // turn (turn, pushed or not). Worked out once, as times from the tap. A
+    // move ends either on a stop (a grab, a pass, a placement: there it
+    // arrives dead still) or on a via point it flows through into the next
+    // (a card drawn and carried off, a sweep swung into and out of): the path
+    // is joined smooth through those. And the fingers: how far curled (below
+    // 0, opened back) and how spread.
+    const FIN = { rest: [0, 0], reach: [-0.35, 0.85], grip: [0.85, 0.08], flick: [1.15, 0.28], open: [-0.5, 1], relax: [0.32, 0.35], easy: [0.5, 0.1], poise: [0.28, 0.22] };
     // And the wrist: the hand's attitude, [pitch, roll] about its
     // fingertips (pitch over 0 tips the fingers down, the wrist up; roll
-    // turns it about its length). Every grab and placement is made level,
-    // so a card is taken and laid true; in between the hand leans into its
-    // work - reaching down into the shoe, lifting a card's end as it draws
-    // it, banking as it swings, hooking its fingers down to flick a row
-    // over - and each move can carry a lean that comes and goes with it.
+    // turns it about its length). Every grab, pass and placement is made
+    // level, so a card is taken and laid true; in between the hand leans
+    // into its work - reaching down into the shoe, lifting a card's end as
+    // it draws it, banking as it swings, hooking its fingers down to flick a
+    // row over - and each move can carry a lean that comes and goes with it.
+    // The pass, between the two arms over the middle of the table: the shoe
+    // arm holds the card out flat, face down, its long side across the
+    // table, by its end nearer the shoe; the other hand comes in from its own
+    // side, facing it, and takes the far end.
+    const PASS = [handPose(V(-3.4, 8.2, 46.2), V(1, 0, 0), up)];
+    { const c = cardInShoeHand(PASS[0], pose(V(0, 0, 0), new THREE.Quaternion())); PASS[1] = handFor(c, 0); }
+    // (the taking hand's approach: a hand's width back from the card, open)
+    const APPROACH = pose(PASS[1].p.clone().add(V(4.2, 1.4, 0)), PASS[1].q);
+    // The arms at rest once the deal is done, as a dealer waits: the shoe
+    // arm's hand laid on the shoe's lid, fingers down the slope toward the
+    // mouth; the other poised on its fingertips on the felt by the discard
+    // rack, the wrist up, like a pianist's over the keys - the felt, the
+    // wordmark and the cards all left clear.
+    const toSeat = (obj, p) => p.clone().applyEuler(obj.rotation).add(obj.position);
+    const REST = [(() => {
+      const [la, lb] = shoe.userData.lid.map(p => toSeat(shoe, p));
+      const d = lb.clone().sub(la).normalize(), side = d.clone().cross(up).normalize(), n = side.clone().cross(d).normalize();
+      return handPose(la.clone().addScaledVector(d, 1.6).addScaledVector(n, 0.55), d.clone().negate(), n);
+    })(), handPose(V(9.8, 0.62, 47.6), V(-0.15, -0.8, -0.58), up)];
+    const restPose = k => REST[k];
+    // A move of arm P's hand to b over dur, arcing up by lift; settle: a
+    // servo's small shiver on arrival; via: on through b without a stop;
+    // to: the fingers by the end of it; lean: the wrist's attitude by the
+    // end of it; dip: an attitude that comes and goes over it; elbow: the
+    // elbow's way by the end of it (see ELBOW). P is an arm's plan so far:
+    // its moves, its time, where its hand is, its fingers, its wrist's
+    // attitude and its elbow's way.
+    const addMove = (P, b, dur, { lift = 0, settle = false, via = false, to = P.fin, lean = P.att, dip = [0, 0], elbow = P.el } = {}) => { P.segs.push({ kind: 'move', t0: P.t, t1: P.t + dur, a: P.at, b, lift, settle, via, f0: P.fin, f1: to, att0: P.att, att1: lean, dip, el0: P.el, el1: elbow, v0: V(0, 0, 0), v1: V(0, 0, 0), s0: 0, s1: 0 }); P.t += dur; P.at = b; P.fin = to; P.att = lean; P.el = elbow; };
+    const holdP = (P, dur) => addMove(P, P.at, dur);
+    // (arm P waits where it is until t)
+    const untilP = (P, t) => { if (t > P.t + 1e-4) holdP(P, t - P.t); };
+    // (through each via point at the mean of the speeds either side of it;
+    // dead still at every stop)
+    const smoothVias = segs => {
+      for (let i = 0; i + 1 < segs.length; i++) {
+        const S0 = segs[i], S1 = segs[i + 1];
+        if (!S0.via || S0.kind !== 'move' || S1.kind !== 'move') continue;
+        const dA = S0.t1 - S0.t0, dB = S1.t1 - S1.t0;
+        const vA = S0.b.p.clone().sub(S0.a.p).multiplyScalar(1 / dA), vB = S1.b.p.clone().sub(S1.a.p).multiplyScalar(1 / dB);
+        S0.v1 = vA.multiplyScalar(dB).addScaledVector(vB, dA).multiplyScalar(1 / (dA + dB)); S1.v0 = S0.v1.clone();
+        S0.s1 = S1.s0 = 1;
+      }
+    };
     const makeDeal = style => {
       const n = cardObjs.length;
-      const segs = [], cardsP = cardObjs.map(() => ({ pull: Infinity, j: 0, lay: Infinity, turn: Infinity, push: false }));
-      // (the plan starts as the arm, risen, swings down to the shoe)
-      let t = dealAt - RISE.swing;
-      let at = upright(ARM.up), fin = FIN.rest, att = [0, 0];
-      // a move of the hand to b over dur, arcing up by lift; settle: a
-      // servo's small shiver on arrival; via: on through b without a stop;
-      // to: the fingers by the end of it; lean: the wrist's attitude by the
-      // end of it; dip: an attitude that comes and goes over it
-      const move = (b, dur, { lift = 0, settle = false, via = false, to = fin, lean = att, dip = [0, 0] } = {}) => { segs.push({ kind: 'move', t0: t, t1: t + dur, a: at, b, lift, settle, via, f0: fin, f1: to, att0: att, att1: lean, dip }); t += dur; at = b; fin = to; att = lean; };
+      const cardsP = cardObjs.map(() => ({ pull: Infinity, hand: Infinity, lay: Infinity, turn: Infinity, push: false }));
+      // each arm's plan so far: its moves, its time, where its hand is, its
+      // fingers and its wrist's attitude (the plan starts as the arms, risen,
+      // swing down to their work)
+      const arm = k => ({ segs: [], t: dealAt - RISE.swing, at: upright(k, ARM.up), fin: FIN.rest, att: [0, 0], el: 0 });
+      const A = arm(0), B = arm(1);
+      const move = addMove, hold = holdP, until = untilP;
       // (a bank for a move from a to b: into the turn, as the hand swings
       // across itself)
       const bank = (a, b, k = 0.012) => { const d = b.p.clone().sub(a.p).applyQuaternion(a.q.clone().invert()); return THREE.MathUtils.clamp(-d.x * k, -0.3, 0.3); };
-      const hold = dur => move(at, dur);
-      const grabAt = j => handFor(shoePose(inShoe), j), outAt = j => handFor(shoePose(pulled), j);
-      // draw card i into slot j (from wherever the hand is): in open, the
-      // fingers close on it, and it comes out of the shoe on the move
-      const draw = (i, j, first) => {
-        // (reaching down into the shoe, level at the grab; then drawing the
-        // card out by its end, lifting it a little)
-        const g0 = grabAt(j);
-        move(g0, first ? RISE.swing + 0.08 : (j ? DEAL.regrab : DEAL.grab), { lift: first ? 2 : (j ? 0.6 : 4.5), to: j ? FIN.grip : FIN.reach, lean: [0, 0], dip: j ? [0.08, 0] : [0.3, bank(at, g0)] });
-        cardsP[i].pull = t; cardsP[i].j = j;
-        move(outAt(j), DEAL.pull, { via: true, to: FIN.grip, lean: [-0.12, 0] });
+      const grabAt = () => handFor(shoePose(inShoe), 0), outAt = () => handFor(shoePose(pulled), 0);
+      // The shoe arm draws card i and brings it out to the pass: reaching
+      // down into the shoe, level at the grab; drawing it out by its end,
+      // lifting it a little; out over the table, level, dead still.
+      const draw = (i, first) => {
+        const g0 = grabAt();
+        move(A, g0, first ? DEAL.first : DEAL.grab, { lift: first ? 3 : 4.5, to: FIN.reach, lean: [0, 0], dip: [0.3, bank(A.at, g0)] });
+        cardsP[i].pull = A.t;
+        move(A, outAt(), DEAL.pull, { via: true, to: FIN.grip, lean: [-0.12, 0] });
+        move(A, PASS[0], DEAL.out, { lift: 2.2, settle: true, to: FIN.grip, lean: [0, 0], dip: [-0.12, bank(A.at, PASS[0])] });
       };
-      // lay the card in slot j at its face-down place (carried leading edge
-      // up, banking into the swing, set down level)
-      const lay = (i, dur, lift) => { const b = handFor(faceDown(cardObjs[i]), cardsP[i].j); move(b, dur, { lift, settle: true, to: FIN.grip, lean: [0, 0], dip: [-0.16, bank(at, b, 0.018)] }); cardsP[i].lay = t; };
+      // The other takes it: in from its approach as the card arrives (it
+      // waits there, open, when it is early; the card is held out when it is
+      // late), its fingers close on the card, and the shoe arm lets go.
+      const take = i => {
+        until(B, A.t - DEAL.take);
+        move(B, PASS[1], DEAL.take, { settle: true, to: FIN.reach, lean: [0, 0] });
+        move(B, PASS[1], DEAL.close, { to: FIN.grip });
+        cardsP[i].hand = B.t;
+        until(A, B.t);
+        move(A, PASS[0], DEAL.release, { to: FIN.open });
+      };
+      // it lays card i at its face-down place (carried leading edge up,
+      // banking into the swing, set down level)
+      const lay = (i, dur, lift = 3.4) => { const b = handFor(faceDown(cardObjs[i]), 0); move(B, b, dur, { lift, settle: true, to: FIN.grip, lean: [0, 0], dip: [-0.16, bank(B.at, b, 0.018)] }); cardsP[i].lay = B.t; };
       // (and the fingers open off it, spreading as they lift)
-      const letGo = (dur = 0.1) => move(at, dur, { to: FIN.open });
+      const letGo = (dur = 0.1) => move(B, B.at, dur, { to: FIN.open });
+      // back to the pass for the next
+      const toPass = (dur = DEAL.back) => move(B, APPROACH, dur, { lift: 2.4, to: FIN.reach, lean: [0, 0], dip: [0.1, 0] });
       // the rows and the columns of the hand, as card indices
       const rows = [], cols = [];
       cardObjs.forEach((o, i) => { const r = Math.floor(i / SLOTS.cols), c = i % SLOTS.cols; (rows[r] = rows[r] || []).push(i); (cols[c] = cols[c] || []).push(i); });
@@ -1891,25 +2079,30 @@ export async function prepareTable(opts) {
         const from = ends[0].clone().add(ext), to = ends[ends.length - 1].clone().sub(ext);
         from.y = to.y = 1.2;
         const fingers = V(0, -0.18, -1);
-        const A = handPose(from, fingers, up), B = handPose(to, fingers, up);
+        const P0 = handPose(from, fingers, up), P1 = handPose(to, fingers, up);
         // (fingers hooked down, the hand rolled a little into the sweep)
-        const roll = bank(A, B, 0.01);
-        move(A, 0.22, { lift: 2.5, via: true, to: FIN.flick, lean: [0.3, roll], dip: [-0.2, 0] });
+        const roll = bank(P0, P1, 0.01);
+        move(B, P0, 0.24, { lift: 2.5, via: true, to: FIN.flick, lean: [0.3, roll], dip: [-0.2, 0] });
         const dur = DEAL.sweep * line.length + 0.12;
-        const t0 = t, d0 = from.distanceTo(to) || 1;
+        const t0 = B.t, d0 = from.distanceTo(to) || 1;
         line.forEach((i, k) => { cardsP[i].turn = t0 + dur * clamp01(from.distanceTo(ends[k]) / d0) - 0.03; });
-        move(B, dur, { via: true, to: FIN.flick, lean: [0.34, roll], dip: [0.06, 0] });
+        move(B, P1, dur, { via: true, to: FIN.flick, lean: [0.34, roll], dip: [0.06, 0] });
       };
-      if (!n) return { segs, cards: cardsP, end: t };
+      if (!n) return { arms: [A.segs, B.segs], cards: cardsP, end: dealAt };
+      // (the taking arm, risen, swings out to wait by the pass)
+      move(B, APPROACH, DEAL.first + 0.15, { lift: 2, to: FIN.reach, lean: [0, 0], dip: [-0.1, 0] });
       if (style === 'single') {
         cardObjs.forEach((o, i) => {
-          draw(i, 0, i === 0);
-          lay(i, DEAL.carry, 3.4);
-          hold(DEAL.settle);
-          cardsP[i].turn = t; cardsP[i].push = true;
-          segs.push({ kind: 'push', t0: t, t1: t + DEAL.push, card: i, f0: fin, f1: FIN.flick });
-          t += DEAL.push; fin = FIN.flick; att = [0, 0];
-          at = handFor(turned(o, 62 * DEG, { p: V(0, 0, 0), q: new THREE.Quaternion() }), 0);
+          draw(i, i === 0);
+          take(i);
+          lay(i, DEAL.carry);
+          hold(B, DEAL.settle);
+          cardsP[i].turn = B.t; cardsP[i].push = true;
+          B.segs.push({ kind: 'push', t0: B.t, t1: B.t + DEAL.push, card: i, f0: B.fin, f1: FIN.flick, el0: B.el, el1: B.el });
+          B.t += DEAL.push; B.fin = FIN.flick; B.att = [0, 0];
+          B.at = handFor(turned(o, PUSH, { p: V(0, 0, 0), q: new THREE.Quaternion() }), 0);
+          B.at.q.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.62, 0, 0)));
+          if (i < n - 1) toPass();
         });
       } else if (style === 'rows' || style === 'columns') {
         const groups = style === 'rows' ? rows : cols.map(c => c.slice());
@@ -1917,45 +2110,48 @@ export async function prepareTable(opts) {
           // the lay order, across the row (player's left to right) or down
           // the column (front to back); the deepest slot is laid first
           const order = style === 'rows' ? g.slice().sort((a, b) => cardObjs[b].userData.slot.x - cardObjs[a].userData.slot.x) : g.slice();
-          order.slice().reverse().forEach((i, k) => draw(i, k, gi === 0 && k === 0));
-          order.forEach((i, k) => lay(i, k ? DEAL.lay : DEAL.carry, k ? 0.8 : 3.8));
-          letGo();
-          hold(0.1);
+          order.forEach((i, k) => {
+            draw(i, gi === 0 && k === 0);
+            take(i);
+            lay(i, k ? DEAL.carry * 0.9 : DEAL.carry);
+            letGo(0.08);
+            if (k < order.length - 1) toPass();
+          });
+          hold(B, 0.08);
           sweep(order, style === 'rows' ? 'x' : 'z');
+          if (gi < groups.length - 1) toPass(DEAL.back + 0.06);
         });
       } else {
-        // spread: every card laid face down, one draw each, then a beat
-        cardObjs.forEach((o, i) => { draw(i, 0, i === 0); lay(i, DEAL.carry * 0.9, 3.2); });
-        letGo();
-        // (back behind the spread, low, to let the backs be seen a moment)
+        // spread: every card laid face down, one pass each, then a beat
+        cardObjs.forEach((o, i) => {
+          draw(i, i === 0);
+          take(i);
+          lay(i, DEAL.carry * 0.9, 3.2);
+          letGo(0.08);
+          if (i < n - 1) toPass();
+        });
+        // (behind the spread, low, to let the backs be seen a moment; the
+        // shoe arm opens its hand over them, palm up - there they are)
         const mid = V(0, 0, 0); cardObjs.forEach(o => mid.add(faceDown(o).p)); mid.multiplyScalar(1 / n);
         const far = Math.max(...cardObjs.map(o => faceDown(o).p.z)) + CARD.h / 2 + 3;
-        move(handPose(V(mid.x, 4.5, far), V(0, -0.35, -1), up), 0.32, { to: FIN.relax, lean: [-0.1, 0], dip: [-0.2, 0] });
-        hold(DEAL.show);
+        move(B, handPose(V(mid.x + 4, 4.5, far), V(-0.2, -0.35, -1), up), 0.34, { to: FIN.relax, lean: [-0.1, 0], dip: [-0.2, 0] });
+        until(A, B.t - 0.3);
+        move(A, handPose(V(mid.x - 7, 7.5, far + 1.5), V(0.35, 0.12, -1), V(0, -1, 0)), 0.5, { lift: 2, to: FIN.open, lean: [0, 0] });
+        hold(B, DEAL.show);
         // one touch on the first card's far end, and the cascade
         const first = faceDown(cardObjs[0]).p.clone().addScaledVector(topOf(cardObjs[0]), CARD.h / 2 + 0.3); first.y = 1.1;
-        move(handPose(first, V(0, -0.2, -1), up), 0.22, { lift: 1.5, settle: true, to: FIN.flick, lean: [0.34, 0] });
-        const t0 = t;
+        move(B, handPose(first, V(0, -0.2, -1), up), 0.22, { lift: 1.5, settle: true, to: FIN.flick, lean: [0.34, 0] });
+        const t0 = B.t;
         const order = cardObjs.map((o, i) => i).sort((a, b) => (Math.floor(a / SLOTS.cols) - Math.floor(b / SLOTS.cols)) || (cardObjs[b].userData.slot.x - cardObjs[a].userData.slot.x));
         order.forEach((i, k) => { cardsP[i].turn = t0 + 0.04 + k * DEAL.cascade; });
         // (and away, with a turn of the wrist)
-        move(handPose(first.clone().add(V(0, 7, 5)), V(0.5, 0.4, -1), V(-0.3, 1, 0)), 0.34, { via: true, to: FIN.open, lean: [-0.2, 0.25] });
+        move(B, handPose(first.clone().add(V(0, 7, 5)), V(0.5, 0.4, -1), V(-0.3, 1, 0)), 0.34, { via: true, to: FIN.open, lean: [-0.2, 0.25] });
       }
-      // the hand straightens up over the port once the last card is over
+      // both hands down to rest on the felt once their work is done
       const lastTurn = Math.max(...cardsP.map(turnEnd));
-      move(upright(ARM.up), SINK.fold, { lift: 3, to: FIN.rest, lean: [0, 0], dip: [-0.2, 0] });
-      // (through each via point at the mean of the speeds either side of
-      // it; dead still at every stop)
-      segs.forEach(sg => { sg.v0 = V(0, 0, 0); sg.v1 = V(0, 0, 0); sg.s0 = sg.s1 = 0; });
-      for (let i = 0; i + 1 < segs.length; i++) {
-        const A = segs[i], B = segs[i + 1];
-        if (!A.via || A.kind !== 'move' || B.kind !== 'move') continue;
-        const dA = A.t1 - A.t0, dB = B.t1 - B.t0;
-        const vA = A.b.p.clone().sub(A.a.p).multiplyScalar(1 / dA), vB = B.b.p.clone().sub(B.a.p).multiplyScalar(1 / dB);
-        A.v1 = vA.multiplyScalar(dB).addScaledVector(vB, dA).multiplyScalar(1 / (dA + dB)); B.v0 = A.v1.clone();
-        A.s1 = B.s0 = 1;
-      }
-      return { segs, cards: cardsP, end: Math.max(t, lastTurn) };
+      [A, B].forEach((P, k) => move(P, restPose(k), DEAL.rest, { lift: 3, to: k ? FIN.poise : FIN.easy, lean: [0, 0], dip: [-0.15, 0], elbow: 1 }));
+      smoothVias(A.segs); smoothVias(B.segs);
+      return { arms: [A.segs, B.segs], cards: cardsP, end: Math.max(A.t, B.t, lastTurn) };
     };
     const pickStyle = () => {
       const want = fo.dealStyle;
@@ -1963,10 +2159,10 @@ export async function prepareTable(opts) {
       return DEAL_STYLES[Math.floor(Math.random() * DEAL_STYLES.length)];
     };
     const dealStyle = fo.reduced ? 'none' : pickStyle();
-    const deal = fo.reduced ? { segs: [], cards: cardObjs.map(() => ({ pull: -1, j: 0, lay: -1, turn: -1, push: false })), end: dealAt } : makeDeal(dealStyle);
+    const deal = fo.reduced ? { arms: [[], []], cards: cardObjs.map(() => ({ pull: -1, hand: -1, lay: -1, turn: -1, push: false })), end: dealAt } : makeDeal(dealStyle);
     deal.style = dealStyle;
-    // (settled: every card over, and the arm back under the felt)
-    const settleAt = cardObjs.length ? deal.end + (fo.reduced ? 0.1 : SINK.down + SINK.shut + 0.3) : dealAt;
+    // (settled: every card over, and both hands at rest on the felt)
+    const settleAt = cardObjs.length ? deal.end + (fo.reduced ? 0.1 : 0.2) : dealAt;
 
     // ---- A focused card: lifted off the felt and brought up in front of
     // you, above the info's sheet, facing you. Drag it to turn it any way
@@ -2011,7 +2207,8 @@ export async function prepareTable(opts) {
     const poseHeld = tt => {
       cardObjs.forEach((obj, i) => {
         if (!obj.userData.held) return;
-        cardIn(handNow, deal.cards[i].j, cardPose);
+        // (in the shoe arm's hand until the pass, then in the other's)
+        if (tt < deal.cards[i].hand) cardInShoeHand(arms[0].now, cardPose); else cardIn(arms[1].now, 0, cardPose);
         placeCard(obj, tt);
       });
     };
@@ -2047,20 +2244,18 @@ export async function prepareTable(opts) {
     };
 
     // ---- The machine's moves, evaluated from the plan: stowed under the
-    // port until the deal; the port opens and it rises, a straight column,
-    // its hand pointing up; the moves of the deal, each on a quintic path
-    // (dead still at a stop, with no jolt starting or stopping; on through
-    // a via point at speed) with a servo's small shiver where it stops to
-    // place something; up straight again, down into the table, and the
-    // port shuts. Over that, what makes it move like a thing with mass:
-    // the hand trails and banks from the wrist as it speeds up, slows and
-    // swings about - none of it at a stop, so every card lands exactly.
-    // (Motion off: it stays below, the cards dealt.)
+    // port until the deal; the port opens and it rises, both arms straight
+    // up, the hands together; then each arm's moves, each on a quintic path
+    // (dead still at a stop, with no jolt starting or stopping; on through a
+    // via point at speed) with a servo's small shiver where it stops to place
+    // something; and at the end both hands come down to rest on the felt,
+    // where they stay. Over that, what makes it move like a thing with mass:
+    // each hand trails and banks from its wrist as it speeds up, slows and
+    // swings about - none of it at a stop, so every card lands exactly - and
+    // the torso turns a little toward where its hands are working. (Motion
+    // off: it is simply up, at rest, the cards dealt.)
     const onCard = (cp, j = 0) => handFor(cp, j);
-    const wristW = V(0, 0, 0);
-    let prevPalm = null, prevT = 0, glow = 0;
-    const segAt = tt => {
-      const S = deal.segs;
+    const segAt = (S, tt) => {
       if (!S.length || tt < S[0].t0) return null;
       let lo = 0, hi = S.length - 1;
       while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (S[mid].t0 <= tt) lo = mid; else hi = mid - 1; }
@@ -2081,97 +2276,121 @@ export async function prepareTable(opts) {
     };
     const _attQ = new THREE.Quaternion(), _attE = new THREE.Euler();
     const fingersAt = (sg, k) => { const e = smoother(clamp01(k * 2.4)); return [lerp(sg.f0[0], sg.f1[0], e), lerp(sg.f0[1], sg.f1[1], e)]; };
-    // (the fingers alone at any moment: at rest outside the deal)
-    const fingersNow = tt => {
-      const S = deal.segs;
-      if (fo.reduced || !S.length || tt < S[0].t0 || tt >= S[S.length - 1].t1) return FIN.rest;
-      const sg = segAt(tt);
-      return sg ? fingersAt(sg, clamp01((tt - sg.t0) / Math.max(1e-4, sg.t1 - sg.t0))) : FIN.rest;
+    // (arm k's fingers alone at any moment)
+    const fingersNow = (k, tt) => {
+      const S = deal.arms[k];
+      if (fo.reduced) return k ? FIN.poise : FIN.easy;
+      if (!S.length || tt < S[0].t0) return FIN.rest;
+      const sg = segAt(S, tt);
+      return fingersAt(sg, clamp01((tt - sg.t0) / Math.max(1e-4, sg.t1 - sg.t0)));
     };
-    // the hand's pose from the plan alone (no trailing), the shoulder's
-    // height, the port, the fingers
-    const planned = tt => {
-      const n = cardObjs.length;
-      let hp = upright(ARM.down), y = ARM.down, open = 0, f = FIN.rest, free = false;
-      if (n && !fo.reduced && tt >= dealAt - RISE.open) {
-        open = clamp01((tt - (dealAt - RISE.open)) / 0.32);
-        const S = deal.segs;
-        const firstT = S.length ? S[0].t0 : dealAt, endT = S.length ? S[S.length - 1].t1 : dealAt;
-        if (tt < firstT) {
-          // rising out of the table
-          y = lerp(ARM.down, ARM.up, easeOut((tt - (dealAt - RISE.up)) / (RISE.up - RISE.swing), 3));
-          hp = upright(y);
-        } else if (tt < endT) {
-          y = ARM.up;
-          const sg = segAt(tt);
-          const k = sg ? clamp01((tt - sg.t0) / Math.max(1e-4, sg.t1 - sg.t0)) : 0;
-          if (!sg) hp = upright(ARM.up);
-          else if (sg.kind === 'push') hp = onCard(turned(cardObjs[sg.card], angleAt(sg.card, tt), { p: V(0, 0, 0), q: new THREE.Quaternion() }));
-          else { hp = along(sg, k); free = true; }
-          if (sg) f = fingersAt(sg, k);
-          // (a servo's shiver where a move ends on a placement)
-          const prev = segAt(tt - 0.13);
-          if (prev && prev !== sg && prev.settle && tt - prev.t1 < 0.13 && tt >= prev.t1) {
-            const dir = prev.b.p.clone().sub(prev.a.p); const L0 = dir.length();
-            if (L0 > 0.5) { const b = tt - prev.t1; hp.p.addScaledVector(dir.multiplyScalar(1 / L0), 0.16 * Math.sin(b * 70) * Math.exp(-b * 32)); }
-          }
-        } else {
-          const k = tt - endT;
-          y = lerp(ARM.up, ARM.down, smoother(k / SINK.down));
-          hp = upright(y);
-          open = 1 - clamp01((k - SINK.down + 0.02) / SINK.shut);
-        }
+    // the shoulders' height and the port, the same for both arms: the rise
+    // out of the table, then any later lift of the whole machine (a sulk down
+    // into the port, a peek out of it, the pop back up) - each {t0, t1, y0,
+    // y1, o0, o1, ease}, o the iris
+    const lifts = [];
+    const rising = tt => {
+      if (fo.reduced) return { y: ARM.up, open: 1 };
+      if (!cardObjs.length || tt < dealAt - RISE.open) return { y: ARM.down, open: 0 };
+      if (!lifts.length || tt < lifts[0].t0) {
+        const open = clamp01((tt - (dealAt - RISE.open)) / 0.32);
+        return { y: lerp(ARM.down, ARM.up, easeOut((tt - (dealAt - RISE.up)) / (RISE.up - RISE.swing), 3)), open };
       }
-      return { hp, y, open, f, free };
+      let L = lifts[0];
+      for (const l of lifts) if (l.t0 <= tt) L = l;
+      const k = clamp01((tt - L.t0) / Math.max(1e-4, L.t1 - L.t0));
+      return { y: lerp(L.y0, L.y1, L.ease(k)), open: lerp(L.o0, L.o1, smoother(k)) };
+    };
+    // arm k's hand from the plan alone (no trailing), and its fingers
+    const planned = (k, tt, y) => {
+      if (fo.reduced) return { hp: restPose(k), f: k ? FIN.poise : FIN.easy, free: false, el: 1 };
+      const S = deal.arms[k];
+      if (!S.length || tt < S[0].t0) return { hp: upright(k, y), f: FIN.rest, free: false, el: 0 };
+      const sg = segAt(S, tt);
+      const kk = clamp01((tt - sg.t0) / Math.max(1e-4, sg.t1 - sg.t0));
+      let hp, free = false;
+      if (sg.kind === 'up') hp = upright(k, y);
+      else if (sg.kind === 'push') {
+        // (the fingertips stay on the card's end as it goes up; the hand
+        // bends back at the wrist as it pushes, so the wrist stays low)
+        const ang = angleAt(sg.card, tt);
+        hp = onCard(turned(cardObjs[sg.card], ang, { p: V(0, 0, 0), q: new THREE.Quaternion() }));
+        hp.q.multiply(_attQ.setFromEuler(_attE.set(-0.62 * ang / PUSH, 0, 0)));
+      }
+      else { hp = along(sg, kk); free = true; }
+      // (a servo's shiver where a move ends on a placement)
+      const prev = segAt(S, tt - 0.13);
+      if (prev && prev !== sg && prev.settle && tt - prev.t1 < 0.13 && tt >= prev.t1) {
+        const dir = prev.b.p.clone().sub(prev.a.p); const L0 = dir.length();
+        if (L0 > 0.5) { const b = tt - prev.t1; hp.p.addScaledVector(dir.multiplyScalar(1 / L0), 0.16 * Math.sin(b * 70) * Math.exp(-b * 32)); }
+      }
+      return { hp, f: fingersAt(sg, kk), free, el: lerp(sg.el0, sg.el1, smoother(kk)) };
     };
     const wobble = new THREE.Quaternion(), wobE = new THREE.Euler();
+    const mid = V(0, 0, 0);
+    let glow = 0, prevT = 0, farthest = 0;
     const poseHand = tt => {
-      const { hp, y, open, f, free } = planned(tt);
-      // (how it is speeding up, and which way, in the hand's own frame:
-      // hung from the wrist, the fingers trail behind a change of speed -
-      // down as it lifts, aside as it swings - and it banks into a swing)
-      if (free) {
-        const h = 1 / 60, a = planned(tt - h).hp.p, b = planned(tt + h).hp.p;
-        const acc = a.add(b).addScaledVector(hp.p, -2).multiplyScalar(1 / (h * h)).applyQuaternion(hp.q.clone().invert());
-        wobE.set(THREE.MathUtils.clamp(acc.y * 4e-5, -0.2, 0.2), THREE.MathUtils.clamp(-acc.x * 4e-5, -0.2, 0.2), THREE.MathUtils.clamp(-acc.x * 7e-5, -0.24, 0.24));
-        wobble.setFromEuler(wobE);
-        const wr = WRIST.clone().applyQuaternion(hp.q).add(hp.p);
-        hp.q.multiply(wobble);
-        hp.p.copy(wr).sub(WRIST.clone().applyQuaternion(hp.q));
-      }
-      handNow.p.copy(hp.p); handNow.q.copy(hp.q);
-      dealer.position.copy(hp.p);
-      dealer.quaternion.copy(hp.q);
-      wristW.copy(WRIST).applyQuaternion(hp.q).add(hp.p);
+      const { y, open } = rising(tt);
       const shown = y > ARM.down + 1;
-      arm.pose(y, wristW, hp.q, tt, shown ? 1 : 0);
-      setPort(open);
-      dealer.visible = arm.group.visible = shown;
-      // the fingers: opening to reach, closed on the cards it carries,
-      // curled to flick one over, opened and spread as it lets go - the
-      // index finger first, the others each a beat behind it, never quite
-      // still (a servo's hold is a live one), the thumb opposing the grip
-      const per = [0, 1, 2, 3].map(i => {
-        const fi = i ? fingersNow(tt - i * 0.028) : f;
-        const live = shown ? 0.03 * Math.sin(tt * 2.6 + i * 1.3) + 0.015 * Math.sin(tt * 7.1 + i * 2.1) : 0;
-        return [fi[0] * (1 + 0.04 * i) + live, fi[1]];
+      const hs = arms.map((a, k) => planned(k, tt, y));
+      // (the torso turns a little toward where its hands are: the middle of
+      // the two, away from the player's side of the port)
+      mid.copy(hs[0].hp.p).add(hs[1].hp.p).multiplyScalar(0.5);
+      const yaw = y < ARM.up - 0.5 ? 0 : THREE.MathUtils.clamp(0.3 * Math.atan2(-(mid.x - PORT.x), -(mid.z - PORT.z)), -0.22, 0.22);
+      const { shoulders, side } = torso.pose(y, yaw, tt, shown ? 1 : 0);
+      let speed = 0;
+      arms.forEach((a, k) => {
+        const { hp, f, free } = hs[k];
+        // (how it is speeding up, and which way, in the hand's own frame:
+        // hung from the wrist, the fingers trail behind a change of speed -
+        // down as it lifts, aside as it swings - and it banks into a swing)
+        if (free) {
+          const h = 1 / 60, pa = planned(k, tt - h, y).hp.p, pb = planned(k, tt + h, y).hp.p;
+          const acc = pa.add(pb).addScaledVector(hp.p, -2).multiplyScalar(1 / (h * h)).applyQuaternion(hp.q.clone().invert());
+          wobE.set(THREE.MathUtils.clamp(acc.y * 4e-5, -0.2, 0.2), THREE.MathUtils.clamp(-acc.x * 4e-5, -0.2, 0.2), THREE.MathUtils.clamp(-acc.x * 7e-5, -0.24, 0.24));
+          wobble.setFromEuler(wobE);
+          const wr = WRIST.clone().applyQuaternion(hp.q).add(hp.p);
+          hp.q.multiply(wobble);
+          hp.p.copy(wr).sub(WRIST.clone().applyQuaternion(hp.q));
+        }
+        a.now.p.copy(hp.p); a.now.q.copy(hp.q);
+        a.hand.position.copy(hp.p);
+        a.hand.quaternion.copy(hp.q);
+        a.wrist.copy(WRIST).applyQuaternion(hp.q).add(hp.p);
+        const reach = a.arm.pose(shoulders[k], a.wrist, hp.q, side, tt, shown ? 1 : 0, elbowWay(hs[k].el, a.side, a.pref));
+        if (shown && y >= ARM.up - 0.01) farthest = Math.max(farthest, reach);
+        a.hand.visible = a.arm.group.visible = shown;
+        // the fingers: opening to reach, closed on the card it carries,
+        // curled to flick one over, opened and spread as it lets go - the
+        // index finger first, the others each a beat behind it, never quite
+        // still (a servo's hold is a live one), the thumb opposing the grip
+        // (a gesture's own shape of the hand - a point, a flutter, a drum -
+        // comes in over the fingers and goes again)
+        const shp = shapeAt(k, tt);
+        const per = [0, 1, 2, 3].map(i => {
+          const fi = i ? fingersNow(k, tt - i * 0.028) : f;
+          const live = shown ? 0.03 * Math.sin(tt * 2.6 + i * 1.3 + k) + 0.015 * Math.sin(tt * 7.1 + i * 2.1 + k * 2) : 0;
+          const c = fi[0] * (1 + 0.04 * i) + live;
+          return shp ? [lerp(c, shp.per[i][0], shp.w), lerp(fi[1], shp.per[i][1], shp.w)] : [c, fi[1]];
+        });
+        let ft = fingersNow(k, tt + 0.02);
+        if (shp) ft = [lerp(ft[0], shp.thumb[0], shp.w), lerp(ft[1], shp.thumb[1], shp.w)];
+        a.hand.userData.fingers(per, ft[0], ft[1]);
+        a.hand.userData.leds(shown ? 1 : 0, tt + k * 0.4);
+        // the light in its circuits: up while it works, brighter as it moves
+        const palm = V(0, 1.2, -9.8).applyQuaternion(hp.q).add(hp.p);
+        const dt = tt - prevT;
+        if (a.prevPalm && dt > 0 && dt < 0.2) speed = Math.max(speed, a.prevPalm.distanceTo(palm) / dt);
+        a.prevPalm = palm;
       });
-      const ft = fingersNow(tt + 0.02);
-      dealer.userData.fingers(per, ft[0], ft[1]);
-      dealer.userData.leds(shown ? 1 : 0, tt);
-      // the light in its circuits: up while it works, brighter as it moves
-      const palm = V(0, 1.2, -9.8).applyQuaternion(hp.q).add(hp.p);
-      const dt = tt - prevT;
-      const speed = prevPalm && dt > 0 && dt < 0.2 ? prevPalm.distanceTo(palm) / dt : 0;
+      setPort(open);
+      maskIris(open);
+      torso.group.visible = shown;
       glow = lerp(glow, shown ? 0.3 + Math.min(0.6, speed / 140) : 0, 0.35);
       dealerMats.ceramic.emissiveIntensity = glow;
       dealerMats.circuit.emissiveIntensity = 0.15 + glow * 1.8;
       dealerMats.pulse.value = tt;
-      prevPalm = palm; prevT = tt;
-      // its shadow on the felt, under the palm, fading as the hand rises
-      handShadow.position.set(palm.x, 0.02, palm.z);
-      handShadow.rotation.z = Math.atan2(V(0, 0, 1).applyQuaternion(hp.q).x, V(0, 0, 1).applyQuaternion(hp.q).z);
-      handShadow.material.opacity = shown && palm.y > 0 ? 0.5 * clamp01(1 - (palm.y - 1.2) / 14) : 0;
+      prevT = tt;
     };
     let tNow = 0, raf = 0, last = 0, running = false, arrived = false, disposed = false;
     // (a flicked card's spin, slowing to a stop)
@@ -2213,18 +2432,17 @@ export async function prepareTable(opts) {
       css.domElement.classList.toggle('r3t-hide', uiK <= 0);
       if (!arrived && tt >= FLY) { arrived = true; if (fo.onArrive) fo.onArrive(css.domElement); }
     };
+    const drawArms = () => world.lens(() => handGL.render(handScene, camera));
     const draw = () => {
       world.paint();
       css.render(cssScene, camera);
-      // (the moving frames' resolution has changed with the device's pace)
-      if (handGL.getPixelRatio() !== (world.pixelRatio || 1)) { const hs = handGL.getSize(new THREE.Vector2()); sizeHand(hs.x, hs.y); }
-      handGL.render(handScene, camera);
+      drawArms();
     };
     // The frame on screen, drawn: at rest it is held, and drawn sharp.
     const show = () => { if (running) draw(); else world.rest(draw); };
     // (busy: the deal, a card lifting or going down, or one still spinning
     // from a flick)
-    const busyUntil = () => Math.max(settleAt, ...[...lift.values()].map(L => L[3] + 0.5), spinning() ? tNow + 1 : 0);
+    const busyUntil = () => Math.max(settleAt, ...[...lift.values()].map(L => L[3] + 0.5), spinning() ? tNow + 1 : 0, gestureEnd);
     let woke = 0;
     const loop = now => {
       if (!running) return;
@@ -2243,7 +2461,225 @@ export async function prepareTable(opts) {
     };
     const wake = () => { if (disposed || fo.manual) { if (fo.manual) { update(tNow); world.rest(draw); } return; } if (!running) { running = true; last = 0; woke = 0; world.move(); raf = requestAnimationFrame(loop); } };
 
+    // ---- Waiting. Once the deal is done the machine stays up on the table,
+    // and while a card you can collect sits there uncollected it lets you
+    // know, more and more plainly the longer it waits: a point at the best
+    // of them (8 s), a wave over them (20 s), spirit fingers (34 s), the
+    // fingers of the hand on the shoe drumming while the other tilts - well?
+    // (50 s), and at last a sulk: down into its port, the iris closing round
+    // the hands, only the fingertips showing (70 s), with a peek out now and
+    // then. Any touch at the table brings it straight back up. Nothing ready,
+    // it waits quietly; collect one, and the laying hand knocks twice on the
+    // felt - a dealer's thanks. A gesture is more moves on each arm's plan,
+    // made then and there; one that moves only the arms (all but the sulk,
+    // the peek and the pop, which work the port) redraws only the arms'
+    // canvas, so the table stays still and sharp under it. (Motion off, a
+    // hidden page, a card up, the phone in your hand, a view or a dialog
+    // over the table: none of it.)
+    const SHAPES = {
+      point: () => ({ per: [[-0.12, 0.04], [1.25, 0], [1.28, 0], [1.22, 0]], thumb: [0.95, 0] }),
+      wave: u => ({ per: [0, 1, 2, 3].map(i => [-0.14 + 0.13 * Math.sin(u * 9 + i * 0.9), 0.95]), thumb: [-0.05, 0.8] }),
+      spirit: u => ({ per: [0, 1, 2, 3].map(i => [0.2 + 0.5 * Math.sin(u * 31 + i * 1.9), 1.05]), thumb: [0.12 + 0.3 * Math.sin(u * 31 + 7.6), 0.9] }),
+      // (rolls from the little finger to the index, twice a second: each
+      // finger lifts off the lid and comes down on it)
+      drum: u => ({ per: [0, 1, 2, 3].map(i => { const x = u * 2.1 - (3 - i) * 0.085; const ph = x - Math.floor(x); return [0.5 - 0.95 * Math.exp(-Math.pow((ph - 0.3) / 0.045, 2)), 0.14]; }), thumb: [0.3, 0.1] }),
+      knock: () => ({ per: [[1.15, 0], [1.2, 0], [1.2, 0], [1.1, 0]], thumb: [0.9, 0] })
+    };
+    const shapes = [[], []];                  // per arm: { t0, t1, fn, fade }
+    const shapeAt = (k, tt) => {
+      const list = shapes[k];
+      for (let i = list.length - 1; i >= 0; i--) {
+        const sh = list[i];
+        if (tt < sh.t0 || tt > sh.t1) continue;
+        const w = smoother(Math.min((tt - sh.t0) / sh.fade, (sh.t1 - tt) / sh.fade, 1));
+        return Object.assign(sh.fn(tt - sh.t0), { w });
+      }
+      return null;
+    };
+    // (the sulk: the machine down in its port with only the fingertips of
+    // its raised hands above the felt, the iris closed round them)
+    const SULK = { y: 6 - (Math.sqrt(reachUp * reachUp - (ARM.shoulder - 1.1) ** 2) - WRIST.z), open: 0.52 };
+    const backOut = k => { const c1 = 1.25, c3 = c1 + 1; return 1 + c3 * Math.pow(k - 1, 3) + c1 * Math.pow(k - 1, 2); };
+    // arm k's plan from t on, after whatever it is already doing
+    const planFrom = (k, t) => {
+      const S = deal.arms[k], L = S[S.length - 1];
+      return { segs: S, t: Math.max(t, L ? L.t1 : t), at: L && L.b ? L.b : restPose(k), fin: L ? L.f1 : FIN.easy, att: L && L.att1 ? L.att1 : [0, 0], el: L ? L.el1 : 1 };
+    };
+    // both arms straight up over the torso until t1, following it down or up
+    const upTo = (k, t0, t1, yEnd) => { const P = planFrom(k, t0); P.segs.push({ kind: 'up', t0: P.t, t1, f0: P.fin, f1: FIN.rest, el0: P.el, el1: 0, b: upright(k, yEnd) }); };
+    const liftNow = () => rising(tNow);
+    const readyNow = () => cardObjs.map((o, i) => (o.userData.ready ? i : -1)).filter(i => i >= 0);
+    const gestures = {
+      point(t0, targets) {
+        const c = cardObjs[targets[0]].userData.slot;
+        const B = planFrom(1, t0);
+        const over = handPose(V(c.x + 0.6, 5.6, c.z + CARD.h / 2 + 3.4), V(-0.05, -0.8, -0.62), up);
+        const tap = pose(over.p.clone().add(V(0, -1.0, -0.55)), over.q);
+        addMove(B, over, 0.66, { lift: 3, to: FIN.relax, lean: [0, 0], elbow: 0.35 });
+        addMove(B, tap, 0.13); addMove(B, over, 0.14); addMove(B, tap, 0.13); addMove(B, over, 0.16);
+        holdP(B, 0.4);
+        const back = B.t;
+        addMove(B, restPose(1), 0.66, { lift: 2.5, to: FIN.poise, elbow: 1 });
+        shapes[1].push({ t0: t0 + 0.25, t1: back + 0.3, fn: SHAPES.point, fade: 0.22 });
+        return B.t;
+      },
+      wave(t0, targets) {
+        const pts = targets.map(i => cardObjs[i].userData.slot);
+        const z = pts.reduce((a, p) => a + p.z, 0) / pts.length;
+        const hiX = Math.max(...pts.map(p => p.x)) + 3.2, loX = Math.min(...pts.map(p => p.x)) - 3.2;
+        const B = planFrom(1, t0);
+        const at = (x, r) => handPose(V(x, 4.8, z + 2.2), V(0, -0.14, -1), V(r, 1, 0));
+        addMove(B, at(hiX, 0.12), 0.62, { lift: 3, to: FIN.open, lean: [0, 0], elbow: 0.3 });
+        const n = 4;
+        for (let j = 1; j <= n; j++) addMove(B, at(lerp(hiX, loX, j / n), j % 2 ? -0.2 : 0.2), 1.3 / n, { via: j < n });
+        const back = B.t;
+        addMove(B, restPose(1), 0.66, { lift: 2.5, to: FIN.poise, elbow: 1 });
+        shapes[1].push({ t0: t0 + 0.3, t1: back + 0.2, fn: SHAPES.wave, fade: 0.25 });
+        smoothVias(B.segs);
+        return B.t;
+      },
+      spirit(t0) {
+        const ends = [];
+        [0, 1].forEach(k => {
+          const P = planFrom(k, t0), sd = SIDES[k];
+          const hi = handPose(V(sd * 7.6, 12.8, 37.5), V(-sd * 0.12, 1, -0.3), V(0, 0.3, 1));
+          addMove(P, hi, 0.58, { lift: 2, to: FIN.open, lean: [0, 0], elbow: 0 });
+          // (a little shimmy, side to side, while the fingers flutter)
+          for (let j = 0; j < 4; j++) addMove(P, pose(hi.p.clone().add(V((j % 2 ? -1 : 1) * sd * 0.9, 0.35 * (j % 2), 0)), hi.q), 0.3, { via: j < 3 });
+          addMove(P, hi, 0.18);
+          const back = P.t;
+          addMove(P, restPose(k), 0.68, { lift: 2, to: k ? FIN.poise : FIN.easy, elbow: 1 });
+          shapes[k].push({ t0: t0 + 0.38, t1: back + 0.12, fn: SHAPES.spirit, fade: 0.2 });
+          smoothVias(P.segs);
+          ends.push(P.t);
+        });
+        return Math.max(...ends);
+      },
+      drum(t0) {
+        const A = planFrom(0, t0), B = planFrom(1, t0);
+        holdP(A, 2.3);
+        shapes[0].push({ t0: A.t - 2.3, t1: A.t, fn: SHAPES.drum, fade: 0.15 });
+        // (the other rocks on its fingertips: well?)
+        const r = restPose(1);
+        addMove(B, r, 0.5, { lean: [0.05, 0.42] });
+        holdP(B, 1.15);
+        addMove(B, r, 0.6, { lean: [0, 0] });
+        return Math.max(A.t, B.t);
+      },
+      knock(t0) {
+        const B = planFrom(1, t0), r = restPose(1);
+        const hi = pose(r.p.clone().add(V(0, 3.4, 0.9)), r.q), lo = pose(r.p.clone().add(V(0, -0.15, 0)), r.q);
+        addMove(B, hi, 0.2, { to: FIN.easy, lean: [0.3, 0] });
+        addMove(B, lo, 0.09, { settle: true }); addMove(B, hi, 0.13); addMove(B, lo, 0.09, { settle: true });
+        addMove(B, r, 0.34, { to: FIN.poise, lean: [0, 0] });
+        shapes[1].push({ t0: t0 + 0.05, t1: B.t - 0.12, fn: SHAPES.knock, fade: 0.1 });
+        return B.t;
+      },
+      // down into the port: the arms straight up, the torso sinks, and once
+      // its shoulders are below the felt the iris closes round the hands
+      sulk(t0) {
+        [0, 1].forEach(k => { const P = planFrom(k, t0); addMove(P, upright(k, ARM.up), 0.75, { lift: 2, to: FIN.rest, lean: [0, 0], elbow: 0 }); });
+        const tS = Math.max(...[0, 1].map(k => deal.arms[k][deal.arms[k].length - 1].t1));
+        lifts.push({ t0: tS, t1: tS + 1.4, y0: ARM.up, y1: SULK.y, o0: 1, o1: 1, ease: smoother });
+        lifts.push({ t0: tS + 1.4, t1: tS + 1.8, y0: SULK.y, y1: SULK.y, o0: 1, o1: SULK.open, ease: smoother });
+        [0, 1].forEach(k => upTo(k, tS, tS + 1.8, SULK.y));
+        idle.sulk = true;
+        return tS + 1.8;
+      },
+      // (a look out of the port, and back down)
+      peek(t0) {
+        const y1 = SULK.y + 8;
+        lifts.push({ t0, t1: t0 + 0.3, y0: SULK.y, y1: SULK.y, o0: SULK.open, o1: 0.66, ease: smoother });
+        lifts.push({ t0: t0 + 0.3, t1: t0 + 0.75, y0: SULK.y, y1, o0: 0.66, o1: 0.66, ease: easeOut });
+        lifts.push({ t0: t0 + 1.75, t1: t0 + 2.25, y0: y1, y1: SULK.y, o0: 0.66, o1: 0.66, ease: smoother });
+        lifts.push({ t0: t0 + 2.25, t1: t0 + 2.5, y0: SULK.y, y1: SULK.y, o0: 0.66, o1: SULK.open, ease: smoother });
+        [0, 1].forEach(k => upTo(k, t0, t0 + 2.5, SULK.y));
+        return t0 + 2.5;
+      },
+      // back up out of it, all at once, and down to rest with a flourish
+      pop(t0) {
+        const { y, open } = liftNow();
+        lifts.push({ t0, t1: t0 + 0.16, y0: y, y1: y, o0: open, o1: 1, ease: smoother });
+        lifts.push({ t0: t0 + 0.16, t1: t0 + 0.8, y0: y, y1: ARM.up, o0: 1, o1: 1, ease: backOut });
+        const ends = [0, 1].map(k => {
+          upTo(k, t0, t0 + 0.8, ARM.up);
+          const P = planFrom(k, t0 + 0.8);
+          addMove(P, restPose(k), 0.7, { lift: 4, to: k ? FIN.poise : FIN.easy, lean: [0, 0], dip: [-0.25, 0], elbow: 1 });
+          return P.t;
+        });
+        idle.sulk = false;
+        return Math.max(...ends);
+      }
+    };
+    const idle = { since: 0, stage: 0, sulk: false, ready: -1, peekAt: 0, away: false };
+    let gestureEnd = 0, armsRaf = 0, armsLast = 0;
+    // The arms alone, frame by frame, to the end of what they are doing (the
+    // table's own loop, if it starts meanwhile, takes over and draws them):
+    // their canvas at a moving frame's resolution while they move, and the
+    // last frame, the one that stays, sharp again.
+    const armsLoop = now => {
+      if (disposed || running) { armsRaf = 0; return; }
+      const dt = armsLast ? Math.min(0.1, (now - armsLast) / 1000) : 1 / 60;
+      armsLast = now;
+      tNow = Math.min(tNow + dt, gestureEnd);
+      poseHand(tNow);
+      const done = tNow >= gestureEnd;
+      world.layer(handGL, !done);
+      drawArms();
+      armsRaf = done ? 0 : requestAnimationFrame(armsLoop);
+    };
+    const playArms = () => { if (fo.manual || running || armsRaf) return; armsLast = 0; armsRaf = requestAnimationFrame(armsLoop); };
+    const perform = (name, targets = readyNow()) => {
+      if (!targets.length) targets = cardObjs.map((o, i) => i);
+      gestureEnd = Math.max(gestureEnd, gestures[name](tNow + 0.02, targets));
+      // (the port's own moves are the table's: its whole loop, to their end)
+      if (name === 'sulk' || name === 'peek' || name === 'pop') wake(); else playArms();
+    };
+    // A gesture under way gives way to you: the hands go back to rest from
+    // wherever they are (and up out of the port, if it was sulking).
+    const giveWay = () => {
+      idle.since = performance.now(); idle.stage = 0; idle.peekAt = 0;
+      if (idle.sulk) { perform('pop'); return; }
+      if (gestureEnd <= tNow + 0.02) return;
+      const y = liftNow().y;
+      [0, 1].forEach(k => {
+        const now = planned(k, tNow, y);
+        const S = deal.arms[k];
+        while (S.length && S[S.length - 1].t0 > tNow) S.pop();
+        if (S.length && S[S.length - 1].t1 > tNow) S[S.length - 1].t1 = tNow;
+        shapes[k] = shapes[k].filter(sh => sh.t1 < tNow).concat(shapes[k].filter(sh => sh.t0 <= tNow && sh.t1 >= tNow).map(sh => Object.assign({}, sh, { t1: tNow + sh.fade })));
+        const P = { segs: S, t: tNow, at: now.hp, fin: now.f, att: [0, 0], el: now.el };
+        addMove(P, restPose(k), 0.5, { lift: 2, to: k ? FIN.poise : FIN.easy, elbow: 1 });
+        gestureEnd = Math.max(gestureEnd, P.t);
+      });
+      playArms();
+    };
+    const idleTick = () => {
+      if (disposed || fo.manual || fo.reduced || !arrived) return;
+      // (away - another tab, the phone asleep - the wait starts over when you
+      // are back, rather than every step it missed at once)
+      if (document.hidden) { idle.away = true; return; }
+      if (idle.away) { idle.away = false; idle.since = performance.now(); idle.peekAt = 0; if (!idle.sulk) idle.stage = 0; }
+      if (document.documentElement.getAttribute('data-motion') === 'off') return;
+      if (running || armsRaf || tNow < settleAt || gestureEnd > tNow) return;
+      if (!idle.since || focusId || phoneHeld || document.body.classList.contains('r3-sheet-open') || document.querySelector('.sheet-backdrop.open')) { idle.since = performance.now(); idle.peekAt = 0; return; }
+      const ready = readyNow();
+      // (one fewer ready than last time: collected - a knock of thanks)
+      if (idle.ready >= 0 && ready.length < idle.ready && !idle.sulk) { idle.ready = ready.length; perform('knock', ready); return; }
+      idle.ready = ready.length;
+      const waited = (performance.now() - idle.since) / 1000;
+      if (idle.sulk) { if (waited - idle.peekAt > 26) { idle.peekAt = waited; perform('peek'); } return; }
+      if (!ready.length) return;
+      const next = [['point', 8], ['wave', 20], ['spirit', 34], ['drum', 50], ['sulk', 70]][idle.stage];
+      if (next && waited >= next[1]) { idle.stage++; if (next[0] === 'sulk') idle.peekAt = waited; perform(next[0], ready); }
+    };
+    const idleClock = setInterval(idleTick, 700);
+
     // ---- Interaction.
+    // (any touch or key at the table: the machine gives way, and its wait
+    // starts over)
+    css.domElement.addEventListener('pointerdown', giveWay);
+    css.domElement.addEventListener('keydown', giveWay);
     // A lifted card goes back down, and its info away.
     const putDown = () => {
       if (focusId) { const F = lift.get(focusId); if (F) { F[2] = F[0]; F[1] = 0; F[3] = tNow; } }
@@ -2362,14 +2798,26 @@ export async function prepareTable(opts) {
       // (lab and tests: which way this deal was dealt, and a turn of the
       // focused card as a drag would give it)
       deal: deal.style,
+      // (lab and tests: the farthest either arm reaches over the whole deal,
+      // shoulder to wrist - it must stay under ARM.upper + ARM.fore)
+      // (after the first swing out of the upright, which is at full length
+      // by design)
+      reach() { const t0 = tNow; farthest = 0; for (let t = dealAt - RISE.swing + DEAL.first; t <= Math.max(settleAt, gestureEnd) + 0.05; t += 1 / 120) poseHand(t); poseHand(t0); return +farthest.toFixed(2); },
       turnCard(dx, dy) { spinBy(dx, dy); wake(); },
       // (lab: the camera anywhere in the seat's frame, to look a prop over;
       // look() with nothing puts it back in the seat)
       look(eye, aim, fov) { lookAt = eye ? { eye: V(...eye), aim: V(...aim), fov: fov || sv.fov } : null; update(tNow); show(); },
       putDown,
+      // (lab: a gesture now - point, wave, spirit, drum, knock, sulk, peek,
+      // pop - and when it runs, in the table's clock)
+      gesture(name) { if (!gestures[name]) return null; const t0 = tNow; perform(name); return { from: t0, to: gestureEnd }; },
+      // (lab and tests: how the wait stands - the ladder's next step, how
+      // long it has waited, a sulk, the end of the gesture under way, the
+      // table's clock, which loop runs)
+      get waiting() { return { stage: idle.stage, waited: idle.since ? +((performance.now() - idle.since) / 1000).toFixed(1) : 0, sulk: idle.sulk, ready: idle.ready, until: +gestureEnd.toFixed(2), t: +tNow.toFixed(2), table: running, arms: !!armsRaf }; },
       dispose() {
-        disposed = true; running = false; cancelAnimationFrame(raf);
-        clearInterval(clock);
+        disposed = true; running = false; cancelAnimationFrame(raf); cancelAnimationFrame(armsRaf);
+        clearInterval(clock); clearInterval(idleClock);
         window.removeEventListener('resize', onResize);
         handGL.dispose();
         css.domElement.remove();
