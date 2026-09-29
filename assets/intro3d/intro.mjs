@@ -1428,12 +1428,40 @@ async function buildIntro(opts, undo, teardown) {
     const key = [w, h, r, crop ? [crop.x, crop.y, crop.w, crop.h] : ''].join();
     if (key === sized) return false;
     sized = key;
-    const st = canvas.style;
-    if (crop) { st.left = `${crop.x}px`; st.top = `${crop.y}px`; st.width = `${crop.w}px`; st.height = `${crop.h}px`; }
-    else st.left = st.top = st.width = st.height = '';
-    renderer.setDrawingBufferSize(cw, ch, r);
+    place(canvas, renderer, cw, ch, r);
     if (composer) { composer.setPixelRatio(r); composer.setSize(cw, ch); }
+    layers.forEach(gl => place(gl.domElement, gl, cw, ch, r));
     return true;
+  };
+  // A canvas over the whole screen, or over the crop, at ratio r. (Set with
+  // !important: a layer's own stylesheet may pin it to the whole screen.)
+  const place = (el, gl, cw, ch, r) => {
+    const st = el.style;
+    if (crop) [['left', crop.x], ['top', crop.y], ['width', crop.w], ['height', crop.h]].forEach(([k, v]) => st.setProperty(k, `${v}px`, 'important'));
+    else ['left', 'top', 'width', 'height'].forEach(k => st.removeProperty(k));
+    gl.setDrawingBufferSize(cw, ch, r);
+  };
+  // Other canvases drawn over this one with the same camera (the table's
+  // dealer has one): kept the same size - the same part of the screen at the
+  // same resolution - and drawn through the same part of the lens. A layer
+  // that moves on its own over a frame that stays (the dealer's arms over
+  // the table held still) is placed again `live`, at a moving frame's
+  // resolution - no more pixels than a moving frame of the whole view, and
+  // so, pinched in, at the zoom's resolution over the part in view - and
+  // placed again without it once it stops. (Placing a canvas clears it:
+  // draw it straight after.)
+  const layers = [];
+  const layerSize = new THREE.Vector2();
+  const layer = (gl, live = false) => {
+    const known = layers.includes(gl);
+    if (!known) layers.push(gl);
+    const [w, h, r0] = sized.split(',').map(Number);
+    if (!w) return;
+    const cw = crop ? crop.w : w, ch = crop ? crop.h : h;
+    const r = live ? Math.min(r0, pixelRatio * (crop ? crop.zoom : 1)) : r0;
+    gl.getSize(layerSize);
+    if (known && gl.getPixelRatio() === r && layerSize.x === cw && layerSize.y === ch) return;
+    place(gl.domElement, gl, cw, ch, r);
   };
   // Before a frame is drawn: the canvas sized for it, when it has moved on
   // from a still (true when it was resized).
@@ -1900,7 +1928,7 @@ async function buildIntro(opts, undo, teardown) {
         // ended; through the part in view, when pinched in); the frame on
         // screen held (drawn again, sharp) or moving on; a moving frame's
         // time, for its resolution
-        paint, rest, move, pace,
+        paint, rest, move, pace, layer, lens, fit,
         // the intro's own world (dice, stick, dust) at a real time, and a
         // frame of it drawn through the intro's post-processing
         stage: tt => stage(tt == null ? t : tt),
