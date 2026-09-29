@@ -1498,6 +1498,7 @@ export async function prepareTable(opts) {
     const cssSeat = new THREE.Group();
     cssSeat.position.copy(seat.position); cssSeat.quaternion.copy(seat.quaternion);
     cssScene.add(cssSeat);
+    let sizeHand = null;
     const size = () => {
       world.size();
       const w = world.host.clientWidth || window.innerWidth, h = world.host.clientHeight || window.innerHeight;
@@ -1542,7 +1543,7 @@ export async function prepareTable(opts) {
       const fill = new THREE.DirectionalLight(0xc9d2e6, 0.5); fill.position.set(6, 10, -30); handSeat.add(fill, fill.target);
       handScene.add(new THREE.HemisphereLight(0xfff0e0, 0x1a1410, 0.5));
     }
-    const sizeHand = (w, h) => handGL.setSize(w, h, false);
+    sizeHand = (w, h) => handGL.setSize(w, h, false);
     let aspect = size();
     stageEl.appendChild(css.domElement);
     css.domElement.appendChild(handGL.domElement);
