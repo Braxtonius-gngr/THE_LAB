@@ -1499,6 +1499,7 @@ export async function prepareTable(opts) {
     const cssSeat = new THREE.Group();
     cssSeat.position.copy(seat.position); cssSeat.quaternion.copy(seat.quaternion);
     cssScene.add(cssSeat);
+    let sizeHand = null;
     const size = () => {
       world.size();
       // (the stage's box: after the arrival the landing, world.host, is
