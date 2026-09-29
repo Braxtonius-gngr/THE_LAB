@@ -1367,7 +1367,8 @@ function railHTML() {
 }
 function phoneHTML(asset) {
   const coin = n => `<img class="r3t-ph-coin" src="${asset(`icons/coin-${n}.webp`)}" alt="" width="64" height="64">`;
-  return `<div class="r3t-ph-body"><div class="r3t-ph-screen">
+  return `<button type="button" class="r3t-ph-pickup" aria-label="Pick up phone">Pick up</button>
+    <div class="r3t-ph-body"><div class="r3t-ph-screen">
     <div class="r3t-ph-island"></div>
     <div class="r3t-ph-status"><span class="r3t-ph-clock">--:--</span><span class="r3t-ph-sig" aria-hidden="true"><i></i><i></i><i></i><i></i><b></b></span></div>
     <div class="r3t-ph-lock">
@@ -1501,7 +1502,10 @@ export async function prepareTable(opts) {
     let sizeHand = null;
     const size = () => {
       world.size();
-      const w = world.host.clientWidth || window.innerWidth, h = world.host.clientHeight || window.innerHeight;
+      // (the stage's box: after the arrival the landing, world.host, is
+      // hidden, and a pinched-in page's window is only the part in view)
+      const box = world.canvas.parentElement || world.host;
+      const w = box.clientWidth || window.innerWidth, h = box.clientHeight || window.innerHeight;
       css.setSize(w, h);
       if (typeof sizeHand === 'function') sizeHand(w, h);
       return w / h;
@@ -1543,7 +1547,9 @@ export async function prepareTable(opts) {
       const fill = new THREE.DirectionalLight(0xc9d2e6, 0.5); fill.position.set(6, 10, -30); handSeat.add(fill, fill.target);
       handScene.add(new THREE.HemisphereLight(0xfff0e0, 0x1a1410, 0.5));
     }
-    sizeHand = (w, h) => handGL.setSize(w, h, false);
+    // (the arm moves only while the table does: its canvas keeps the moving
+    // frames' resolution)
+    const sizeHand = (w, h) => handGL.setDrawingBufferSize(w, h, world.pixelRatio || 1);
     let aspect = size();
     stageEl.appendChild(css.domElement);
     css.domElement.appendChild(handGL.domElement);
@@ -1653,9 +1659,8 @@ export async function prepareTable(opts) {
     // over the hand's canvas; its moves are the page's own transitions)
     const phoneEl = document.createElement('div');
     phoneEl.className = 'r3t-phone';
-    phoneEl.setAttribute('role', 'button');
-    phoneEl.setAttribute('aria-label', 'Your phone: freebies, community drops, the deck, the catalogue and settings');
-    phoneEl.tabIndex = 0;
+    phoneEl.setAttribute('role', 'group');
+    phoneEl.setAttribute('aria-label', 'Phone');
     phoneEl.innerHTML = phoneHTML(asset);
     css.domElement.appendChild(phoneEl);
     let phoneHeld = false;
@@ -1691,7 +1696,6 @@ export async function prepareTable(opts) {
     const holdPhone = on => {
       phoneHeld = !!on;
       phoneEl.classList.toggle('r3t-held', phoneHeld);
-      phoneEl.setAttribute('aria-expanded', phoneHeld ? 'true' : 'false');
     };
 
     css.domElement.appendChild(ui);
@@ -2210,25 +2214,34 @@ export async function prepareTable(opts) {
       if (!arrived && tt >= FLY) { arrived = true; if (fo.onArrive) fo.onArrive(css.domElement); }
     };
     const draw = () => {
-      if (world.composer) world.composer.render(); else renderer.render(scene, camera);
+      world.paint();
       css.render(cssScene, camera);
+      // (the moving frames' resolution has changed with the device's pace)
+      if (handGL.getPixelRatio() !== (world.pixelRatio || 1)) { const hs = handGL.getSize(new THREE.Vector2()); sizeHand(hs.x, hs.y); }
       handGL.render(handScene, camera);
     };
+    // The frame on screen, drawn: at rest it is held, and drawn sharp.
+    const show = () => { if (running) draw(); else world.rest(draw); };
     // (busy: the deal, a card lifting or going down, or one still spinning
     // from a flick)
     const busyUntil = () => Math.max(settleAt, ...[...lift.values()].map(L => L[3] + 0.5), spinning() ? tNow + 1 : 0);
+    let woke = 0;
     const loop = now => {
       if (!running) return;
       // (slow frames play the shot slower rather than skip through it, down
       // to 10 a second)
       const dt = last ? Math.min(0.1, (now - last) / 1000) : 1 / 60;
+      // (the frames' pace sets their resolution - not the first few after a
+      // rest, which carry its resize, nor one after the tab was away)
+      if (last && ++woke > 6 && !document.hidden && now - last < 250) world.pace((now - last) / 1000);
       last = now;
       update(tNow + dt);
+      // (the last of the moves: its frame is the one that stays)
+      if (tNow > busyUntil()) { running = false; world.rest(draw); return; }
       draw();
-      if (tNow > busyUntil()) { running = false; return; }
       raf = requestAnimationFrame(loop);
     };
-    const wake = () => { if (disposed || fo.manual) { if (fo.manual) { update(tNow); draw(); } return; } if (!running) { running = true; last = 0; raf = requestAnimationFrame(loop); } };
+    const wake = () => { if (disposed || fo.manual) { if (fo.manual) { update(tNow); world.rest(draw); } return; } if (!running) { running = true; last = 0; woke = 0; world.move(); raf = requestAnimationFrame(loop); } };
 
     // ---- Interaction.
     // A lifted card goes back down, and its info away.
@@ -2312,12 +2325,21 @@ export async function prepareTable(opts) {
       if (e.target.closest('.r3t-run')) { if (hooks.run) hooks.run(); return; }
       const tile = e.target.closest('.r3t-ph-tile, .r3t-ph-gear');
       if (tile) { if (hooks.openView) hooks.openView(tile.dataset.view); return; }
-      if (e.target.closest('.r3t-ph-put')) { holdPhone(false); return; }
+      if (e.target.closest('.r3t-ph-pickup')) {
+        holdPhone(true);
+        if (e.detail === 0) phoneEl.querySelector('.r3t-ph-tile').focus({ preventScroll: true });
+        return;
+      }
+      if (e.target.closest('.r3t-ph-put')) {
+        holdPhone(false);
+        if (e.detail === 0) phoneEl.querySelector('.r3t-ph-pickup').focus({ preventScroll: true });
+        return;
+      }
       if (e.target.closest('.r3t-phone') && !phoneHeld) { holdPhone(true); }
     });
     css.domElement.addEventListener('keydown', e => {
-      if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && (e.target.classList.contains('r3t-card') || e.target.classList.contains('r3t-phone'))) { e.preventDefault(); e.target.click(); }
-      if (e.key === 'Escape' && phoneHeld) { holdPhone(false); phoneEl.focus({ preventScroll: true }); }
+      if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('r3t-card')) { e.preventDefault(); e.target.click(); }
+      if (e.key === 'Escape' && phoneHeld) { holdPhone(false); phoneEl.querySelector('.r3t-ph-pickup').focus({ preventScroll: true }); }
       else if (e.key === 'Escape' && focusId) { const back = cardObjs.find(o => o.userData.card.id === focusId); putDown(); if (back) back.element.focus({ preventScroll: true }); }
       // (the arrow keys turn a focused card, a quarter of a half-turn a press)
       else if (focusId && e.target.dataset && e.target.dataset.id === focusId && /^Arrow/.test(e.key)) {
@@ -2330,18 +2352,19 @@ export async function prepareTable(opts) {
     const onResize = () => {
       aspect = size();
       sv = seatView(); E1 = toWorld(sv.eye); A1 = toWorld(sv.aim);
-      update(tNow); draw();
+      update(tNow); show();
     };
     window.addEventListener('resize', onResize);
 
-    update(0); draw();
-    if (!fo.manual) { running = true; raf = requestAnimationFrame(loop); }
+    update(0);
+    if (fo.manual) world.rest(draw);
+    else { draw(); running = true; raf = requestAnimationFrame(loop); }
 
     return {
       dest,
       duration: FLY, settleAt,
       get t() { return tNow; },
-      seek(t) { tNow = t; update(t); draw(); },
+      seek(t) { tNow = t; update(t); show(); },
       pickUpPhone(on = true) { holdPhone(on); },
       // (lab and tests: lift a card, as a tap would)
       liftCard(id) { const el = cardObjs.find(o => o.userData.card.id === id); if (el) el.element.click(); },
@@ -2351,7 +2374,7 @@ export async function prepareTable(opts) {
       turnCard(dx, dy) { spinBy(dx, dy); wake(); },
       // (lab: the camera anywhere in the seat's frame, to look a prop over;
       // look() with nothing puts it back in the seat)
-      look(eye, aim, fov) { lookAt = eye ? { eye: V(...eye), aim: V(...aim), fov: fov || sv.fov } : null; update(tNow); draw(); },
+      look(eye, aim, fov) { lookAt = eye ? { eye: V(...eye), aim: V(...aim), fov: fov || sv.fov } : null; update(tNow); show(); },
       putDown,
       dispose() {
         disposed = true; running = false; cancelAnimationFrame(raf);
