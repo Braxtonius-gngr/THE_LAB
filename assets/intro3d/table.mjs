@@ -2530,7 +2530,19 @@ export async function prepareTable(opts) {
       return { segs: S, t: Math.max(t, L ? L.t1 : t), at: L && L.b ? L.b : restPose(k), fin: L ? L.f1 : FIN.easy, att: L && L.att1 ? L.att1 : [0, 0], el: L ? L.el1 : 1 };
     };
     // both arms straight up over the torso until t1, following it down or up
-    const upTo = (k, t0, t1, yEnd) => { const P = planFrom(k, t0); P.segs.push({ kind: 'up', t0: P.t, t1, f0: P.fin, f1: FIN.rest, el0: P.el, el1: 0, b: upright(k, yEnd) }); };
+    const upTo = (k, t0, t1, yEnd) => { const P = planFrom(k, t0); P.segs.push({ kind: 'up', t0: P.t, t1: Math.max(t1, P.t), f0: P.fin, f1: FIN.rest, el0: P.el, el1: 0, b: upright(k, yEnd) }); };
+    // (what the port and each arm still had planned from t on is dropped: a
+    // move under way ends there, one not yet begun is gone, and a shape of
+    // the hand under way fades out)
+    const cutAt = t => {
+      for (let i = lifts.length - 1; i >= 0; i--) if (lifts[i].t0 >= t) lifts.splice(i, 1);
+      [0, 1].forEach(k => {
+        const S = deal.arms[k];
+        while (S.length && S[S.length - 1].t0 >= t) S.pop();
+        if (S.length && S[S.length - 1].t1 > t) S[S.length - 1].t1 = t;
+        shapes[k] = shapes[k].filter(sh => sh.t1 < t).concat(shapes[k].filter(sh => sh.t0 <= t && sh.t1 >= t).map(sh => Object.assign({}, sh, { t1: t + sh.fade })));
+      });
+    };
     const liftNow = () => rising(tNow);
     const readyNow = () => cardObjs.map((o, i) => (o.userData.ready ? i : -1)).filter(i => i >= 0);
     const gestures = {
@@ -2616,7 +2628,7 @@ export async function prepareTable(opts) {
         lifts.push({ t0: tS, t1: tS + 1.4, y0: ARM.up, y1: SULK.y, o0: 1, o1: 1, ease: smoother });
         lifts.push({ t0: tS + 1.4, t1: tS + 1.8, y0: SULK.y, y1: SULK.y, o0: 1, o1: SULK.open, ease: smoother });
         [0, 1].forEach(k => upTo(k, tS, tS + 1.8, SULK.y));
-        idle.sulk = true;
+        idle.sulk = true; idle.sinkAt = tS;
         return tS + 1.8;
       },
       // (a look out of the port, and back down)
@@ -2631,7 +2643,10 @@ export async function prepareTable(opts) {
       },
       // back up out of it, all at once, and down to rest with a flourish
       pop(t0) {
-        const { y, open } = liftNow();
+        // (from wherever the sulk or a peek has got to: what they still had
+        // planned is dropped)
+        const { y, open } = rising(t0);
+        cutAt(t0);
         lifts.push({ t0, t1: t0 + 0.16, y0: y, y1: y, o0: open, o1: 1, ease: smoother });
         lifts.push({ t0: t0 + 0.16, t1: t0 + 0.8, y0: y, y1: ARM.up, o0: 1, o1: 1, ease: backOut });
         const ends = [0, 1].map(k => {
@@ -2645,7 +2660,7 @@ export async function prepareTable(opts) {
         return Math.max(...ends);
       }
     };
-    const idle = { since: 0, stage: 0, sulk: false, ready: -1, peekAt: 0, away: false };
+    const idle = { since: 0, stage: 0, sulk: false, sinkAt: 0, ready: -1, peekAt: 0, away: false };
     let gestureEnd = 0, armsRaf = 0, armsLast = 0;
     // The arms alone, frame by frame, to the end of what they are doing (the
     // table's own loop, if it starts meanwhile, takes over and draws them):
@@ -2673,19 +2688,22 @@ export async function prepareTable(opts) {
     // wherever they are (and up out of the port, if it was sulking).
     const giveWay = () => {
       idle.since = performance.now(); idle.stage = 0; idle.peekAt = 0;
-      if (idle.sulk) { perform('pop'); return; }
+      if (idle.sulk) {
+        // (going down, or down: up out of the port. Still only raising its
+        // hands for it: the sulk is called off, and the hands go home.)
+        if (tNow >= idle.sinkAt) { const t0 = tNow + 0.02; gestureEnd = gestures.pop(t0); wake(); return; }
+        for (let i = lifts.length - 1; i >= 0; i--) if (lifts[i].t0 >= tNow) lifts.splice(i, 1);
+        idle.sulk = false;
+      }
       if (gestureEnd <= tNow + 0.02) return;
       // (the port's own moves - up out of a sulk - play out)
       if (lifts.some(l => l.t1 > tNow)) return;
       const y = liftNow().y;
+      const now = [0, 1].map(k => planned(k, tNow, y));
+      cutAt(tNow);
       let end = tNow;
       [0, 1].forEach(k => {
-        const now = planned(k, tNow, y);
-        const S = deal.arms[k];
-        while (S.length && S[S.length - 1].t0 > tNow) S.pop();
-        if (S.length && S[S.length - 1].t1 > tNow) S[S.length - 1].t1 = tNow;
-        shapes[k] = shapes[k].filter(sh => sh.t1 < tNow).concat(shapes[k].filter(sh => sh.t0 <= tNow && sh.t1 >= tNow).map(sh => Object.assign({}, sh, { t1: tNow + sh.fade })));
-        const P = { segs: S, t: tNow, at: now.hp, fin: now.f, att: [0, 0], el: now.el };
+        const P = { segs: deal.arms[k], t: tNow, at: now[k].hp, fin: now[k].f, att: [0, 0], el: now[k].el };
         addMove(P, restPose(k), 0.5, { lift: 2, to: k ? FIN.poise : FIN.easy, elbow: 1, wrist: true });
         end = Math.max(end, P.t);
       });
