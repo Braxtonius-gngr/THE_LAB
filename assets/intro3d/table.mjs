@@ -2008,22 +2008,29 @@ export async function prepareTable(opts) {
     // servo's small shiver on arrival; via: on through b without a stop;
     // to: the fingers by the end of it; lean: the wrist's attitude by the
     // end of it; dip: an attitude that comes and goes over it; elbow: the
-    // elbow's way by the end of it (see ELBOW). P is an arm's plan so far:
-    // its moves, its time, where its hand is, its fingers, its wrist's
-    // attitude and its elbow's way.
-    const addMove = (P, b, dur, { lift = 0, settle = false, via = false, to = P.fin, lean = P.att, dip = [0, 0], elbow = P.el } = {}) => { P.segs.push({ kind: 'move', t0: P.t, t1: P.t + dur, a: P.at, b, lift, settle, via, f0: P.fin, f1: to, att0: P.att, att1: lean, dip, el0: P.el, el1: elbow, v0: V(0, 0, 0), v1: V(0, 0, 0), s0: 0, s1: 0 }); P.t += dur; P.at = b; P.fin = to; P.att = lean; P.el = elbow; };
+    // elbow's way by the end of it (see ELBOW); wrist: swung from the wrist
+    // rather than the fingertips (for a move from stop to stop that turns
+    // the hand a long way round). P is an arm's plan so far: its moves, its
+    // time, where its hand is, its fingers, its wrist's attitude and its
+    // elbow's way.
+    const addMove = (P, b, dur, { lift = 0, settle = false, via = false, to = P.fin, lean = P.att, dip = [0, 0], elbow = P.el, wrist = false } = {}) => { P.segs.push({ kind: 'move', t0: P.t, t1: P.t + dur, a: P.at, b, lift, settle, via, f0: P.fin, f1: to, att0: P.att, att1: lean, dip, el0: P.el, el1: elbow, pivot: wrist, v0: V(0, 0, 0), v1: V(0, 0, 0), s0: 0, s1: 0 }); P.t += dur; P.at = b; P.fin = to; P.att = lean; P.el = elbow; };
     const holdP = (P, dur) => addMove(P, P.at, dur);
     // (arm P waits where it is until t)
     const untilP = (P, t) => { if (t > P.t + 1e-4) holdP(P, t - P.t); };
-    // (through each via point at the mean of the speeds either side of it;
-    // dead still at every stop)
+    // (through each via point at the mean of the speeds either side of it,
+    // axis by axis - except along an axis where the way turns back there:
+    // a turning point, still along that one, or the path would overshoot
+    // it, out past the turn or down through the felt; dead still at every
+    // stop)
     const smoothVias = segs => {
       for (let i = 0; i + 1 < segs.length; i++) {
         const S0 = segs[i], S1 = segs[i + 1];
         if (!S0.via || S0.kind !== 'move' || S1.kind !== 'move') continue;
         const dA = S0.t1 - S0.t0, dB = S1.t1 - S1.t0;
         const vA = S0.b.p.clone().sub(S0.a.p).multiplyScalar(1 / dA), vB = S1.b.p.clone().sub(S1.a.p).multiplyScalar(1 / dB);
-        S0.v1 = vA.multiplyScalar(dB).addScaledVector(vB, dA).multiplyScalar(1 / (dA + dB)); S1.v0 = S0.v1.clone();
+        S0.v1 = V(0, 0, 0);
+        ['x', 'y', 'z'].forEach(ax => { S0.v1[ax] = vA[ax] * vB[ax] > 0 ? (vA[ax] * dB + vB[ax] * dA) / (dA + dB) : 0; });
+        S1.v0 = S0.v1.clone();
         S0.s1 = S1.s0 = 1;
       }
     };
@@ -2047,7 +2054,7 @@ export async function prepareTable(opts) {
         const g0 = grabAt();
         move(A, g0, first ? DEAL.first : DEAL.grab, { lift: first ? 3 : 4.5, to: FIN.reach, lean: [0, 0], dip: [0.3, bank(A.at, g0)] });
         cardsP[i].pull = A.t;
-        move(A, outAt(), DEAL.pull, { via: true, to: FIN.grip, lean: [-0.12, 0] });
+        move(A, outAt(), DEAL.pull, { via: true, to: FIN.grip, lean: [-0.06, 0] });
         move(A, PASS[0], DEAL.out, { lift: 2.2, settle: true, to: FIN.grip, lean: [0, 0], dip: [-0.12, bank(A.at, PASS[0])] });
       };
       // The other takes it: in from its approach as the card arrives (it
@@ -2134,9 +2141,9 @@ export async function prepareTable(opts) {
         // shoe arm opens its hand over them, palm up - there they are)
         const mid = V(0, 0, 0); cardObjs.forEach(o => mid.add(faceDown(o).p)); mid.multiplyScalar(1 / n);
         const far = Math.max(...cardObjs.map(o => faceDown(o).p.z)) + CARD.h / 2 + 3;
-        move(B, handPose(V(mid.x + 4, 4.5, far), V(-0.2, -0.35, -1), up), 0.34, { to: FIN.relax, lean: [-0.1, 0], dip: [-0.2, 0] });
+        move(B, handPose(V(mid.x + 4, 4.5, far), V(-0.2, -0.35, -1), up), 0.34, { lift: 1.5, to: FIN.relax, lean: [-0.1, 0] });
         until(A, B.t - 0.3);
-        move(A, handPose(V(mid.x - 7, 7.5, far + 1.5), V(0.35, 0.12, -1), V(0, -1, 0)), 0.5, { lift: 2, to: FIN.open, lean: [0, 0] });
+        move(A, handPose(V(mid.x - 7, 7.5, far + 1.5), V(0.35, 0.12, -1), V(0, -1, 0)), 0.5, { lift: 2, to: FIN.open, lean: [0, 0], wrist: true });
         hold(B, DEAL.show);
         // one touch on the first card's far end, and the cascade
         const first = faceDown(cardObjs[0]).p.clone().addScaledVector(topOf(cardObjs[0]), CARD.h / 2 + 0.3); first.y = 1.1;
@@ -2144,8 +2151,8 @@ export async function prepareTable(opts) {
         const t0 = B.t;
         const order = cardObjs.map((o, i) => i).sort((a, b) => (Math.floor(a / SLOTS.cols) - Math.floor(b / SLOTS.cols)) || (cardObjs[b].userData.slot.x - cardObjs[a].userData.slot.x));
         order.forEach((i, k) => { cardsP[i].turn = t0 + 0.04 + k * DEAL.cascade; });
-        // (and away, with a turn of the wrist)
-        move(B, handPose(first.clone().add(V(0, 7, 5)), V(0.5, 0.4, -1), V(-0.3, 1, 0)), 0.34, { via: true, to: FIN.open, lean: [-0.2, 0.25] });
+        // (and away, up, with a turn of the wrist)
+        move(B, handPose(first.clone().add(V(0, 10, 5)), V(0.5, 0.4, -1), V(-0.3, 1, 0)), 0.34, { via: true, to: FIN.open, lean: [-0.2, 0.25] });
       }
       // both hands down to rest on the felt once their work is done
       const lastTurn = Math.max(...cardsP.map(turnEnd));
@@ -2272,6 +2279,16 @@ export async function prepareTable(opts) {
       const e = smoother(k), bump = Math.pow(Math.sin(Math.PI * k), 2);
       const pitch = lerp(sg.att0[0], sg.att1[0], e) + sg.dip[0] * bump, roll = lerp(sg.att0[1], sg.att1[1], e) + sg.dip[1] * bump;
       if (pitch || roll) q.multiply(_attQ.setFromEuler(_attE.set(pitch, 0, roll)));
+      // (swung from the wrist: the wrist goes the straight way from where it
+      // was to where it will be, and the hand turns about it. Turned a long
+      // way round about its fingertips instead, a hand swings its wrist out
+      // in a wide arc - past the arm's reach, or down through the felt.)
+      if (sg.pivot) {
+        const at = (pp, qq, att) => { const qt = qq.clone(); if (att[0] || att[1]) qt.multiply(_attQ.setFromEuler(_attE.set(att[0], 0, att[1]))); return WRIST.clone().applyQuaternion(qt).add(pp); };
+        const w = at(sg.a.p, sg.a.q, sg.att0).multiplyScalar(h0).addScaledVector(at(sg.b.p, sg.b.q, sg.att1), h3);
+        w.y += sg.lift * bump;
+        p.copy(w).sub(WRIST.clone().applyQuaternion(q));
+      }
       return { p, q };
     };
     const _attQ = new THREE.Quaternion(), _attE = new THREE.Euler();
@@ -2324,7 +2341,12 @@ export async function prepareTable(opts) {
         const dir = prev.b.p.clone().sub(prev.a.p); const L0 = dir.length();
         if (L0 > 0.5) { const b = tt - prev.t1; hp.p.addScaledVector(dir.multiplyScalar(1 / L0), 0.16 * Math.sin(b * 70) * Math.exp(-b * 32)); }
       }
-      return { hp, f: fingersAt(sg, kk), free, el: lerp(sg.el0, sg.el1, smoother(kk)) };
+      // (how much it trails, below: none where a move starts or ends dead
+      // still - it comes in over the first few hundredths of the move and
+      // goes over the last - so a hand setting a card down or lifting off
+      // the felt never dips the card or its fingertips into it)
+      const fade = free ? (sg.s0 ? 1 : smoother(kk / 0.15)) * (sg.s1 ? 1 : smoother((1 - kk) / 0.15)) : 0;
+      return { hp, f: fingersAt(sg, kk), free, el: lerp(sg.el0, sg.el1, smoother(kk)), fade };
     };
     const wobble = new THREE.Quaternion(), wobE = new THREE.Euler();
     const mid = V(0, 0, 0);
@@ -2340,18 +2362,20 @@ export async function prepareTable(opts) {
       const { shoulders, side } = torso.pose(y, yaw, tt, shown ? 1 : 0);
       let speed = 0;
       arms.forEach((a, k) => {
-        const { hp, f, free } = hs[k];
+        const { hp, f, free, fade } = hs[k];
         // (how it is speeding up, and which way, in the hand's own frame:
         // hung from the wrist, the fingers trail behind a change of speed -
         // down as it lifts, aside as it swings - and it banks into a swing)
-        if (free) {
+        if (free && fade > 0) {
           const h = 1 / 60, pa = planned(k, tt - h, y).hp.p, pb = planned(k, tt + h, y).hp.p;
           const acc = pa.add(pb).addScaledVector(hp.p, -2).multiplyScalar(1 / (h * h)).applyQuaternion(hp.q.clone().invert());
-          wobE.set(THREE.MathUtils.clamp(acc.y * 4e-5, -0.2, 0.2), THREE.MathUtils.clamp(-acc.x * 4e-5, -0.2, 0.2), THREE.MathUtils.clamp(-acc.x * 7e-5, -0.24, 0.24));
+          wobE.set(THREE.MathUtils.clamp(acc.y * 4e-5, -0.2, 0.2) * fade, THREE.MathUtils.clamp(-acc.x * 4e-5, -0.2, 0.2) * fade, THREE.MathUtils.clamp(-acc.x * 7e-5, -0.24, 0.24) * fade);
           wobble.setFromEuler(wobE);
-          const wr = WRIST.clone().applyQuaternion(hp.q).add(hp.p);
+          const wr = WRIST.clone().applyQuaternion(hp.q).add(hp.p), y0 = hp.p.y;
           hp.q.multiply(wobble);
           hp.p.copy(wr).sub(WRIST.clone().applyQuaternion(hp.q));
+          // (low over the felt the fingers trail along it, not down into it)
+          if (y0 < 3 && hp.p.y < y0) hp.p.y = y0;
         }
         a.now.p.copy(hp.p); a.now.q.copy(hp.q);
         a.hand.position.copy(hp.p);
@@ -2506,20 +2530,39 @@ export async function prepareTable(opts) {
       return { segs: S, t: Math.max(t, L ? L.t1 : t), at: L && L.b ? L.b : restPose(k), fin: L ? L.f1 : FIN.easy, att: L && L.att1 ? L.att1 : [0, 0], el: L ? L.el1 : 1 };
     };
     // both arms straight up over the torso until t1, following it down or up
-    const upTo = (k, t0, t1, yEnd) => { const P = planFrom(k, t0); P.segs.push({ kind: 'up', t0: P.t, t1, f0: P.fin, f1: FIN.rest, el0: P.el, el1: 0, b: upright(k, yEnd) }); };
+    const upTo = (k, t0, t1, yEnd) => { const P = planFrom(k, t0); P.segs.push({ kind: 'up', t0: P.t, t1: Math.max(t1, P.t), f0: P.fin, f1: FIN.rest, el0: P.el, el1: 0, b: upright(k, yEnd) }); };
+    // (what the port and each arm still had planned from t on is dropped: a
+    // move under way ends there, one not yet begun is gone, and a shape of
+    // the hand under way fades out)
+    const cutAt = t => {
+      for (let i = lifts.length - 1; i >= 0; i--) if (lifts[i].t0 >= t) lifts.splice(i, 1);
+      [0, 1].forEach(k => {
+        const S = deal.arms[k];
+        while (S.length && S[S.length - 1].t0 >= t) S.pop();
+        if (S.length && S[S.length - 1].t1 > t) S[S.length - 1].t1 = t;
+        shapes[k] = shapes[k].filter(sh => sh.t1 < t).concat(shapes[k].filter(sh => sh.t0 <= t && sh.t1 >= t).map(sh => Object.assign({}, sh, { t1: t + sh.fade })));
+      });
+    };
     const liftNow = () => rising(tNow);
     const readyNow = () => cardObjs.map((o, i) => (o.userData.ready ? i : -1)).filter(i => i >= 0);
     const gestures = {
+      // (the laying hand reaches out along the line from its shoulder, low
+      // over the table, the index straight out, and taps the card's far end
+      // twice with its fingertip - on the card itself, however far forward
+      // it lies, so there is no doubt which. The shoe's hand stays home: its
+      // fingers point the other way, down the lid, and turning them round
+      // on the way out would swing its wrist past its reach.)
       point(t0, targets) {
-        const c = cardObjs[targets[0]].userData.slot;
-        const B = planFrom(1, t0);
-        const over = handPose(V(c.x + 0.6, 5.6, c.z + CARD.h / 2 + 3.4), V(-0.05, -0.8, -0.62), up);
-        const tap = pose(over.p.clone().add(V(0, -1.0, -0.55)), over.q);
-        addMove(B, over, 0.66, { lift: 3, to: FIN.relax, lean: [0, 0], elbow: 0.35 });
+        const card = cardObjs[targets[0]], c = card.userData.slot, B = planFrom(1, t0);
+        const toward = V(c.x - (PORT.x + SIDES[1] * ARM.shoulder), 0, c.z - PORT.z).normalize();
+        const end = c.clone().addScaledVector(topOf(card), CARD.h / 2 - 0.8);
+        const over = handPose(end.clone().add(V(0, 2.4, 0)), toward.clone().multiplyScalar(0.91).add(V(0, -0.42, 0)), up);
+        const tap = pose(end.clone().add(V(0, 0.8, 0)).addScaledVector(toward, 0.3), over.q);
+        addMove(B, over, 0.7, { lift: 3, to: FIN.relax, lean: [0, 0], elbow: 0.35, wrist: true });
         addMove(B, tap, 0.13); addMove(B, over, 0.14); addMove(B, tap, 0.13); addMove(B, over, 0.16);
         holdP(B, 0.4);
         const back = B.t;
-        addMove(B, restPose(1), 0.66, { lift: 2.5, to: FIN.poise, elbow: 1 });
+        addMove(B, restPose(1), 0.7, { lift: 2.5, to: FIN.poise, elbow: 1, wrist: true });
         shapes[1].push({ t0: t0 + 0.25, t1: back + 0.3, fn: SHAPES.point, fade: 0.22 });
         return B.t;
       },
@@ -2529,11 +2572,11 @@ export async function prepareTable(opts) {
         const hiX = Math.max(...pts.map(p => p.x)) + 3.2, loX = Math.min(...pts.map(p => p.x)) - 3.2;
         const B = planFrom(1, t0);
         const at = (x, r) => handPose(V(x, 4.8, z + 2.2), V(0, -0.14, -1), V(r, 1, 0));
-        addMove(B, at(hiX, 0.12), 0.62, { lift: 3, to: FIN.open, lean: [0, 0], elbow: 0.3 });
+        addMove(B, at(hiX, 0.12), 0.62, { lift: 3, to: FIN.open, lean: [0, 0], elbow: 0.3, wrist: true });
         const n = 4;
         for (let j = 1; j <= n; j++) addMove(B, at(lerp(hiX, loX, j / n), j % 2 ? -0.2 : 0.2), 1.3 / n, { via: j < n });
         const back = B.t;
-        addMove(B, restPose(1), 0.66, { lift: 2.5, to: FIN.poise, elbow: 1 });
+        addMove(B, restPose(1), 0.66, { lift: 2.5, to: FIN.poise, elbow: 1, wrist: true });
         shapes[1].push({ t0: t0 + 0.3, t1: back + 0.2, fn: SHAPES.wave, fade: 0.25 });
         smoothVias(B.segs);
         return B.t;
@@ -2542,13 +2585,15 @@ export async function prepareTable(opts) {
         const ends = [];
         [0, 1].forEach(k => {
           const P = planFrom(k, t0), sd = SIDES[k];
-          const hi = handPose(V(sd * 7.6, 12.8, 37.5), V(-sd * 0.12, 1, -0.3), V(0, 0.3, 1));
-          addMove(P, hi, 0.58, { lift: 2, to: FIN.open, lean: [0, 0], elbow: 0 });
+          // (the hands up in front of it, palms to you, the wrists well
+          // clear of the felt)
+          const hi = handPose(V(sd * 7.6, 18.4, 37.5), V(-sd * 0.12, 1, -0.3), V(0, 0.3, 1));
+          addMove(P, hi, 0.58, { lift: 2, to: FIN.open, lean: [0, 0], elbow: 0, wrist: true });
           // (a little shimmy, side to side, while the fingers flutter)
           for (let j = 0; j < 4; j++) addMove(P, pose(hi.p.clone().add(V((j % 2 ? -1 : 1) * sd * 0.9, 0.35 * (j % 2), 0)), hi.q), 0.3, { via: j < 3 });
           addMove(P, hi, 0.18);
           const back = P.t;
-          addMove(P, restPose(k), 0.68, { lift: 2, to: k ? FIN.poise : FIN.easy, elbow: 1 });
+          addMove(P, restPose(k), 0.68, { lift: 2, to: k ? FIN.poise : FIN.easy, elbow: 1, wrist: true });
           shapes[k].push({ t0: t0 + 0.38, t1: back + 0.12, fn: SHAPES.spirit, fade: 0.2 });
           smoothVias(P.segs);
           ends.push(P.t);
@@ -2578,12 +2623,12 @@ export async function prepareTable(opts) {
       // down into the port: the arms straight up, the torso sinks, and once
       // its shoulders are below the felt the iris closes round the hands
       sulk(t0) {
-        [0, 1].forEach(k => { const P = planFrom(k, t0); addMove(P, upright(k, ARM.up), 0.75, { lift: 2, to: FIN.rest, lean: [0, 0], elbow: 0 }); });
+        [0, 1].forEach(k => { const P = planFrom(k, t0); addMove(P, upright(k, ARM.up), 0.75, { lift: 2, to: FIN.rest, lean: [0, 0], elbow: 0, wrist: true }); });
         const tS = Math.max(...[0, 1].map(k => deal.arms[k][deal.arms[k].length - 1].t1));
         lifts.push({ t0: tS, t1: tS + 1.4, y0: ARM.up, y1: SULK.y, o0: 1, o1: 1, ease: smoother });
         lifts.push({ t0: tS + 1.4, t1: tS + 1.8, y0: SULK.y, y1: SULK.y, o0: 1, o1: SULK.open, ease: smoother });
         [0, 1].forEach(k => upTo(k, tS, tS + 1.8, SULK.y));
-        idle.sulk = true;
+        idle.sulk = true; idle.sinkAt = tS;
         return tS + 1.8;
       },
       // (a look out of the port, and back down)
@@ -2598,20 +2643,24 @@ export async function prepareTable(opts) {
       },
       // back up out of it, all at once, and down to rest with a flourish
       pop(t0) {
-        const { y, open } = liftNow();
+        // (from wherever the sulk or a peek has got to: what they still had
+        // planned is dropped)
+        const { y, open } = rising(t0);
+        cutAt(t0);
         lifts.push({ t0, t1: t0 + 0.16, y0: y, y1: y, o0: open, o1: 1, ease: smoother });
         lifts.push({ t0: t0 + 0.16, t1: t0 + 0.8, y0: y, y1: ARM.up, o0: 1, o1: 1, ease: backOut });
         const ends = [0, 1].map(k => {
           upTo(k, t0, t0 + 0.8, ARM.up);
           const P = planFrom(k, t0 + 0.8);
-          addMove(P, restPose(k), 0.7, { lift: 4, to: k ? FIN.poise : FIN.easy, lean: [0, 0], dip: [-0.25, 0], elbow: 1 });
+          // (no arc up: from straight up, the arm is at its full length)
+          addMove(P, restPose(k), 0.7, { to: k ? FIN.poise : FIN.easy, lean: [0, 0], dip: [-0.25, 0], elbow: 1, wrist: true });
           return P.t;
         });
         idle.sulk = false;
         return Math.max(...ends);
       }
     };
-    const idle = { since: 0, stage: 0, sulk: false, ready: -1, peekAt: 0, away: false };
+    const idle = { since: 0, stage: 0, sulk: false, sinkAt: 0, ready: -1, peekAt: 0, away: false };
     let gestureEnd = 0, armsRaf = 0, armsLast = 0;
     // The arms alone, frame by frame, to the end of what they are doing (the
     // table's own loop, if it starts meanwhile, takes over and draws them):
@@ -2639,19 +2688,27 @@ export async function prepareTable(opts) {
     // wherever they are (and up out of the port, if it was sulking).
     const giveWay = () => {
       idle.since = performance.now(); idle.stage = 0; idle.peekAt = 0;
-      if (idle.sulk) { perform('pop'); return; }
+      if (idle.sulk) {
+        // (going down, or down: up out of the port. Still only raising its
+        // hands for it: the sulk is called off, and the hands go home.)
+        if (tNow >= idle.sinkAt) { const t0 = tNow + 0.02; gestureEnd = gestures.pop(t0); wake(); return; }
+        for (let i = lifts.length - 1; i >= 0; i--) if (lifts[i].t0 >= tNow) lifts.splice(i, 1);
+        idle.sulk = false;
+      }
       if (gestureEnd <= tNow + 0.02) return;
+      // (the port's own moves - up out of a sulk - play out)
+      if (lifts.some(l => l.t1 > tNow)) return;
       const y = liftNow().y;
+      const now = [0, 1].map(k => planned(k, tNow, y));
+      cutAt(tNow);
+      let end = tNow;
       [0, 1].forEach(k => {
-        const now = planned(k, tNow, y);
-        const S = deal.arms[k];
-        while (S.length && S[S.length - 1].t0 > tNow) S.pop();
-        if (S.length && S[S.length - 1].t1 > tNow) S[S.length - 1].t1 = tNow;
-        shapes[k] = shapes[k].filter(sh => sh.t1 < tNow).concat(shapes[k].filter(sh => sh.t0 <= tNow && sh.t1 >= tNow).map(sh => Object.assign({}, sh, { t1: tNow + sh.fade })));
-        const P = { segs: S, t: tNow, at: now.hp, fin: now.f, att: [0, 0], el: now.el };
-        addMove(P, restPose(k), 0.5, { lift: 2, to: k ? FIN.poise : FIN.easy, elbow: 1 });
-        gestureEnd = Math.max(gestureEnd, P.t);
+        const P = { segs: deal.arms[k], t: tNow, at: now[k].hp, fin: now[k].f, att: [0, 0], el: now[k].el };
+        addMove(P, restPose(k), 0.5, { lift: 2, to: k ? FIN.poise : FIN.easy, elbow: 1, wrist: true });
+        end = Math.max(end, P.t);
       });
+      // (what it was going to do is gone: it is done when the hands are home)
+      gestureEnd = end;
       playArms();
     };
     const idleTick = () => {
@@ -2818,8 +2875,9 @@ export async function prepareTable(opts) {
       look(eye, aim, fov) { lookAt = eye ? { eye: V(...eye), aim: V(...aim), fov: fov || sv.fov } : null; update(tNow); show(); },
       putDown,
       // (lab: a gesture now - point, wave, spirit, drum, knock, sulk, peek,
-      // pop - and when it runs, in the table's clock)
-      gesture(name) { if (!gestures[name]) return null; const t0 = tNow; perform(name); return { from: t0, to: gestureEnd }; },
+      // pop - at the cards given by index, or the ready ones, and when it
+      // runs, in the table's clock)
+      gesture(name, at) { if (!gestures[name]) return null; const t0 = tNow; perform(name, at && at.length ? at : undefined); return { from: t0, to: gestureEnd }; },
       // (lab and tests: how the wait stands - the ladder's next step, how
       // long it has waited, a sulk, the end of the gesture under way, the
       // table's clock, which loop runs)
