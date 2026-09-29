@@ -1367,7 +1367,8 @@ function railHTML() {
 }
 function phoneHTML(asset) {
   const coin = n => `<img class="r3t-ph-coin" src="${asset(`icons/coin-${n}.webp`)}" alt="" width="64" height="64">`;
-  return `<div class="r3t-ph-body"><div class="r3t-ph-screen">
+  return `<button type="button" class="r3t-ph-pickup" aria-label="Pick up phone">Pick up</button>
+    <div class="r3t-ph-body"><div class="r3t-ph-screen">
     <div class="r3t-ph-island"></div>
     <div class="r3t-ph-status"><span class="r3t-ph-clock">--:--</span><span class="r3t-ph-sig" aria-hidden="true"><i></i><i></i><i></i><i></i><b></b></span></div>
     <div class="r3t-ph-lock">
@@ -1652,9 +1653,8 @@ export async function prepareTable(opts) {
     // over the hand's canvas; its moves are the page's own transitions)
     const phoneEl = document.createElement('div');
     phoneEl.className = 'r3t-phone';
-    phoneEl.setAttribute('role', 'button');
-    phoneEl.setAttribute('aria-label', 'Your phone: freebies, community drops, the deck, the catalogue and settings');
-    phoneEl.tabIndex = 0;
+    phoneEl.setAttribute('role', 'group');
+    phoneEl.setAttribute('aria-label', 'Phone');
     phoneEl.innerHTML = phoneHTML(asset);
     css.domElement.appendChild(phoneEl);
     let phoneHeld = false;
@@ -1690,7 +1690,6 @@ export async function prepareTable(opts) {
     const holdPhone = on => {
       phoneHeld = !!on;
       phoneEl.classList.toggle('r3t-held', phoneHeld);
-      phoneEl.setAttribute('aria-expanded', phoneHeld ? 'true' : 'false');
     };
 
     css.domElement.appendChild(ui);
@@ -2311,12 +2310,21 @@ export async function prepareTable(opts) {
       if (e.target.closest('.r3t-run')) { if (hooks.run) hooks.run(); return; }
       const tile = e.target.closest('.r3t-ph-tile, .r3t-ph-gear');
       if (tile) { if (hooks.openView) hooks.openView(tile.dataset.view); return; }
-      if (e.target.closest('.r3t-ph-put')) { holdPhone(false); return; }
+      if (e.target.closest('.r3t-ph-pickup')) {
+        holdPhone(true);
+        if (e.detail === 0) phoneEl.querySelector('.r3t-ph-tile').focus({ preventScroll: true });
+        return;
+      }
+      if (e.target.closest('.r3t-ph-put')) {
+        holdPhone(false);
+        if (e.detail === 0) phoneEl.querySelector('.r3t-ph-pickup').focus({ preventScroll: true });
+        return;
+      }
       if (e.target.closest('.r3t-phone') && !phoneHeld) { holdPhone(true); }
     });
     css.domElement.addEventListener('keydown', e => {
-      if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && (e.target.classList.contains('r3t-card') || e.target.classList.contains('r3t-phone'))) { e.preventDefault(); e.target.click(); }
-      if (e.key === 'Escape' && phoneHeld) { holdPhone(false); phoneEl.focus({ preventScroll: true }); }
+      if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('r3t-card')) { e.preventDefault(); e.target.click(); }
+      if (e.key === 'Escape' && phoneHeld) { holdPhone(false); phoneEl.querySelector('.r3t-ph-pickup').focus({ preventScroll: true }); }
       else if (e.key === 'Escape' && focusId) { const back = cardObjs.find(o => o.userData.card.id === focusId); putDown(); if (back) back.element.focus({ preventScroll: true }); }
       // (the arrow keys turn a focused card, a quarter of a half-turn a press)
       else if (focusId && e.target.dataset && e.target.dataset.id === focusId && /^Arrow/.test(e.key)) {
