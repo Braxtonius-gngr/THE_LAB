@@ -776,7 +776,9 @@ async function buildIntro(opts, undo, teardown) {
   renderer.toneMappingExposure = 1.25;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  let pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+  // (a moving frame: the screen's resolution, to 2x - see size())
+  const LIVE_MAX = Math.min(window.devicePixelRatio || 1, 2);
+  let pixelRatio = LIVE_MAX;
   renderer.setPixelRatio(pixelRatio);
   const canvas = renderer.domElement;
   canvas.className = 'r3-canvas';
@@ -1377,16 +1379,97 @@ async function buildIntro(opts, undo, teardown) {
 
   // ---- Post: bloom on the brightest glints.
   let composer = null, bloom = null;
-  const size = () => {
-    const w = host.clientWidth || window.innerWidth, h = host.clientHeight || window.innerHeight;
-    renderer.setPixelRatio(pixelRatio);
-    renderer.setSize(w, h, false);
-    camera.aspect = w / h;
-    // Narrow screens get a wider lens so the table still reads.
-    camera.fov = w / h < 0.62 ? 42 : 34;
-    camera.updateProjectionMatrix();
-    if (composer) { composer.setPixelRatio(pixelRatio); composer.setSize(w, h); }
+  // ---- Resolution. A moving frame is drawn at `pixelRatio`: the screen's,
+  // to 2x, and lower while the device is slow (the quality steps below). A
+  // frame that stays up - the shot at rest, the table between its moves -
+  // is drawn again at the screen's own resolution, to 3x; and while the
+  // page is pinched in, only the part in view is drawn, at the zoom's
+  // resolution, so the table stays as sharp as the cards' print on it.
+  // `redraw` is set while the frame on screen stays (it draws that frame
+  // again); `crop` is the part of the screen in view, when the canvas
+  // covers only that.
+  let redraw = null, crop = null, refit = false, zoomT = 0;
+  let screenW = 0, screenH = 0, sized = '';
+  // (a still's buffers are held to about a phone's own pixels at 3x; with
+  // the bloom pass on - its buffers are doubled and multisampled - to no
+  // more than a full-speed moving frame's)
+  const STILL_PX = 4.2e6;
+  const stillRatio = (w, h, cw, ch, zoom) => {
+    const want = Math.min(window.devicePixelRatio || 1, 3) * zoom;
+    const budget = composer ? w * h * LIVE_MAX * LIVE_MAX : STILL_PX;
+    return Math.max(pixelRatio, Math.min(want, Math.sqrt(budget / (cw * ch))));
   };
+  // The part of the screen in view while the page is pinched in (the
+  // visual viewport, in the canvas box's own pixels), or null.
+  const inView = (box, w, h) => {
+    const vv = window.visualViewport;
+    if (!vv || !(vv.scale > 1.05)) return null;
+    const b = box.getBoundingClientRect();
+    const x0 = Math.max(0, vv.offsetLeft - b.left), y0 = Math.max(0, vv.offsetTop - b.top);
+    const x1 = Math.min(w, vv.offsetLeft - b.left + vv.width), y1 = Math.min(h, vv.offsetTop - b.top + vv.height);
+    return x1 - x0 >= 1 && y1 - y0 >= 1 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0, fw: w, fh: h, zoom: vv.scale } : null;
+  };
+  // Sizes the canvas for a moving frame (live) or for the frame that stays.
+  const size = (live = !redraw) => {
+    const box = canvas.parentElement || host;
+    const w = box.clientWidth || window.innerWidth, h = box.clientHeight || window.innerHeight;
+    // (the lens follows the screen's shape, and only when that changes:
+    // the table sets a lens of its own every frame)
+    if (w !== screenW || h !== screenH) {
+      screenW = w; screenH = h;
+      camera.aspect = w / h;
+      // Narrow screens get a wider lens so the table still reads.
+      camera.fov = w / h < 0.62 ? 42 : 34;
+      camera.updateProjectionMatrix();
+    }
+    crop = live ? null : inView(box, w, h);
+    const cw = crop ? crop.w : w, ch = crop ? crop.h : h;
+    const r = live ? pixelRatio : stillRatio(w, h, cw, ch, crop ? crop.zoom : 1);
+    const key = [w, h, r, crop ? [crop.x, crop.y, crop.w, crop.h] : ''].join();
+    if (key === sized) return false;
+    sized = key;
+    const st = canvas.style;
+    if (crop) { st.left = `${crop.x}px`; st.top = `${crop.y}px`; st.width = `${crop.w}px`; st.height = `${crop.h}px`; }
+    else st.left = st.top = st.width = st.height = '';
+    renderer.setDrawingBufferSize(cw, ch, r);
+    if (composer) { composer.setPixelRatio(r); composer.setSize(cw, ch); }
+    return true;
+  };
+  // Before a frame is drawn: the canvas sized for it, when it has moved on
+  // from a still (true when it was resized).
+  const fit = () => { if (!refit) return false; refit = false; return size(); };
+  // Draws through the part of the lens in view, when the canvas covers
+  // only that (a crop).
+  const lens = paint => {
+    if (!crop) { paint(); return; }
+    camera.setViewOffset(crop.fw, crop.fh, crop.x, crop.y, crop.w, crop.h);
+    paint();
+    camera.clearViewOffset();
+  };
+  // The frame on screen stays: drawn again, sharp (`again` draws it).
+  const rest = again => { redraw = again; clearTimeout(zoomT); size(); again(); };
+  // Moving again: the next frame is drawn at the moving frames' resolution.
+  const move = () => { if (!redraw) return; redraw = null; clearTimeout(zoomT); refit = true; };
+  // Pinching, or moving about while pinched in: a crop drawn for where the
+  // view was would leave the rest of the canvas empty, so the whole view is
+  // back at once (at the moving frames' resolution, while the page moves),
+  // and what is in view is drawn sharp once it stops.
+  const onZoom = () => {
+    if (!redraw) return;
+    clearTimeout(zoomT);
+    if (crop) { size(true); redraw(); }
+    // (the keyboard coming up, say, changes nothing the canvas needs)
+    zoomT = setTimeout(() => { if (redraw && size()) redraw(); }, 220);
+  };
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', onZoom);
+    window.visualViewport.addEventListener('scroll', onZoom);
+    undo.push(() => {
+      clearTimeout(zoomT);
+      window.visualViewport.removeEventListener('resize', onZoom);
+      window.visualViewport.removeEventListener('scroll', onZoom);
+    });
+  }
   const makeComposer = () => {
     const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
     composer = new EffectComposer(renderer, rt);
@@ -1585,11 +1668,11 @@ async function buildIntro(opts, undo, teardown) {
     badgeEl.style.opacity = tier === 'standard' ? '0' : smoother((w - plan.callW - 0.2) / 0.6).toFixed(3);
     return { w, rate, gleam, burst };
   };
+  // The scene as it stands, through the post when there is one.
+  const paint = () => { fit(); lens(() => { if (composer) composer.render(); else renderer.render(scene, camera); }); };
   const draw = st => {
-    if (composer) {
-      bloom.strength = 0.3 + 0.22 * st.gleam + (plan.vault ? 1.4 * Math.max(0, 1 - Math.max(0, st.burst) / 0.6) * (st.burst > 0 ? 1 : 0) : 0);
-      composer.render();
-    } else renderer.render(scene, camera);
+    if (composer) bloom.strength = 0.3 + 0.22 * st.gleam + (plan.vault ? 1.4 * Math.max(0, 1 - Math.max(0, st.burst) / 0.6) * (st.burst > 0 ? 1 : 0) : 0);
+    paint();
   };
   // One frame at real time t.
   const render = t => { placeCamera(t); const st = stage(t); draw(st); return st; };
@@ -1620,6 +1703,21 @@ async function buildIntro(opts, undo, teardown) {
     if (q <= 0) dice.forEach(d => { d.mat.transmission = 0; d.mat.color.set(0x9a1224); d.mat.clearcoat = 1; d.mat.needsUpdate = true; });
     size();
   };
+  // The table's moving frames, timed by its loop: the resolution the
+  // shot's steps left (they may have been taken while the app was still
+  // starting up under it) comes back, half a step at a time, while frames
+  // come quickly, and goes down while they come slowly - and once down, it
+  // stays down for the visit (no see-saw).
+  const paced = [];
+  let pacedDown = false;
+  const pace = raw => {
+    paced.push(raw);
+    if (paced.length < 20) return;
+    const med = median(paced);
+    paced.length = 0;
+    if (med > 0.036 && pixelRatio > 1) { pixelRatio = Math.max(1, pixelRatio - 0.5); pacedDown = true; refit = true; }
+    else if (med < 0.021 && !pacedDown && pixelRatio < LIVE_MAX) { pixelRatio = Math.min(LIVE_MAX, pixelRatio + 0.5); refit = true; }
+  };
   const scheduleSound = (from, to) => {
     if (!sound || !sound.on) return;
     const now = sound.ctx.currentTime;
@@ -1644,7 +1742,7 @@ async function buildIntro(opts, undo, teardown) {
   const still = () => {
     playing = false; cancelAnimationFrame(raf);
     t = Math.max(t, plan.totalReal + 2.4);
-    render(t);
+    rest(() => render(t));
     soundBtn.hidden = true;
     if (sound && sound.bed) sound.cut(sound.ctx.currentTime);
     cue();
@@ -1652,7 +1750,7 @@ async function buildIntro(opts, undo, teardown) {
   // The float has risen into the ceiling: the frame stays, the loop rests.
   const settle = () => {
     playing = false; cancelAnimationFrame(raf);
-    t = floatEnd; render(t);
+    t = floatEnd; rest(() => render(t));
     if (sound && sound.bed) sound.fade(sound.ctx.currentTime, 1.2);
     cue();
   };
@@ -1763,7 +1861,7 @@ async function buildIntro(opts, undo, teardown) {
   render(0);
   return {
     plan: { tier, seed: o.seed, revealReal: plan.revealReal, totalReal: plan.totalReal, floatEnd, restReal: plan.restReal, wallReal: plan.wallReal, values: plan.values, call: plan.call, throwOk: plan.throwOk, why: plan.why },
-    play() { playing = true; last = 0; raf = requestAnimationFrame(loop); },
+    play() { playing = true; last = 0; move(); raf = requestAnimationFrame(loop); },
     seek(time) { playing = false; cancelAnimationFrame(raf); t = Math.max(0, Math.min(floatEnd, time)); render(t); },
     // A tap mid-shot: straight to its end, and float on from there.
     skip() {
@@ -1771,7 +1869,7 @@ async function buildIntro(opts, undo, teardown) {
         t = plan.totalReal;
         sfxIndex = sfx.findIndex(ev => ev.t >= t); if (sfxIndex < 0) sfxIndex = sfx.length;
       }
-      if (!playing && t < floatEnd) { playing = true; last = 0; raf = requestAnimationFrame(loop); }
+      if (!playing && t < floatEnd) { playing = true; last = 0; move(); raf = requestAnimationFrame(loop); }
       render(t);
       cue();
     },
@@ -1789,6 +1887,8 @@ async function buildIntro(opts, undo, teardown) {
       soundBtn.hidden = true;
       dropUnlock();
       if (sound && sound.bed) sound.fade(sound.ctx.currentTime, 0.6);
+      // (the frame at rest was the shot's: the table draws its own)
+      move();
       return {
         THREE, renderer, scene, camera, host, canvas, t, floatEnd,
         get composer() { return composer; },
@@ -1796,6 +1896,11 @@ async function buildIntro(opts, undo, teardown) {
         get pixelRatio() { return pixelRatio; },
         get quality() { return quality; },
         size,
+        // the scene drawn as it stands (sized first, when a still has
+        // ended; through the part in view, when pinched in); the frame on
+        // screen held (drawn again, sharp) or moving on; a moving frame's
+        // time, for its resolution
+        paint, rest, move, pace,
         // the intro's own world (dice, stick, dust) at a real time, and a
         // frame of it drawn through the intro's post-processing
         stage: tt => stage(tt == null ? t : tt),
