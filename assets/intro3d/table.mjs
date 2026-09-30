@@ -27,7 +27,7 @@
 
 import * as THREE from '../vendor/three/three.module.js';
 import { CSS3DRenderer, CSS3DObject } from '../vendor/three/three.addons.js';
-import { studioEnvironment } from './intro.mjs';
+import { studioEnvironment, dressTrim, trimBaseOf } from './intro.mjs';
 
 export const DESTS = ['card'];
 
@@ -494,19 +494,24 @@ function buildCardTable(set) {
   { const uv = edgeGeo.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getY(i), uv.getX(i) * 26 / 15); }
   const edge = new THREE.Mesh(edgeGeo, woodMat);
   edge.receiveShadow = true; g.add(edge);
-  // a brass line let into the edge
+  // a brass line let into the edge (the trim's: it outlines the table, so
+  // it takes the trim's metal with the band - see TRIMS in intro.mjs)
+  const trimLine = set.brass.clone();
   const lineGeo = sweep(rim, [[12.85, -3.0], [13.05, -3.0], [13.05, -3.5], [12.85, -3.5]], 30);
-  g.add(new THREE.Mesh(lineGeo, set.brass));
+  g.add(new THREE.Mesh(lineGeo, trimLine));
   // The gold filigree inlaid round the felt, inside the rail.
   // (blended at its edges, not cut at a threshold: cut, its fine scrolls
   // break up into a shimmer of jagged pixels as the rail recedes)
-  const satinGold = set.gold.clone();
+  const satinGold = trimBaseOf(set.gold);
   satinGold.roughness = 0.5; satinGold.envMapIntensity = 0.6; satinGold.color = new THREE.Color(0.82, 0.78, 0.72);
   satinGold.alphaTest = 0; satinGold.transparent = true; satinGold.depthWrite = false;
   const goldBand = new THREE.Mesh(strip(rim, -2.6, -5.0, 0.012, 19.2), satinGold);
   goldBand.receiveShadow = true; goldBand.renderOrder = 1; g.add(goldBand);
   // a brass line let into the felt either side of it
-  [[-2.42, -2.54], [-5.06, -5.18]].forEach(([o0, o1]) => { const l = new THREE.Mesh(strip(rim, o0, o1, 0.014, 20), set.brass); l.receiveShadow = true; g.add(l); });
+  [[-2.42, -2.54], [-5.06, -5.18]].forEach(([o0, o1]) => { const l = new THREE.Mesh(strip(rim, o0, o1, 0.014, 20), trimLine); l.receiveShadow = true; g.add(l); });
+  // (dressed as the shot's band is: the trim picked in Settings)
+  const trimMats = { band: [satinGold], line: [trimLine] };
+  dressTrim(trimMats, set.gold.userData.trim || 'gold');
   // the rail's stitching: two rows of gold thread either side of its crest
   const stitch = canvasTex(8, 64, (c, W, H) => { c.clearRect(0, 0, W, H); c.fillStyle = '#8f6f36'; c.fillRect(1, 14, W - 2, 34); c.fillStyle = 'rgba(214,180,110,0.7)'; c.fillRect(2, 16, W - 4, 8); });
   stitch.wrapS = stitch.wrapT = THREE.RepeatWrapping;
@@ -613,7 +618,7 @@ function buildCardTable(set) {
   const bar = new THREE.Mesh(barGeo, woodMat);
   bar.position.set(0, -4, b + 6); bar.castShadow = true; bar.receiveShadow = true; g.add(bar);
   g.add(chipTray(set));
-  return { group: g, rim, focus: [0, 0, 30], felt: feltMat };
+  return { group: g, rim, focus: [0, 0, 30], felt: feltMat, trim: trimMats };
 }
 
 // The chip float, as a dealer keeps it: a black lacquer rack let into the
@@ -3717,6 +3722,13 @@ export async function prepareTable(opts) {
         if (!world.dressFelt) return;
         world.setFelt(id); world.dressFelt(table.felt, id);
         if (table.group.userData.printFor) table.group.userData.printFor(table.felt.userData.feltLight || 0);
+        show();
+      },
+      // The trim picked in Settings, laid now: the table's band and lines,
+      // and the shot's band (see TRIMS in intro.mjs).
+      setTrim(id) {
+        if (world.setTrim) world.setTrim(id);
+        if (table.trim) dressTrim(table.trim, id);
         show();
       },
       // (lab: a gesture now - point, wave, spirit, drum, knock, sulk, peek,

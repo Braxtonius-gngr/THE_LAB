@@ -66,7 +66,15 @@ export const FELTS = {
   black: { name: 'Black', color: 0x070709, sheen: 0x2c2c36, light: 0 },
   tan: { name: 'Tan', color: 0x7a5a38, sheen: 0xcaa77a, light: 0.6 },
   ivory: { name: 'Ivory', color: 0xa99e86, sheen: 0xe9dfc8, light: 1 },
-  dove: { name: 'Dove grey', color: 0x5f6368, sheen: 0xb8bcc4, light: 0.55 }
+  dove: { name: 'Dove grey', color: 0x5f6368, sheen: 0xb8bcc4, light: 0.55 },
+  // (2026-09-30: a pastel lilac and a cream among the light cloths; a
+  // chocolate, a mahogany and a crimson among the dark ones - dyed baize,
+  // each with the warmer or cooler sheen its dye gives the nap)
+  lilac: { name: 'Pastel purple', color: 0x7e6f96, sheen: 0xd6c8ea, light: 0.6 },
+  cream: { name: 'Cream', color: 0xae9b6e, sheen: 0xf0e2bc, light: 0.9 },
+  chocolate: { name: 'Chocolate', color: 0x28170e, sheen: 0x6a4630, light: 0.1 },
+  mahogany: { name: 'Mahogany', color: 0x40150e, sheen: 0x9c4a34, light: 0.14 },
+  crimson: { name: 'Crimson', color: 0x5c0913, sheen: 0xc2394a, light: 0.2 }
 };
 export const feltOf = id => (FELTS[id] ? id : 'black');
 // (a felt material dressed as felt `id`)
@@ -79,6 +87,87 @@ export function dressFelt(mat, id) {
   mat.userData.felt = feltOf(id);
   mat.userData.feltLight = f.light;
   return mat;
+}
+// The trim round the felt - the filigree band inlaid in it and the fine
+// metal lines either side of it (on the card table, the line let into the
+// walnut edge too) - picked in Settings (almanac_trim_v1). Gold is the
+// house's own. The others are each a real inlay:
+//   onyx     - polished black onyx: a stone, not a metal, so it holds no
+//              colour of its own and shows only what it mirrors - the lamp
+//              runs along it as a hard white line, the relief a glitter;
+//   silver   - sterling, freshly polished: a cool white mirror, a touch
+//              brighter than the gold, the relief's hollows gone grey;
+//   crimson  - a red enamel fired over silver and polished flat, so the
+//              colour pools deep in the relief's hollows and runs thin
+//              and bright over its crests, under a glass-hard shine;
+//   burgundy - bronze patinated a deep wine red and waxed: a warm dark
+//              metal with a soft sheen, redder where it is recessed.
+// `color` multiplies the band's relief (a grey of the gold band's own
+// artwork, so its hollows stay darker than its crests); the lines have no
+// artwork, so `line` is their own colour.
+export const TRIMS = {
+  gold: { name: 'Gold' },
+  onyx: { name: 'Shiny onyx', color: 0x17161a, line: 0x0b0b0d, metalness: 0.0, roughness: 0.07, env: 2.2 },
+  silver: { name: 'Luminous silver', color: 0xffffff, line: 0xf0f3f7, metalness: 1, roughness: 0.14, env: 2.1 },
+  crimson: { name: 'Pooled crimson', color: 0xd21a34, line: 0x9c0f22, metalness: 0.45, roughness: 0.1, env: 1.35 },
+  burgundy: { name: 'Bronzed burgundy', color: 0xd06a5a, line: 0xa4463c, metalness: 1, roughness: 0.3, env: 1.45 }
+};
+export const trimOf = id => (TRIMS[id] ? id : 'gold');
+// (the gold band's artwork in grey: its relief as light and dark, for a
+// trim that is not gold to be coloured over; one per image)
+const greyOf = new WeakMap();
+function greyTrim(tex) {
+  if (!tex || !tex.image) return null;
+  if (greyOf.has(tex)) return greyOf.get(tex);
+  const img = tex.image, c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  const g = c.getContext('2d');
+  g.drawImage(img, 0, 0);
+  const d = g.getImageData(0, 0, c.width, c.height), a = d.data;
+  let mx = 0;
+  for (let i = 0; i < a.length; i += 4) mx = Math.max(mx, 0.2126 * a[i] + 0.7152 * a[i + 1] + 0.0722 * a[i + 2]);
+  for (let i = 0; i < a.length; i += 4) { const v = Math.min(255, (0.2126 * a[i] + 0.7152 * a[i + 1] + 0.0722 * a[i + 2]) * 255 / (mx || 255)); a[i] = a[i + 1] = a[i + 2] = v; }
+  g.putImageData(d, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = tex.colorSpace; t.wrapS = tex.wrapS; t.wrapT = tex.wrapT; t.anisotropy = tex.anisotropy;
+  t.repeat.copy(tex.repeat); t.offset.copy(tex.offset);
+  greyOf.set(tex, t);
+  return t;
+}
+// (materials dressed as trim `id`: `band` the filigree's, `line` the plain
+// metal lines'. Each keeps what it was made as - the gold - to go back to,
+// here rather than in its userData, which a clone copies as JSON.)
+const trimBase = new WeakMap();
+// (a material as it was made, before any trim: for a copy of it to be
+// dressed on its own)
+export function trimBaseOf(m) {
+  const b = trimBase.get(m), c = m.clone();
+  if (b) { Object.assign(c, { map: b.map, metalness: b.metalness, roughness: b.roughness, envMapIntensity: b.env, roughnessMap: b.roughnessMap }); c.color.setHex(b.color); }
+  delete c.userData.trim;
+  return c;
+}
+export function dressTrim({ band = [], line = [] }, id) {
+  const tr = TRIMS[trimOf(id)];
+  const keep = m => {
+    if (!trimBase.has(m)) trimBase.set(m, { map: m.map, color: m.color.getHex(), metalness: m.metalness, roughness: m.roughness, env: m.envMapIntensity, roughnessMap: m.roughnessMap });
+    return trimBase.get(m);
+  };
+  band.forEach(m => {
+    const b = keep(m);
+    if (!tr.color) Object.assign(m, { map: b.map, metalness: b.metalness, roughness: b.roughness, envMapIntensity: b.env, roughnessMap: b.roughnessMap });
+    else Object.assign(m, { map: greyTrim(b.map) || b.map, metalness: tr.metalness, roughness: tr.roughness, envMapIntensity: tr.env, roughnessMap: tr.roughness < 0.15 ? null : b.roughnessMap });
+    m.color.setHex(tr.color || b.color);
+    m.userData.trim = trimOf(id);
+    m.needsUpdate = true;
+  });
+  line.forEach(m => {
+    const b = keep(m);
+    if (!tr.line) Object.assign(m, { metalness: b.metalness, roughness: b.roughness, envMapIntensity: b.env, roughnessMap: b.roughnessMap });
+    else Object.assign(m, { metalness: tr.metalness, roughness: tr.roughness, envMapIntensity: tr.env, roughnessMap: tr.roughness < 0.15 ? null : b.roughnessMap });
+    m.color.setHex(tr.line || b.color);
+    m.userData.trim = trimOf(id);
+    m.needsUpdate = true;
+  });
 }
 // After the shot the camera floats on for FLOAT seconds, rising toward a
 // ceiling (eye height CEIL cm above the felt) that it eases into.
@@ -801,7 +890,7 @@ export async function createIntro(opts) {
 }
 
 async function buildIntro(opts, undo, teardown) {
-  const o = Object.assign({ host: null, controlsHost: null, tier: 'standard', seed: 1, onReveal: null, onEnd: null, sound: true, onSoundChange: null, quality: 'auto', signal: null, motionOff: null, felt: 'black' }, opts);
+  const o = Object.assign({ host: null, controlsHost: null, tier: 'standard', seed: 1, onReveal: null, onEnd: null, sound: true, onSoundChange: null, quality: 'auto', signal: null, motionOff: null, felt: 'black', trim: 'gold' }, opts);
   const checkAbort = () => { if (o.signal && o.signal.aborted) throw new Error('intro cancelled'); };
   checkAbort();
   const host = o.host;
@@ -1005,6 +1094,9 @@ async function buildIntro(opts, undo, teardown) {
     });
   }
   // (the set's materials and textures, for the table the landing flies to)
+  // (the trim: the filigree band is the shot's trim; its rails' brass edge
+  // is the rail's, and stays brass)
+  dressTrim({ band: [gold] }, o.trim);
   scene.userData.set = { felt: felt.material, rubber, leatherWall, cushion, brass, gold, wood, carpet, WOOD_TILE, tex: { feltN, leatherN, cushionN, walnut, walnutN, goldC, goldA, goldN, badge } };
 
   // ---- Lights: a warm pendant over the table (the shadows), the light
@@ -2084,6 +2176,8 @@ async function buildIntro(opts, undo, teardown) {
     warm,
     // (a felt picked while the shot is up: dressed, and the frame redrawn)
     setFelt(id) { dressFelt(felt.material, id); if (redraw) redraw(); else if (!playing) render(t); },
+    // (the same for the trim: see TRIMS)
+    setTrim(id) { dressTrim({ band: [gold] }, id); if (redraw) redraw(); else if (!playing) render(t); },
     // The fly-in takes the scene over: the loop stops and the set, the
     // renderer and the camera are handed on, as they are this moment.
     release() {
@@ -2115,6 +2209,11 @@ async function buildIntro(opts, undo, teardown) {
         // onto any other felt handed it: see FELTS)
         setFelt: id => dressFelt(felt.material, id),
         dressFelt,
+        // (the trim picked in Settings, dressed onto the shot's band; the
+        // table dresses its own with dressTrim)
+        setTrim: id => dressTrim({ band: [gold] }, id),
+        dressTrim,
+        get trim() { return gold.userData.trim || 'gold'; },
         // the intro's own world (dice, stick, dust) at a real time, and a
         // frame of it drawn through the intro's post-processing
         stage: tt => stage(tt == null ? t : tt),
