@@ -2,9 +2,9 @@
 
 Used only by the landing's 3D scene: the WebGL roll intro
 (`assets/intro3d/intro.mjs`) and the table it flies into
-(`assets/intro3d/table.mjs`), and by Obsidian Ledger's orrery
-(`assets/intro3d/orrery.mjs`, its payout), all loaded with a dynamic
-`import()`.
+(`assets/intro3d/table.mjs`) or the study (`assets/intro3d/study.mjs`), and
+by Obsidian Ledger's orrery (`assets/intro3d/orrery.mjs`, its payout and the
+study's centrepiece), all loaded with a dynamic `import()`.
 Everything else in the app stays classic scripts with no dependencies.
 
 - Version: three.js r186 (`three@0.186.1` on npm), MIT licence (`LICENSE`).
