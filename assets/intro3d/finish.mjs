@@ -29,15 +29,15 @@ export function canvasTex(w, h, paint) {
 }
 
 // A normal map from white-on-black artwork (a canvas): its strokes raised,
-// their edges softened over a few pixels first, `strength` how steep.
-export function embossTex(src, strength) {
+// their edges softened over a few pixels first (R: how many; 0, none),
+// `strength` how steep.
+export function embossTex(src, strength, R = 2) {
   const W = src.width, H = src.height;
   const a = src.getContext('2d').getImageData(0, 0, W, H).data;
   let h = new Float32Array(W * H), t = new Float32Array(W * H);
   for (let i = 0; i < W * H; i++) h[i] = a[i * 4 + 1] / 255;
   // (a box blur, twice, across then down)
-  const R = 2;
-  for (let pass = 0; pass < 2; pass++) {
+  for (let pass = 0; pass < (R ? 2 : 0); pass++) {
     for (let y = 0; y < H; y++) { let acc = 0; for (let x = -R; x <= R; x++) acc += h[y * W + Math.min(W - 1, Math.max(0, x))]; for (let x = 0; x < W; x++) { t[y * W + x] = acc / (2 * R + 1); acc += h[y * W + Math.min(W - 1, x + R + 1)] - h[y * W + Math.max(0, x - R)]; } }
     for (let x = 0; x < W; x++) { let acc = 0; for (let y = -R; y <= R; y++) acc += t[Math.min(H - 1, Math.max(0, y)) * W + x]; for (let y = 0; y < H; y++) { h[y * W + x] = acc / (2 * R + 1); acc += t[Math.min(H - 1, y + R + 1) * W + x] - t[Math.max(0, y - R) * W + x]; } }
   }
