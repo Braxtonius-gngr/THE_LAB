@@ -1250,7 +1250,7 @@ function dealerMaterials() {
   // anti-reflective coat at an angle)
   const clear = glassy(new THREE.MeshPhysicalMaterial({ color: 0x000000, roughness: 0.03, metalness: 0, ior: 1.77, specularIntensity: 1, transparent: true, opacity: 0.05, depthWrite: false,
     iridescence: 0.45, iridescenceIOR: 1.38, iridescenceThicknessRange: [240, 420] }), 0.7, 1.4);
-  const gold = new THREE.MeshStandardMaterial({ color: 0xd6b064, metalness: 1, roughness: 0.26, emissive: 0x6a4512, emissiveIntensity: 0.12 });
+  const gold = new THREE.MeshStandardMaterial({ color: 0xd6b064, metalness: 1, roughness: 0.26, emissive: 0x6a4512, emissiveIntensity: 0.25 });
   // (the bezels round the crystals: gold, buffed to a mirror)
   const bright = new THREE.MeshStandardMaterial({ color: 0xe0bc70, metalness: 1, roughness: 0.1 });
   // (tempered steel, heated to a deep blue: the screws)
