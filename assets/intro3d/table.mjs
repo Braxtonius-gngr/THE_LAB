@@ -64,28 +64,37 @@ const LAYOUT = {
 };
 // The shot's timings (seconds from the tap).
 const T = { cardFly: 4.8, uiIn: 0.6 };
-// The deal, by the dealer's two arms, hand to hand: seconds per card, and
-// its phases. The shoe's arm reaches into the shoe (the first time from the
-// upright it rose in), draws the card out by its end, and brings it out over
-// the table to the pass; the other hand, waiting a hand's width off, comes
-// in and takes it, closes on it, and the shoe's hand lets go. It carries the
-// card to its place face down (a length short of it) and settles it onto its
-// near edge; the push lifts it over onto its face-up place, and it finishes
-// the fall on its own while the hand goes back to the pass for the next. A
-// card flicked over (a sweep, a cascade) turns on its own; the spread's backs
-// are shown a beat first. At the end both hands go down to rest.
+// The deal, by the dealer's two arms: seconds per card, and its phases. The
+// shoe's arm reaches into the shoe (the first time from the upright it rose
+// in), draws the card out by its end, swings back and flicks it across to
+// the other hand - in front of the machine's body, never over it - and the
+// other hand, open where it will arrive, closes on it and gives a little
+// with it. It carries the card to its place face down (a length short of
+// it) and settles it onto its near edge; the push lifts it over onto its
+// face-up place, and it finishes the fall on its own while the hand goes
+// back to catch the next. A card flicked over (a sweep, a cascade, a
+// knock) turns on its own; the spread's backs are shown a beat first. At
+// the end both hands go down to rest.
 // (the machine's pace, in seconds: quick enough to be just past what a
 // person could do - see makeDeal)
-const DEAL = { first: 0.72, grab: 0.24, pull: 0.07, out: 0.26, take: 0.12, close: 0.08, release: 0.08, carry: 0.3,
-  settle: 0.07, push: 0.09, fall: 0.22, back: 0.24, turn: 0.34, show: 0.55, sweep: 0.14, cascade: 0.075, rest: 0.6 };
+const DEAL = { first: 0.72, grab: 0.24, pull: 0.07, windup: 0.2, beat: 0.05, flick: 0.085, follow: 0.12, give: 0.13, carry: 0.3,
+  settle: 0.07, push: 0.09, fall: 0.22, back: 0.24, turn: 0.34, show: 0.55, sweep: 0.14, cascade: 0.075, rest: 0.6,
+  stack: 0.26, spread: 0.46, flop: 0.03, wave: 55 };
 // The ways it deals (a deal picks one, or ?deal= names it):
-//   single  - one card at a time, drawn, carried and pushed over
+//   single  - one card at a time: flicked across, carried and pushed over
 //   rows    - a row's cards laid face down across it one by one, then
 //             swept over in one pass
 //   columns - the same by columns, the column swept from front to back
 //   spread  - every card laid face down, a beat to see the backs, then one
 //             touch and the whole spread turns over in a cascade
-const DEAL_STYLES = ['single', 'rows', 'columns', 'spread'];
+//   flop    - a row at a time, as a hold'em dealer turns the flop: three
+//             cards laid in a stack, slid out along the row in one stroke
+//             of the fingers, and all three turned over together
+//   pitch   - the shoe's hand alone, from the side of the table: each card
+//             flicked low along its row, landing short and sliding into its
+//             place face down; then two knocks on the felt and the backs
+//             turn over in a wave out from them
+const DEAL_STYLES = ['single', 'rows', 'columns', 'spread', 'flop', 'pitch'];
 const TIERS = ['S', 'A', 'B', 'C', 'D', 'F'];
 const SUITS = ['♠', '♥', '♦', '♣'];
 
@@ -205,6 +214,27 @@ function canvasTex(w, h, paint) {
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 8;
   return t;
+}
+// A card's shadow as an alpha map: the card's rounded outline in white on
+// black, blurred by `blur` cm, with room round it for the blur (`pad` cm).
+// (A shape drawn off the canvas casts its blurred shadow onto it: the one
+// blur every browser's canvas has.)
+// `rim`: only what falls outside the card's own edge - a contact shadow is
+// a line round the card, and the card hides the rest of it anyway.
+function cardShadowTex(blur, pad, rim = false) {
+  const k = 24, W = Math.round((CARD.w + 2 * pad) * k), H = Math.round((CARD.h + 2 * pad) * k);
+  const tex = canvasTex(W, H, (c, w, h) => {
+    c.fillStyle = '#000'; c.fillRect(0, 0, w, h);
+    const card = (x, y, cw, ch, r) => { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + cw, y, x + cw, y + ch, r); c.arcTo(x + cw, y + ch, x, y + ch, r); c.arcTo(x, y + ch, x, y, r); c.arcTo(x, y, x + cw, y, r); c.closePath(); c.fill(); };
+    c.save();
+    c.shadowColor = '#fff'; c.shadowBlur = blur * k * 2; c.shadowOffsetX = w * 4;
+    c.fillStyle = '#fff';
+    card(pad * k - w * 4, pad * k, CARD.w * k, CARD.h * k, 0.36 * k);
+    c.restore();
+    if (rim) { const i = 0.03 * k; c.fillStyle = '#000'; card(pad * k + i, pad * k + i, CARD.w * k - 2 * i, CARD.h * k - 2 * i, 0.36 * k - i); }
+  });
+  tex.colorSpace = THREE.NoColorSpace; tex.anisotropy = 4;
+  return { tex, pad };
 }
 // A normal map from white-on-black artwork (a canvas): its strokes raised,
 // their edges softened over a few pixels first, `strength` how steep.
@@ -448,13 +478,16 @@ function buildCardTable(set) {
   // wordmark by the dealer.
   // (alpha maps read the green channel: white ink on a black ground, so
   // the edges keep their coverage, and read as data, not colour)
-  const print = canvasTex(2048, 1024, (c, W, H) => {
+  // (kl: drawn fatter by kl cm all round - the dark keyline set under the
+  // gold on a light felt, so the print reads as crisply on tan or ivory
+  // as it does on black)
+  const paintPrint = kl => (c, W, H) => {
     // the canvas, as the player sees it: its left is x = +84 (their left),
     // its top z = 80 (the dealer's side)
     const px = x => ((84 - x) / 168) * W, pz = z => ((80 - z) / 84) * H, s = W / 168;
     c.fillStyle = '#000'; c.fillRect(0, 0, W, H);
-    c.strokeStyle = '#fff'; c.fillStyle = '#fff';
-    c.lineWidth = 0.22 * s;
+    c.strokeStyle = '#fff'; c.fillStyle = '#fff'; c.lineJoin = 'round';
+    c.lineWidth = (0.22 + 2 * kl) * s;
     const ell = (aa, bb) => { c.beginPath(); for (let i = 0; i <= 200; i++) { const th = Math.PI / 2 - (Math.PI * i) / 200; const x = aa * Math.sin(th), z = b - bb * Math.cos(th); if (i) c.lineTo(px(x), pz(z)); else c.moveTo(px(x), pz(z)); } c.stroke(); };
     // (the house line runs left to right as the player reads it: from x = +ra;
     // it and the diamonds keep below the cards' near row)
@@ -464,42 +497,70 @@ function buildCardTable(set) {
     // fine lines (small type would blur at the print's resolution and the
     // angle it is seen at)
     const ra = a - 8, rb = b - 8;
+    c.lineWidth = 2 * kl * s;
     for (let i = 1; i < 18; i++) {
       const th = -Math.PI / 2 + (Math.PI * i) / 18;
       const x = ra * Math.sin(th), z = b - rb * Math.cos(th), d = 0.55 * s;
       c.save(); c.translate(px(x), pz(z)); c.rotate(-th);
       c.beginPath(); c.moveTo(0, -d); c.lineTo(d * 0.62, 0); c.lineTo(0, d); c.lineTo(-d * 0.62, 0); c.closePath(); c.fill();
+      if (kl) c.stroke();
       c.restore();
     }
-  });
-  print.colorSpace = THREE.NoColorSpace;
+  };
+  const print = canvasTex(2048, 1024, paintPrint(0)), printKey = canvasTex(2048, 1024, paintPrint(0.11));
   // the wordmark, by the dealer: 36 x 9 cm at 57 px/cm
   const WM = { w: 36, h: 9, z: b - 23 };
-  const mark = canvasTex(2048, 512, (c, W, H) => {
+  const paintMark = kl => (c, W, H) => {
     const s = W / WM.w;
     c.fillStyle = '#000'; c.fillRect(0, 0, W, H);
-    c.fillStyle = '#fff'; c.strokeStyle = '#fff';
+    c.fillStyle = '#fff'; c.strokeStyle = '#fff'; c.lineJoin = 'round';
     c.translate(W / 2, H / 2);
     c.textAlign = 'center'; c.textBaseline = 'middle';
+    const text = (t, y) => { c.fillText(t, 0, y); if (kl) c.strokeText(t, 0, y); };
+    c.lineWidth = 2 * kl * s;
     c.font = `700 ${2.7 * s}px Georgia, "Times New Roman", serif`;
-    c.fillText('Daily Roll Over', 0, -1.5 * s);
+    text('Daily Roll Over', -1.5 * s);
     c.font = `600 ${0.9 * s}px Georgia, "Times New Roman", serif`;
-    c.fillText('R E F I N E M E N T   ×   R E A L I Z A T I O N', 0, 2.1 * s);
-    c.lineWidth = 0.13 * s;
+    c.lineWidth = 1.4 * kl * s;
+    text('R E F I N E M E N T   ×   R E A L I Z A T I O N', 2.1 * s);
+    c.lineWidth = (0.13 + 2 * kl) * s;
     c.beginPath(); c.moveTo(-13 * s, 0.45 * s); c.lineTo(13 * s, 0.45 * s); c.stroke();
-    [-13.6, 13.6].forEach(x => { const d = 0.32 * s; c.beginPath(); c.moveTo(x * s - d, 0.45 * s); c.lineTo(x * s, 0.45 * s - d * 0.6); c.lineTo(x * s + d, 0.45 * s); c.lineTo(x * s, 0.45 * s + d * 0.6); c.closePath(); c.fill(); });
-  });
-  mark.colorSpace = THREE.NoColorSpace; mark.anisotropy = 16; print.anisotropy = 16;
+    c.lineWidth = 2 * kl * s;
+    [-13.6, 13.6].forEach(x => { const d = 0.32 * s; c.beginPath(); c.moveTo(x * s - d, 0.45 * s); c.lineTo(x * s, 0.45 * s - d * 0.6); c.lineTo(x * s + d, 0.45 * s); c.lineTo(x * s, 0.45 * s + d * 0.6); c.closePath(); c.fill(); if (kl) c.stroke(); });
+  };
+  const mark = canvasTex(2048, 512, paintMark(0)), markKey = canvasTex(2048, 512, paintMark(0.12));
+  [print, printKey, mark, markKey].forEach(t => { t.colorSpace = THREE.NoColorSpace; t.anisotropy = 16; });
   // (gold foil pressed into the felt, not ink: it catches the lamp)
   const inkMat = new THREE.MeshStandardMaterial({ color: 0xc9a75a, alphaMap: print, transparent: true, depthWrite: false, metalness: 0.8, roughness: 0.38, envMapIntensity: 0.9, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   const ink = new THREE.Mesh(new THREE.PlaneGeometry(168, 84), inkMat);
-  ink.rotation.x = -Math.PI / 2; ink.rotation.z = Math.PI; ink.position.set(0, 0.006, 38); ink.receiveShadow = true; g.add(ink);
+  ink.rotation.x = -Math.PI / 2; ink.rotation.z = Math.PI; ink.position.set(0, 0.006, 38); ink.receiveShadow = true; ink.renderOrder = 0.5; g.add(ink);
   const markMat = inkMat.clone(); markMat.alphaMap = mark;
   // (pressed into the felt: a normal map from the lettering's own edges, so
   // the foil's raised strokes catch the lamp)
   markMat.normalMap = embossTex(mark.image, 3.2); markMat.normalScale = new THREE.Vector2(1, 1);
   const markMesh = new THREE.Mesh(new THREE.PlaneGeometry(WM.w, WM.h), markMat);
-  markMesh.rotation.x = -Math.PI / 2; markMesh.rotation.z = Math.PI; markMesh.position.set(0, 0.008, WM.z); markMesh.receiveShadow = true; g.add(markMesh);
+  markMesh.rotation.x = -Math.PI / 2; markMesh.rotation.z = Math.PI; markMesh.position.set(0, 0.008, WM.z); markMesh.receiveShadow = true; markMesh.renderOrder = 0.5; g.add(markMesh);
+  // The keylines: the print's own shapes, fattened, in a dark umber ink
+  // under the gold - an engraver's keyline. On black felt there is nothing
+  // for them to do; on a light felt they give the gold an edge to read by.
+  // (Drawn first, a hair under the gold, following the wordmark wherever
+  // it is moved.)
+  const keyMat = new THREE.MeshStandardMaterial({ color: 0x1a1108, roughness: 0.92, metalness: 0, alphaMap: printKey, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -0.5, polygonOffsetUnits: -0.5 });
+  const keys = [[ink, printKey], [markMesh, markKey]].map(([m, t]) => {
+    const km = keyMat.clone(); km.alphaMap = t;
+    const k = new THREE.Mesh(m.geometry, km); k.position.z = -0.001; k.receiveShadow = true; k.renderOrder = 0.25;
+    m.add(k);
+    return k;
+  });
+  // (how light the felt is, 0 black to 1 ivory: the keyline's weight, and
+  // the gold made to read on it - a little less mirror and more of its own
+  // colour, as foil on a light cloth is seen against it rather than in it)
+  const printFor = light => {
+    keys.forEach(k => { k.visible = light > 0.01; k.material.opacity = Math.min(1, 0.55 + 0.45 * light); });
+    [inkMat, markMat].forEach(m => { m.metalness = 0.8 - 0.3 * light; m.color.setHex(light > 0.01 ? 0xd9b563 : 0xc9a75a); });
+  };
+  printFor(feltMat.userData.feltLight || 0);
+  g.userData.printFor = printFor;
   g.userData.mark = markMesh;
   // The dealer's edge: a walnut bar across the straight side, with the
   // chip tray let into it.
@@ -509,7 +570,7 @@ function buildCardTable(set) {
   const bar = new THREE.Mesh(barGeo, woodMat);
   bar.position.set(0, -4, b + 6); bar.castShadow = true; bar.receiveShadow = true; g.add(bar);
   g.add(chipTray(set));
-  return { group: g, rim, focus: [0, 0, 30] };
+  return { group: g, rim, focus: [0, 0, 30], felt: feltMat };
 }
 
 // The chip float, as a dealer keeps it: a black lacquer rack let into the
@@ -521,9 +582,14 @@ function buildCardTable(set) {
 // (assets/intro3d/icons). All the chips of a colour are one instanced mesh.
 const CHIPS = ['onyx', 'oxblood', 'emerald', 'ivory', 'plum', 'gold'];
 const chipFaces = {};
+// (their loads, for the table to wait on before it is made ready: see
+// prepareTable)
+const chipLoads = [];
 function chipFace(name) {
   if (!chipFaces[name]) {
-    const t = new THREE.TextureLoader().load(asset(`icons/chip-${name}.webp`));
+    let done;
+    chipLoads.push(new Promise(res => { done = res; }));
+    const t = new THREE.TextureLoader().load(asset(`icons/chip-${name}.webp`), done, undefined, done);
     t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
     chipFaces[name] = t;
   }
@@ -1416,9 +1482,9 @@ function cardHTML(c) {
       <div class="r3t-seal"><span>${esc(initials(c.name))}</span></div>
       <div class="r3t-name"${nameFit(c.name)}>${esc(c.name)}</div>
       <div class="r3t-meta"><span class="r3t-state">${esc(shown)}</span></div>
-      <div class="r3t-sheen"></div>
+      <div class="r3t-sheen"></div><div class="r3t-scan"></div><div class="r3t-shade"></div>
     </div>
-    <div class="r3t-face r3t-back t-${tier}"><div class="r3t-bk-art"></div><div class="r3t-bk-foil"></div><div class="r3t-sheen"></div></div>
+    <div class="r3t-face r3t-back t-${tier}"><div class="r3t-bk-art"></div><div class="r3t-bk-foil"></div><div class="r3t-sheen"></div><div class="r3t-shade"></div></div>
   </div><span class="r3t-sr">${esc(label)}</span>`;
 }
 function railHTML() {
@@ -1506,6 +1572,8 @@ export async function prepareTable(opts) {
   lampLight.shadow.camera.near = 50; lampLight.shadow.camera.far = 200;
   lampLight.shadow.bias = -0.0004; lampLight.shadow.normalBias = 0.03; lampLight.shadow.radius = 4;
   seat.add(lampLight, lampLight.target);
+  // (hidden until it has been made ready: see the end of prepareTable)
+  seat.visible = false;
   scene.add(seat);
   made.push(seat);
 
@@ -1580,7 +1648,9 @@ export async function prepareTable(opts) {
     // The dealer has a canvas of its own over the cards (the cards are page
     // elements, always painted over the table's canvas, and a hand is on
     // top of the cards it deals), under the phone in yours.
-    const handGL = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: 'low-power' });
+    // (a stencil buffer: each card's shadow is kept off the card itself -
+    // see the cards' masks below)
+    const handGL = new THREE.WebGLRenderer({ alpha: true, antialias: true, stencil: true, powerPreference: 'low-power' });
     handGL.toneMapping = renderer.toneMapping; handGL.toneMappingExposure = renderer.toneMappingExposure;
     handGL.outputColorSpace = renderer.outputColorSpace;
     handGL.domElement.className = 'r3t-hand';
@@ -1637,6 +1707,8 @@ export async function prepareTable(opts) {
     // once the device has stepped down to no shadows: the table has none
     // of its own by then either.)
     handGL.shadowMap.enabled = world.quality > 1; handGL.shadowMap.type = THREE.PCFShadowMap;
+    // (kept, for the house lights going down: see houseAt)
+    const handLights = {};
     {
       const key = new THREE.DirectionalLight(0xffeedd, 2.3); key.position.set(-6, 112, 30); key.target.position.set(0, 0, 40);
       key.castShadow = true; key.shadow.mapSize.set(2048, 2048);
@@ -1644,7 +1716,12 @@ export async function prepareTable(opts) {
       key.shadow.bias = -0.0005; key.shadow.normalBias = 0.03; key.shadow.radius = 2;
       handSeat.add(key, key.target);
       const fill = new THREE.DirectionalLight(0xc9d2e6, 0.5); fill.position.set(6, 10, -30); handSeat.add(fill, fill.target);
-      handScene.add(new THREE.HemisphereLight(0xfff0e0, 0x1a1410, 0.55));
+      const hemi = new THREE.HemisphereLight(0xfff0e0, 0x1a1410, 0.55); handScene.add(hemi);
+      // (a cool light from the dark behind the machine, off until the house
+      // lights go down: then it draws the ceramic's edges out of the dark -
+      // always there, so no shader changes when it comes up)
+      const back = new THREE.DirectionalLight(0xbcc8e0, 0); back.position.set(4, 42, 120); back.target.position.set(0, 8, 55); handSeat.add(back, back.target);
+      Object.assign(handLights, { key, fill, hemi, back });
       const catcher = new THREE.ShadowMaterial({ opacity: 0.52 });
       const onFelt = new THREE.Mesh(new THREE.ShapeGeometry(feltShape, 48), catcher); onFelt.rotation.x = -Math.PI / 2; onFelt.position.y = 0.05; onFelt.receiveShadow = true;
       const [la, lb] = shoe.userData.lid.map(p => p.clone().applyEuler(shoe.rotation).add(shoe.position));
@@ -1722,6 +1799,7 @@ export async function prepareTable(opts) {
     const UI_IN = fo.reduced ? 0.01 : T.uiIn;
     const fov0 = camera.fov;
     const lens0 = world.lights.lensLight.intensity;
+    const pendant0 = world.lights.pendant.intensity;
     const bloom0 = world.bloom ? world.bloom.strength : 0;
 
     // ---- The UI, built now, shown on arrival.
@@ -1777,6 +1855,74 @@ export async function prepareTable(opts) {
       el.style.visibility = 'hidden';
       return obj;
     });
+    // Each card in the dealer's canvas, in depth alone. The dealer is drawn
+    // over the cards (they are page elements, under its canvas), so without
+    // this a card it holds out in front of its body, one it throws across in
+    // front of it, or one you bring up to you while it works, would have its
+    // arm or its torso drawn over it. With it, whatever of the machine is
+    // behind a card is hidden by that card, wherever the card is; what is in
+    // front of it - the fingers on a card it holds - still shows. (Rounded
+    // as the cards are, and a hair behind them, so fingertips resting on a
+    // card stay in front of it.)
+    //
+    // And each card's shadow, cast by the same lamp as the machine's (the
+    // key: along its light): a card on the felt sits on a tight, dark line
+    // of shadow; lifted, the shadow comes off it, wider and softer and
+    // fainter the higher it goes, and is gone by the time a card is up in
+    // front of you. It falls on the felt and on the cards lying there, never
+    // on the card that casts it (each card marks itself in the stencil).
+    const keyDir = V(0, 0, 40).sub(V(-6, 112, 30)).normalize();
+    const shadowKinds = [cardShadowTex(0.14, 0.6, true), cardShadowTex(1.7, 5.2)];
+    const maskGeo = new THREE.ShapeGeometry(roundRect(CARD.w, CARD.h, 0.36), 4), quadGeo = new THREE.PlaneGeometry(1, 1);
+    const cardShade = cardObjs.map((o, i) => {
+      const mask = new THREE.Mesh(maskGeo, new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide,
+        stencilWrite: true, stencilRef: i + 1, stencilFunc: THREE.AlwaysStencilFunc, stencilZPass: THREE.ReplaceStencilOp }));
+      mask.renderOrder = -1; mask.visible = false;
+      const quads = shadowKinds.map(k => {
+        const q = new THREE.Mesh(quadGeo, new THREE.MeshBasicMaterial({ color: 0x000000, alphaMap: k.tex, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide,
+          stencilWrite: true, stencilWriteMask: 0, stencilRef: i + 1, stencilFunc: THREE.NotEqualStencilFunc }));
+        q.matrixAutoUpdate = false; q.visible = false; q.renderOrder = 1;
+        return q;
+      });
+      handSeat.add(mask, ...quads);
+      return { mask, quads };
+    });
+    const _sc = V(0, 0, 0), _sx = V(0, 0, 0), _sy = V(0, 0, 0), _sn = V(0, 1, 0);
+    // (a point of the card, dropped along the light onto the felt)
+    const onFeltAt = (v, out) => out.copy(v).addScaledVector(keyDir, -(v.y - 0.06) / keyDir.y);
+    // (the mask a fifth of a millimetre further from the lens than its card,
+    // along the line of sight: fingertips resting on the card stay in front
+    // of it, and cards stacked a third of a millimetre apart keep their order
+    // - a depth offset by slope would push a mask past the card under it)
+    const _away = V(0, 0, 0);
+    // card i at p, q, `lift` cm off the felt: its mask and its shadow
+    const shadeCard = (i, p, q, shown) => {
+      const S = cardShade[i];
+      S.mask.visible = shown;
+      if (shown) { S.mask.position.copy(p).addScaledVector(_away.copy(p).sub(camLocal.p).normalize(), 0.02); S.mask.quaternion.copy(q); }
+      const h = Math.max(0, p.y - 0.04);
+      // (on a light cloth the shadow is what parts a pale card from it, and
+      // a lifted one from its place: deeper, the lighter the felt)
+      const dk = 1 + 0.6 * (table.felt.userData.feltLight || 0);
+      const k = [0.52 * dk * (1 - smoother(h / 0.7)), 0.3 * dk * smoother(h / 0.5) * (1 - smoother((h - 10) / 22))];
+      onFeltAt(p, _sc);
+      S.quads.forEach((Q, j) => {
+        Q.visible = shown && k[j] > 0.004;
+        if (!Q.visible) return;
+        Q.material.opacity = k[j];
+        // (the card's own two axes dropped onto the felt: a card on edge
+        // casts a sliver, one lying flat its whole shape; the soft one
+        // spreads a little as the card rises)
+        const pad = shadowKinds[j].pad, grow = j ? 1 + 0.018 * Math.min(h, 20) : 1;
+        onFeltAt(_sx.set(1, 0, 0).applyQuaternion(q).add(p), _sx).sub(_sc).multiplyScalar((CARD.w + 2 * pad) * grow);
+        onFeltAt(_sy.set(0, 1, 0).applyQuaternion(q).add(p), _sy).sub(_sc).multiplyScalar((CARD.h + 2 * pad) * grow);
+        // (a sliver still keeps a little width, so the quad never folds flat)
+        if (_sx.lengthSq() < 0.01) _sx.set(0.1, 0, 0);
+        if (_sy.lengthSq() < 0.01) _sy.set(0, 0, 0.1);
+        Q.matrix.makeBasis(_sx, _sy, _sn).setPosition(_sc);
+        Q.matrixWorldNeedsUpdate = true;
+      });
+    };
     // Your phone: not on the table but in the corner of the view, half out
     // of your pocket, and up in front of you on a tap (a page element,
     // over the hand's canvas; its moves are the page's own transitions)
@@ -1984,14 +2130,78 @@ export async function prepareTable(opts) {
     // into its work - reaching down into the shoe, lifting a card's end as
     // it draws it, banking as it swings, hooking its fingers down to flick a
     // row over - and each move can carry a lean that comes and goes with it.
-    // The pass, between the two arms over the middle of the table: the shoe
-    // arm holds the card out flat, face down, its long side across the
-    // table, by its end nearer the shoe; the other hand comes in from its own
-    // side, facing it, and takes the far end.
-    const PASS = [handPose(V(-3.4, 8.2, 46.2), V(1, 0, 0), up)];
-    { const c = cardInShoeHand(PASS[0], pose(V(0, 0, 0), new THREE.Quaternion())); PASS[1] = handFor(c, 0); }
-    // (the taking hand's approach: a hand's width back from the card, open)
-    const APPROACH = pose(PASS[1].p.clone().add(V(4.2, 1.4, 0)), PASS[1].q);
+    // The toss, in front of the machine's body, never over it: the shoe arm
+    // holds the card out flat, face down, its long side across the table,
+    // by its end nearer the shoe, and flicks it across to the other hand,
+    // which waits open where it will arrive and takes the far end. It flies
+    // as a flicked card does: one flat turn on the way, so it arrives the way
+    // round it left; a little rise, less than a thrown stone's, the spin
+    // holding it up; and a bow out toward you round the front of the
+    // machine, the spin's pull. The catching hand closes on it as it arrives
+    // and gives a centimetre with it.
+    const TOSS = { T: 0.2, spin: 2 * Math.PI, g: 600, bow: 2.2 };
+    const tossQ = cardInShoeHand(handPose(V(0, 0, 0), V(1, 0, 0), up), pose(V(0, 0, 0), new THREE.Quaternion())).q;
+    // (the card's middle as it leaves the one hand and as the other has it)
+    const TOSS_FROM = V(-6.4, 7.9, 45.0), TOSS_TO = V(5.8, 8.8, 44.2);
+    const FLIGHT = (() => {
+      const T = TOSS.T, acc = V(0, -TOSS.g, 8 * TOSS.bow / (T * T));
+      const v0 = TOSS_TO.clone().sub(TOSS_FROM).addScaledVector(acc, -0.5 * T * T).multiplyScalar(1 / T);
+      return { p0: TOSS_FROM.clone(), q0: tossQ.clone(), v0, acc, T, spin: TOSS.spin, v1: v0.clone().addScaledVector(acc, T) };
+    })();
+    // the shoe arm's hand as it lets go (it holds the card end for end - see
+    // cardInShoeHand), wound back along the throw before it, and following
+    // through after it; the catching hand, and where it gives to
+    const RELEASE = handFor(pose(TOSS_FROM, tossQ.clone().multiply(ENDWISE)), 0);
+    const along3 = (p, v, d) => p.clone().addScaledVector(v.clone().normalize(), d);
+    const WINDUP = pose(along3(RELEASE.p, FLIGHT.v0, -0.5 * FLIGHT.v0.length() * DEAL.flick), RELEASE.q);
+    const FOLLOW = pose(along3(RELEASE.p, FLIGHT.v0, 0.5 * FLIGHT.v0.length() * DEAL.follow), RELEASE.q);
+    const CATCH = handFor(pose(TOSS_TO, tossQ), 0);
+    const GIVEN = pose(along3(CATCH.p, FLIGHT.v1, 1.0), CATCH.q);
+    // A card in flight at tt: along its arc, turning flat about the
+    // vertical as it goes (F: a toss, from FLIGHT and its t0).
+    const flightAt = (F, tt, out) => {
+      const s = tt - F.t0, u = clamp01(s / F.T);
+      out.p.copy(F.p0).addScaledVector(F.v0, s).addScaledVector(F.acc, 0.5 * s * s);
+      out.q.setFromAxisAngle(up, F.spin * u).multiply(F.q0);
+      // (and banked a few degrees into its bow, as a spinning card leans)
+      out.q.premultiply(_q2.setFromAxisAngle(V(1, 0, 0), -0.08 * Math.sin(Math.PI * u)));
+      return out;
+    };
+    // A pitch: a card flicked low along the table from a hand, from pose
+    // `from` to its place `to` (face down). It flies, the spin holding it up
+    // a little, touches down short of its place and slides the rest, the
+    // felt taking its speed, its spin dying with it: it stops on its place,
+    // square, the way round it lies there (one turn more than it needs, as
+    // a flicked card spins).
+    // (released low and all but flat - a touch upward, as a flick lifts the
+    // card's leading edge - from the height its flight needs: `from`'s
+    // height is ignored, and the result's y0 is where to let it go)
+    const pitchOf = (from, to) => {
+      const dirH = V(to.p.x - from.p.x, 0, to.p.z - from.p.z), D = dirH.length();
+      dirH.multiplyScalar(1 / D);
+      const Ds = THREE.MathUtils.clamp(D * 0.32, 3, 8), vh = 90 + 2.6 * D, Tf = (D - Ds) / vh, g = 820, lift = 14;
+      const pT = to.p.clone().addScaledVector(dirH, -Ds);
+      const y0 = pT.y + 0.5 * g * Tf * Tf - lift * Tf;
+      from = pose(V(from.p.x, y0, from.p.z), from.q);
+      const vy0 = lift;
+      const vs0 = vh * 0.62, dec = vs0 * vs0 / (2 * Ds), Ts = vs0 / dec;
+      const qRel = to.q.clone().multiply(from.q.clone().invert());
+      const psi = ((2 * Math.atan2(qRel.y, qRel.w)) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+      const theta = psi + 2 * Math.PI;
+      const qEnd = new THREE.Quaternion().setFromAxisAngle(up, theta).multiply(from.q);
+      const fix = to.q.clone().multiply(qEnd.invert());
+      return { p0: from.p.clone(), q0: from.q.clone(), y0, dirH, vh, vy0, g, Tf, pT, vs0, dec, Ts, theta, fix, v0: V(dirH.x * vh, vy0, dirH.z * vh), T: Tf + Ts };
+    };
+    const _pq = new THREE.Quaternion(), _pid = new THREE.Quaternion();
+    const pitchAt = (P, tt, out) => {
+      const s = tt - P.t0;
+      if (s < P.Tf) { out.p.copy(P.p0).addScaledVector(P.dirH, P.vh * s); out.p.y = P.p0.y + P.vy0 * s - 0.5 * P.g * s * s; }
+      else { const k = Math.min(s - P.Tf, P.Ts); out.p.copy(P.pT).addScaledVector(P.dirH, P.vs0 * k - 0.5 * P.dec * k * k); }
+      const u = clamp01(s / P.T);
+      out.q.setFromAxisAngle(up, P.theta * (1 - Math.pow(1 - u, 1.7))).multiply(P.q0);
+      out.q.premultiply(_pq.copy(_pid).slerp(P.fix, smoother(u)));
+      return out;
+    };
     // The arms at rest once the deal is done, as a dealer waits: the shoe
     // arm's hand laid on the shoe's lid, fingers down the slope toward the
     // mouth; the other poised on its fingertips on the felt by the discard
@@ -2013,7 +2223,11 @@ export async function prepareTable(opts) {
     // the hand a long way round). P is an arm's plan so far: its moves, its
     // time, where its hand is, its fingers, its wrist's attitude and its
     // elbow's way.
-    const addMove = (P, b, dur, { lift = 0, settle = false, via = false, to = P.fin, lean = P.att, dip = [0, 0], elbow = P.el, wrist = false } = {}) => { P.segs.push({ kind: 'move', t0: P.t, t1: P.t + dur, a: P.at, b, lift, settle, via, f0: P.fin, f1: to, att0: P.att, att1: lean, dip, el0: P.el, el1: elbow, pivot: wrist, v0: V(0, 0, 0), v1: V(0, 0, 0), s0: 0, s1: 0 }); P.t += dur; P.at = b; P.fin = to; P.att = lean; P.el = elbow; };
+    // stiff: held rigid, with none of the trailing below (a flick and its
+    // follow-through, a catch's give: a card leaves or meets the hand
+    // exactly where the plan has it); v0, v1: the speeds it starts and ends
+    // at, where they aren't still (a flick ends at the card's speed).
+    const addMove = (P, b, dur, { lift = 0, settle = false, via = false, to = P.fin, lean = P.att, dip = [0, 0], elbow = P.el, wrist = false, stiff = false, v0 = null, v1 = null } = {}) => { P.segs.push({ kind: 'move', t0: P.t, t1: P.t + dur, a: P.at, b, lift, settle, via, f0: P.fin, f1: to, att0: P.att, att1: lean, dip, el0: P.el, el1: elbow, pivot: wrist, stiff, v0: v0 ? v0.clone() : V(0, 0, 0), v1: v1 ? v1.clone() : V(0, 0, 0), s0: 0, s1: 0 }); P.t += dur; P.at = b; P.fin = to; P.att = lean; P.el = elbow; };
     const holdP = (P, dur) => addMove(P, P.at, dur);
     // (arm P waits where it is until t)
     const untilP = (P, t) => { if (t > P.t + 1e-4) holdP(P, t - P.t); };
@@ -2036,7 +2250,10 @@ export async function prepareTable(opts) {
     };
     const makeDeal = style => {
       const n = cardObjs.length;
-      const cardsP = cardObjs.map(() => ({ pull: Infinity, hand: Infinity, lay: Infinity, turn: Infinity, push: false }));
+      const cardsP = cardObjs.map(() => ({ pull: Infinity, hand: Infinity, lay: Infinity, turn: Infinity, push: false, toss: null, pitch: null, rest: null, track: null, stampAt: Infinity }));
+      // (shapes of the hand the deal asks for - the knock's - put on the
+      // arms once they exist: see shapes)
+      const handShapes = [];
       // each arm's plan so far: its moves, its time, where its hand is, its
       // fingers and its wrist's attitude (the plan starts as the arms, risen,
       // swing down to their work)
@@ -2047,40 +2264,59 @@ export async function prepareTable(opts) {
       // across itself)
       const bank = (a, b, k = 0.012) => { const d = b.p.clone().sub(a.p).applyQuaternion(a.q.clone().invert()); return THREE.MathUtils.clamp(-d.x * k, -0.3, 0.3); };
       const grabAt = () => handFor(shoePose(inShoe), 0), outAt = () => handFor(shoePose(pulled), 0);
-      // The shoe arm draws card i and brings it out to the pass: reaching
-      // down into the shoe, level at the grab; drawing it out by its end,
-      // lifting it a little; out over the table, level, dead still.
-      const draw = (i, first) => {
+      // The shoe arm draws card i: reaching down into the shoe, level at the
+      // grab; drawing it out by its end, lifting it a little, on through.
+      const drawOut = (i, first) => {
         const g0 = grabAt();
         move(A, g0, first ? DEAL.first : DEAL.grab, { lift: first ? 3 : 4.5, to: FIN.reach, lean: [0, 0], dip: [0.3, bank(A.at, g0)] });
         cardsP[i].pull = A.t;
         move(A, outAt(), DEAL.pull, { via: true, to: FIN.grip, lean: [-0.06, 0] });
-        move(A, PASS[0], DEAL.out, { lift: 2.2, settle: true, to: FIN.grip, lean: [0, 0], dip: [-0.12, bank(A.at, PASS[0])] });
       };
-      // The other takes it: in from its approach as the card arrives (it
-      // waits there, open, when it is early; the card is held out when it is
-      // late), its fingers close on the card, and the shoe arm lets go.
-      const take = i => {
-        until(B, A.t - DEAL.take);
-        move(B, PASS[1], DEAL.take, { settle: true, to: FIN.reach, lean: [0, 0] });
-        move(B, PASS[1], DEAL.close, { to: FIN.grip });
-        cardsP[i].hand = B.t;
-        until(A, B.t);
-        move(A, PASS[0], DEAL.release, { to: FIN.open });
+      // ... and flicks it across to the other hand (see TOSS): swung back to
+      // its windup; a beat, when the other is there to take it; the flick,
+      // stiff, letting go at the card's own speed; the follow-through, the
+      // fingers opening. The other waits open where it arrives, and as it
+      // does closes on it and gives with it (stiff: the card is where the
+      // plan has it). Returns when it is caught.
+      const flick = (i, first) => {
+        // (a long wait for the other hand - a flop being turned - is spent
+        // ready over the shoe's mouth, not holding a card wound back: the
+        // draw is timed to end in the flick)
+        const lead = (first ? DEAL.first : DEAL.grab) + DEAL.pull + DEAL.windup + DEAL.beat + DEAL.flick;
+        const early = B.t + 0.06 - TOSS.T - lead - A.t;
+        if (!first && early > 0.45) {
+          const g0 = grabAt(), ready = pose(g0.p.clone().add(V(0, 3.2, 1.2)), g0.q);
+          move(A, ready, 0.42, { lift: 2, to: FIN.relax, lean: [0, 0] });
+          until(A, B.t + 0.06 - TOSS.T - lead);
+        }
+        drawOut(i, first);
+        move(A, WINDUP, DEAL.windup, { lift: 1.2, to: FIN.grip, lean: [0, 0], dip: [-0.1, bank(A.at, WINDUP)] });
+        const tr = Math.max(A.t + DEAL.beat + DEAL.flick, B.t + 0.06 - TOSS.T);
+        until(A, tr - DEAL.flick);
+        move(A, RELEASE, DEAL.flick, { to: FIN.grip, stiff: true, v1: FLIGHT.v0 });
+        move(A, FOLLOW, DEAL.follow, { to: FIN.open, stiff: true, v0: FLIGHT.v0, dip: [0.14, 0] });
+        const tc = tr + TOSS.T;
+        cardsP[i].toss = Object.assign({}, FLIGHT, { t0: tr, t1: tc });
+        until(B, tc);
+        move(B, GIVEN, DEAL.give, { settle: true, to: FIN.grip, stiff: true, v0: FLIGHT.v1.clone().multiplyScalar(0.3) });
+        cardsP[i].hand = tc;
+        return tc;
       };
       // it lays card i at its face-down place (carried leading edge up,
-      // banking into the swing, set down level)
-      const lay = (i, dur, lift = 3.4) => { const b = handFor(faceDown(cardObjs[i]), 0); move(B, b, dur, { lift, settle: true, to: FIN.grip, lean: [0, 0], dip: [-0.16, bank(B.at, b, 0.018)] }); cardsP[i].lay = B.t; };
+      // banking into the swing, set down level; its weight goes into the
+      // felt as it lands - see stampAt)
+      const lay = (i, dur, lift = 3.4, at = faceDown(cardObjs[i])) => { const b = handFor(at, 0); move(B, b, dur, { lift, settle: true, to: FIN.grip, lean: [0, 0], dip: [-0.16, bank(B.at, b, 0.018)] }); cardsP[i].lay = cardsP[i].stampAt = B.t; };
       // (and the fingers open off it, spreading as they lift)
       const letGo = (dur = 0.1) => move(B, B.at, dur, { to: FIN.open });
-      // back to the pass for the next
-      const toPass = (dur = DEAL.back) => move(B, APPROACH, dur, { lift: 2.4, to: FIN.reach, lean: [0, 0], dip: [0.1, 0] });
+      // back to where the next is caught, open
+      const toCatch = (dur = DEAL.back) => move(B, CATCH, dur, { lift: 2.4, to: FIN.reach, lean: [0, 0], dip: [0.1, 0] });
       // the rows and the columns of the hand, as card indices
       const rows = [], cols = [];
       cardObjs.forEach((o, i) => { const r = Math.floor(i / SLOTS.cols), c = i % SLOTS.cols; (rows[r] = rows[r] || []).push(i); (cols[c] = cols[c] || []).push(i); });
       // the hand along a line of face-down cards, just past their far ends,
-      // flicking each over as it passes (dir: across a row, or down a column)
-      const sweep = (line, along) => {
+      // flicking each over as it passes (dir: across a row, or down a column;
+      // per: seconds a card - the flop's are all but at once)
+      const sweep = (line, along, per = DEAL.sweep) => {
         const ends = line.map(i => { const fd = faceDown(cardObjs[i]); return fd.p.clone().addScaledVector(topOf(cardObjs[i]), CARD.h / 2 + 0.4); });
         const ext = along === 'x' ? V(ends[0].x > ends[ends.length - 1].x ? 3 : -3, 0, 0) : V(0, 0, -3);
         const from = ends[0].clone().add(ext), to = ends[ends.length - 1].clone().sub(ext);
@@ -2090,18 +2326,18 @@ export async function prepareTable(opts) {
         // (fingers hooked down, the hand rolled a little into the sweep)
         const roll = bank(P0, P1, 0.01);
         move(B, P0, 0.24, { lift: 2.5, via: true, to: FIN.flick, lean: [0.3, roll], dip: [-0.2, 0] });
-        const dur = DEAL.sweep * line.length + 0.12;
+        const dur = per * line.length + (per < DEAL.sweep ? 0.04 : 0.12);
         const t0 = B.t, d0 = from.distanceTo(to) || 1;
         line.forEach((i, k) => { cardsP[i].turn = t0 + dur * clamp01(from.distanceTo(ends[k]) / d0) - 0.03; });
         move(B, P1, dur, { via: true, to: FIN.flick, lean: [0.34, roll], dip: [0.06, 0] });
       };
-      if (!n) return { arms: [A.segs, B.segs], cards: cardsP, end: dealAt };
-      // (the taking arm, risen, swings out to wait by the pass)
-      move(B, APPROACH, DEAL.first + 0.15, { lift: 2, to: FIN.reach, lean: [0, 0], dip: [-0.1, 0] });
+      if (!n) return { arms: [A.segs, B.segs], cards: cardsP, end: dealAt, shapes: handShapes };
+      // (the catching arm, risen, swings out to wait open where the first
+      // will arrive)
+      move(B, CATCH, DEAL.first + 0.15, { lift: 2, to: FIN.reach, lean: [0, 0], dip: [-0.1, 0] });
       if (style === 'single') {
         cardObjs.forEach((o, i) => {
-          draw(i, i === 0);
-          take(i);
+          flick(i, i === 0);
           lay(i, DEAL.carry);
           hold(B, DEAL.settle);
           cardsP[i].turn = B.t; cardsP[i].push = true;
@@ -2109,7 +2345,7 @@ export async function prepareTable(opts) {
           B.t += DEAL.push; B.fin = FIN.flick; B.att = [0, 0];
           B.at = handFor(turned(o, PUSH, { p: V(0, 0, 0), q: new THREE.Quaternion() }), 0);
           B.at.q.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.62, 0, 0)));
-          if (i < n - 1) toPass();
+          if (i < n - 1) toCatch();
         });
       } else if (style === 'rows' || style === 'columns') {
         const groups = style === 'rows' ? rows : cols.map(c => c.slice());
@@ -2118,24 +2354,125 @@ export async function prepareTable(opts) {
           // the column (front to back); the deepest slot is laid first
           const order = style === 'rows' ? g.slice().sort((a, b) => cardObjs[b].userData.slot.x - cardObjs[a].userData.slot.x) : g.slice();
           order.forEach((i, k) => {
-            draw(i, gi === 0 && k === 0);
-            take(i);
+            flick(i, gi === 0 && k === 0);
             lay(i, k ? DEAL.carry * 0.9 : DEAL.carry);
             letGo(0.08);
-            if (k < order.length - 1) toPass();
+            if (k < order.length - 1) toCatch();
           });
           hold(B, 0.08);
           sweep(order, style === 'rows' ? 'x' : 'z');
-          if (gi < groups.length - 1) toPass(DEAL.back + 0.06);
+          if (gi < groups.length - 1) toCatch(DEAL.back + 0.06);
         });
+      } else if (style === 'flop') {
+        // A row at a time, as the flop is turned at hold'em: the cards laid
+        // one on another in a stack on the first card's place - the one on
+        // the machine's own side, so the stack is under its hand - squared
+        // up a hair off true, as a hand lays them; then the fingers on the
+        // top card slide it out along the row to the far end in one stroke,
+        // the card under it dragged along to the middle, the bottom one left
+        // where it lies; and the hand, hooked under their far ends, turns all
+        // three over together.
+        rows.forEach((row, ri) => {
+          const order = row.slice().sort((a, b) => cardObjs[b].userData.slot.x - cardObjs[a].userData.slot.x);
+          const base = faceDown(cardObjs[order[0]]);
+          order.forEach((i, k) => {
+            flick(i, ri === 0 && k === 0);
+            // (the bottom one on its own place exactly: it is not moved again)
+            const onStack = k ? pose(base.p.clone().add(V(Math.sin(i * 1.7) * 0.06, 0.05 * k, Math.cos(i * 2.3) * 0.06)), base.q.clone().multiply(_q1.setFromAxisAngle(V(0, 0, 1), Math.sin(i * 3.1) * 0.9 * DEG))) : base;
+            cardsP[i].rest = onStack;
+            lay(i, k ? DEAL.stack : DEAL.carry, k ? 2.2 : 3.4, onStack);
+            if (k < order.length - 1) { letGo(0.07); toCatch(); }
+          });
+          if (order.length > 1) {
+            // the stroke: the top card held under the fingers and slid flat
+            // along the felt to its place; the ones under it dragged as far as
+            // their own places, and left there
+            const top = order[order.length - 1], t0 = B.t, to = faceDown(cardObjs[top]);
+            const span = cardsP[top].rest.p.distanceTo(to.p) || 1;
+            // (level and rigid the whole way - no lean, none of the hand's
+            // trailing: tipped even a few degrees, a card sliding over another
+            // would cut down through it)
+            move(B, handFor(to, 0), DEAL.spread, { settle: true, to: FIN.grip, lean: [0, 0], stiff: true });
+            cardsP[top].lay = cardsP[top].stampAt = B.t;
+            order.slice(1, -1).forEach(i => { const fd = faceDown(cardObjs[i]); cardsP[i].track = { t0, t1: B.t, to: fd, frac: Math.max(0.05, Math.min(1, cardsP[i].rest.p.distanceTo(fd.p) / span)) }; });
+            // (the top one was in the hand all the while, the bottom one never
+            // left its place: neither lies anywhere but its own)
+            cardsP[top].rest = cardsP[order[0]].rest = null;
+            letGo(0.07);
+            // all three over at once, from the stroke's end back along the row
+            sweep(order.slice().reverse(), 'x', DEAL.flop);
+          } else {
+            cardsP[order[0]].rest = null;
+            letGo(0.07);
+            sweep(order, 'x', DEAL.flop);
+          }
+          if (ri < rows.length - 1) toCatch(DEAL.back + 0.06);
+        });
+      } else if (style === 'pitch') {
+        // Caught, and pitched on: each card flicked across to the other hand
+        // and, from there, flicked on low along the table into its place -
+        // the front row first and each row's far end first, so no card slides
+        // across one already down. A place too near the hand to pitch to (the
+        // back row's, beside it) it lays, as a dealer places a near card.
+        // Then both hands to rest, two knocks on the felt, and the backs
+        // turn over in a wave out from them.
+        const order = cardObjs.map((o, i) => i).sort((a, b) => (Math.floor(a / SLOTS.cols) - Math.floor(b / SLOTS.cols)) || (cardObjs[a].userData.slot.x - cardObjs[b].userData.slot.x));
+        order.forEach((i, k) => {
+          flick(i, k === 0);
+          const fd = faceDown(cardObjs[i]);
+          const held = cardIn(GIVEN, 0, pose(V(0, 0, 0), new THREE.Quaternion()));
+          if (Math.hypot(fd.p.x - held.p.x, fd.p.z - held.p.z) < 9) { lay(i, DEAL.carry); letGo(0.08); }
+          else {
+            // (the hand dropped to the height the flight wants, level)
+            const P = pitchOf(held, fd), rel = pose(GIVEN.p.clone().add(V(0, P.y0 - held.p.y, 0)), GIVEN.q);
+            const dir = P.v0.clone().normalize(), sp = P.v0.length();
+            // wound back against the throw, a beat, the flick (from still to
+            // the card's speed over a few centimetres), the follow-through (a
+            // hard stop: a servo's, not an arm's)
+            // (the windup no longer than keeps the wrist well within the
+            // arm's reach - see ARM: a throw along the fingers' own way is
+            // wound back along the arm)
+            const shoulder = V(PORT.x + SIDES[1] * ARM.shoulder, ARM.up, PORT.z);
+            const wristAt = d => WRIST.clone().applyQuaternion(rel.q).add(rel.p).addScaledVector(dir, -d).distanceTo(shoulder);
+            let wind = Math.min(4.5, 0.5 * sp * DEAL.flick);
+            while (wind > 1 && wristAt(wind) > 27.5) wind -= 0.25;
+            const fol = Math.min(3.5, 0.5 * sp * DEAL.follow);
+            move(B, pose(rel.p.clone().addScaledVector(dir, -wind), rel.q), DEAL.windup, { lift: 0.6, to: FIN.grip, lean: [0, 0] });
+            hold(B, DEAL.beat * 0.6);
+            move(B, rel, 2 * wind / sp, { to: FIN.grip, stiff: true, v1: P.v0 });
+            cardsP[i].pitch = Object.assign(P, { t0: B.t });
+            cardsP[i].lay = B.t + P.T; cardsP[i].stampAt = B.t + P.Tf;
+            move(B, pose(rel.p.clone().addScaledVector(dir, fol), rel.q), Math.max(0.05, 2 * fol / sp), { to: FIN.open, stiff: true, v0: P.v0, settle: true });
+          }
+          if (k < order.length - 1) toCatch();
+        });
+        // both at rest; then the knocks - down on the felt twice, beside the
+        // hand - and the wave
+        const settled = Math.max(...cardsP.map(c => c.lay));
+        until(B, settled);
+        move(A, restPose(0), DEAL.rest, { lift: 3, to: FIN.easy, lean: [0, 0], dip: [-0.15, 0], elbow: 1, wrist: true });
+        move(B, restPose(1), DEAL.rest, { lift: 3, to: FIN.poise, lean: [0, 0], dip: [-0.15, 0], elbow: 1, wrist: true });
+        hold(B, 0.18);
+        // (on bare felt beside the hand's own side of the cards, level with
+        // their middle)
+        const r = restPose(1), fds = cardObjs.map(o => faceDown(o).p);
+        const spot = V(Math.max(...fds.map(p => p.x)) + CARD.w / 2 + 2.4, r.p.y - 0.1, Math.min(44, (Math.min(...fds.map(p => p.z)) + Math.max(...fds.map(p => p.z))) / 2));
+        const hi = pose(spot.clone().add(V(0, 3.4, 0.9)), r.q), lo = pose(spot.clone().add(V(0, -0.12, 0)), r.q);
+        move(B, hi, 0.34, { lift: 1.5, to: FIN.easy, lean: [0.3, 0] });
+        move(B, lo, 0.09, { settle: true });
+        move(B, hi, 0.13);
+        move(B, lo, 0.09, { settle: true });
+        const knock = B.t, at = lo.p;
+        handShapes.push({ k: 1, t0: knock - 0.62, t1: knock + 0.2, name: 'knock' });
+        move(B, r, 0.4, { to: FIN.poise, lean: [0, 0] });
+        cardObjs.forEach((o, i) => { const c = faceDown(o).p; cardsP[i].turn = knock + 0.06 + Math.hypot(c.x - at.x, c.z - at.z) / DEAL.wave; });
       } else {
-        // spread: every card laid face down, one pass each, then a beat
+        // spread: every card laid face down, one catch each, then a beat
         cardObjs.forEach((o, i) => {
-          draw(i, i === 0);
-          take(i);
+          flick(i, i === 0);
           lay(i, DEAL.carry * 0.9, 3.2);
           letGo(0.08);
-          if (i < n - 1) toPass();
+          if (i < n - 1) toCatch();
         });
         // (behind the spread, low, to let the backs be seen a moment; the
         // shoe arm opens its hand over them, palm up - there they are)
@@ -2156,9 +2493,11 @@ export async function prepareTable(opts) {
       }
       // both hands down to rest on the felt once their work is done
       const lastTurn = Math.max(...cardsP.map(turnEnd));
-      [A, B].forEach((P, k) => move(P, restPose(k), DEAL.rest, { lift: 3, to: k ? FIN.poise : FIN.easy, lean: [0, 0], dip: [-0.15, 0], elbow: 1 }));
+      // (the shoe's hand turns a long way round from its follow-through to
+      // the lid: swung from the wrist - see addMove)
+      if (style !== 'pitch') [A, B].forEach((P, k) => move(P, restPose(k), DEAL.rest, { lift: 3, to: k ? FIN.poise : FIN.easy, lean: [0, 0], dip: [-0.15, 0], elbow: 1, wrist: !k }));
       smoothVias(A.segs); smoothVias(B.segs);
-      return { arms: [A.segs, B.segs], cards: cardsP, end: Math.max(A.t, B.t, lastTurn) };
+      return { arms: [A.segs, B.segs], cards: cardsP, end: Math.max(A.t, B.t, lastTurn), shapes: handShapes };
     };
     const pickStyle = () => {
       const want = fo.dealStyle;
@@ -2191,37 +2530,77 @@ export async function prepareTable(opts) {
     const focusPose = { p: V(0, 0, 0), q: new THREE.Quaternion() };
     const cardPose = { p: V(0, 0, 0), q: new THREE.Quaternion() };
     const handNow = { p: V(0, 0, 0), q: new THREE.Quaternion() };
-    // Where every card is at tt. Cards riding in the hand are placed after
-    // the hand (poseHeld); the rest here.
+    // Where every card is at tt. Cards riding in a hand are placed after the
+    // hands (poseHeld); the rest here: in the air (flicked across, or
+    // pitched), lying face down (on the flop's stack, or dragged along the
+    // row by the card over it), or turning over and lying face up.
+    const inAir = (c, tt) => (c.toss && tt >= c.toss.t0 && tt < c.toss.t1) || (c.pitch && tt >= c.pitch.t0 && tt < c.lay);
     const poseCards = tt => {
       cardObjs.forEach((obj, i) => {
         const c = deal.cards[i];
         const el = obj.element;
-        if (!fo.reduced && tt < c.pull) { el.style.visibility = 'hidden'; obj.userData.held = false; return; }
+        if (!fo.reduced && tt < c.pull) { el.style.visibility = 'hidden'; obj.userData.held = false; shadeCard(i, cardPose.p, cardPose.q, false); return; }
         el.style.visibility = 'visible';
         const p = cardPose.p, q = cardPose.q;
-        obj.userData.held = !fo.reduced && tt < c.lay;
+        const air = !fo.reduced && inAir(c, tt);
+        obj.userData.held = !fo.reduced && tt < c.lay && !air;
         if (obj.userData.held) return;
-        if (fo.reduced) turned(obj, Math.PI, cardPose);
-        else {
+        let up = false;
+        if (fo.reduced) { turned(obj, Math.PI, cardPose); up = true; }
+        else if (air) { if (c.pitch && tt >= c.pitch.t0) pitchAt(c.pitch, tt, cardPose); else flightAt(c.toss, tt, cardPose); }
+        else if (c.rest && tt < c.turn && !(c.track && tt >= c.track.t1)) {
+          p.copy(c.rest.p); q.copy(c.rest.q);
+          if (c.track && tt > c.track.t0) {
+            const k = Math.min(1, smoother((tt - c.track.t0) / (c.track.t1 - c.track.t0)) / c.track.frac);
+            p.lerp(c.track.to.p, k); q.slerp(c.track.to.q, k);
+          }
+        } else {
           turned(obj, angleAt(i, tt), cardPose);
           const te = turnEnd(c);
-          if (tt >= te) { const b = tt - te; p.y += Math.max(0, 0.9 * Math.sin(b * 22) * Math.exp(-b * 9)); }
+          if (tt >= te) { const b = tt - te; p.y += Math.max(0, 0.9 * Math.sin(b * 22) * Math.exp(-b * 9)); up = true; }
         }
+        // (face up and still: one pass of the light down it, once - see
+        // .r3t-sync)
+        if (up !== !!obj.userData.synced) { obj.userData.synced = up; el.classList.toggle('r3t-sync', up && !fo.reduced); }
         placeCard(obj, tt);
       });
     };
     const poseHeld = tt => {
       cardObjs.forEach((obj, i) => {
         if (!obj.userData.held) return;
-        // (in the shoe arm's hand until the pass, then in the other's)
-        if (tt < deal.cards[i].hand) cardInShoeHand(arms[0].now, cardPose); else cardIn(arms[1].now, 0, cardPose);
+        const c = deal.cards[i];
+        // (in the shoe arm's hand until it is flicked away, then in the
+        // other's)
+        if (tt < (c.toss ? c.toss.t0 : c.hand)) cardInShoeHand(arms[0].now, cardPose); else cardIn(arms[1].now, 0, cardPose);
         placeCard(obj, tt);
       });
     };
+    // A card under your finger (or the pointer) once the deal is done: it
+    // comes up off the felt a centimetre to meet it, its shadow loosening
+    // under it, its gilt edge catching the light (.r3t-hover) - and settles
+    // back when you go. [k, target, from, t0] by card id, as for a lift.
+    const hover = new Map();
+    const hoverAt = (id, tt) => { const H = hover.get(id); if (!H) return 0; H[0] = fo.reduced ? H[1] : smoother(H[2] + (H[1] - H[2]) * clamp01((tt - H[3]) / 0.22)); return H[0]; };
+    const setHover = (id, on) => {
+      const H = hover.get(id), cur = H ? H[0] : 0, want = on ? 1 : 0;
+      if (H && H[1] === want) return;
+      hover.set(id, [cur, want, cur, tNow]);
+      const o = cardObjs.find(x => x.userData.card.id === id);
+      if (o) o.element.classList.toggle('r3t-hover', on);
+      wake();
+    };
     // (the lift toward you, the face toward you, and the lamp's reflection)
     const placeCard = (obj, tt) => {
-      const el = obj.element, p = cardPose.p, q = cardPose.q;
+      const el = obj.element, p = cardPose.p, q = cardPose.q, c = deal.cards[obj.userData.i];
+      // (its weight going into the felt as it lands - pressed, and back,
+      // with a servo's small give: see stampAt)
+      const sa = tt - c.stampAt;
+      let press = 0;
+      // (at its deepest, about 0.06 s in, the card is at 95% - the stamp)
+      if (!fo.reduced && sa >= 0 && sa < 0.18) { press = Math.sin(Math.PI * sa / 0.18) * Math.exp(-sa * 12); p.y -= 0.035 * press; }
+      obj.scale.setScalar((1 - 0.12 * press) / CARD.px);
+      const hk = hoverAt(obj.userData.card.id, tt);
+      if (hk > 0) p.y += (fo.reduced ? 0 : 0.95) * hk;
       const L = lift.get(obj.userData.card.id);
       let lk = 0;
       if (L) {
@@ -2236,6 +2615,8 @@ export async function prepareTable(opts) {
       }
       obj.position.copy(p);
       obj.quaternion.copy(q);
+      shadeCard(obj.userData.i, p, q, true);
+      if ((lk > 0.02) !== el.classList.contains('r3t-lifted')) el.classList.toggle('r3t-lifted', lk > 0.02);
       // the face toward the camera is the face that shows
       const n = V(0, 0, 1).applyQuaternion(q), toCam = camLocal.p.clone().sub(p);
       el.classList.toggle('r3t-up', n.dot(toCam) > 0);
@@ -2345,12 +2726,12 @@ export async function prepareTable(opts) {
       // still - it comes in over the first few hundredths of the move and
       // goes over the last - so a hand setting a card down or lifting off
       // the felt never dips the card or its fingertips into it)
-      const fade = free ? (sg.s0 ? 1 : smoother(kk / 0.15)) * (sg.s1 ? 1 : smoother((1 - kk) / 0.15)) : 0;
+      const fade = free && !sg.stiff ? (sg.s0 ? 1 : smoother(kk / 0.15)) * (sg.s1 ? 1 : smoother((1 - kk) / 0.15)) : 0;
       return { hp, f: fingersAt(sg, kk), free, el: lerp(sg.el0, sg.el1, smoother(kk)), fade };
     };
     const wobble = new THREE.Quaternion(), wobE = new THREE.Euler();
     const mid = V(0, 0, 0);
-    let glow = 0, prevT = 0, farthest = 0;
+    let glow = 0, prevT = 0, farthest = 0, farthestAt = null, lowest = { y: Infinity };
     const poseHand = tt => {
       const { y, open } = rising(tt);
       const shown = y > ARM.down + 1;
@@ -2382,7 +2763,8 @@ export async function prepareTable(opts) {
         a.hand.quaternion.copy(hp.q);
         a.wrist.copy(WRIST).applyQuaternion(hp.q).add(hp.p);
         const reach = a.arm.pose(shoulders[k], a.wrist, hp.q, side, tt, shown ? 1 : 0, elbowWay(hs[k].el, a.side, a.pref));
-        if (shown && y >= ARM.up - 0.01) farthest = Math.max(farthest, reach);
+        if (shown && y >= ARM.up - 0.01 && reach > farthest) { farthest = reach; farthestAt = { t: +tt.toFixed(3), arm: k, wrist: a.wrist.toArray().map(v => +v.toFixed(1)), tips: hp.p.toArray().map(v => +v.toFixed(1)) }; }
+        if (shown && y >= ARM.up - 0.01 && a.wrist.y < lowest.y) lowest = { y: +a.wrist.y.toFixed(2), t: +tt.toFixed(3), arm: k };
         a.hand.visible = a.arm.group.visible = shown;
         // the fingers: opening to reach, closed on the card it carries,
         // curled to flick one over, opened and spread as it lets go - the
@@ -2411,8 +2793,10 @@ export async function prepareTable(opts) {
       maskIris(open);
       torso.group.visible = shown;
       glow = lerp(glow, shown ? 0.3 + Math.min(0.6, speed / 140) : 0, 0.35);
-      dealerMats.ceramic.emissiveIntensity = glow;
-      dealerMats.circuit.emissiveIntensity = 0.15 + glow * 1.8;
+      // (in the dark, the gold in its circuits glows)
+      const dark = fo.reduced ? 0 : 1 - houseAt(tt);
+      dealerMats.ceramic.emissiveIntensity = glow + 0.5 * dark;
+      dealerMats.circuit.emissiveIntensity = 0.15 + glow * 1.8 + 0.9 * dark;
       dealerMats.pulse.value = tt;
       prevT = tt;
     };
@@ -2433,8 +2817,13 @@ export async function prepareTable(opts) {
       tNow = tt;
       lampUp();
       placeCamera(tt);
-      // the intro's own world keeps time (the stick still drawing the dice)
+      // the intro's own world keeps time (the stick still drawing the dice;
+      // for the Defiant Edge, the room's mirror dimmed round its die)
+      scene.environmentIntensity = envRoom;
+      world.lights.pendant.intensity = pendant0;
       world.stage(introT0 + tt);
+      // (the house lights: down while the machine sulks)
+      lightHouse(tt);
       // (its lights set by stage(): the lens light goes, and the rim light
       // eases down)
       const kf = fo.reduced ? 1 : clamp01(tt / 0.9);
@@ -2451,12 +2840,32 @@ export async function prepareTable(opts) {
       poseCards(tt);
       poseHand(tt);
       poseHeld(tt);
+      // (a card up in front of you: the room behind it falls back - see
+      // .r3t-focus)
+      const stg = world.canvas.parentElement;
+      if (stg && stg.classList.contains('r3t-focus') !== !!focusId) stg.classList.toggle('r3t-focus', !!focusId);
       const uiK = clamp01((tt - FLY + 0.1) / UI_IN);
       css.domElement.style.setProperty('--r3t-in', uiK.toFixed(3));
       css.domElement.classList.toggle('r3t-hide', uiK <= 0);
       if (!arrived && tt >= FLY) { arrived = true; if (fo.onArrive) fo.onArrive(css.domElement); }
     };
-    const drawArms = () => world.lens(() => handGL.render(handScene, camera));
+    // (the machine's first frame drawn unseen, at rest, once its shaders are
+    // compiled: what only a frame makes - its shadow's shaders, its textures
+    // - is made before the rise rather than in its first frames. In the same
+    // task as the frame drawn over it, so it is never on screen.)
+    let armsCompiled = false, armsWarmed = false;
+    // (and once compiled, that frame at once - then the frame on screen again
+    // over it, in the same task - rather than on the next frame the table
+    // draws, which may be the one you tapped for)
+    try { handGL.compileAsync(handScene, camera).catch(() => {}).then(() => { armsCompiled = true; if (!disposed && !armsWarmed) { warmArms(); drawArms(); } }); } catch (e) { armsCompiled = true; }
+    const warmArms = () => {
+      armsWarmed = true;
+      if (fo.reduced) return;
+      poseHand(settleAt + 1);
+      world.lens(() => handGL.render(handScene, camera));
+      poseHand(tNow);
+    };
+    const drawArms = () => { if (!armsWarmed && armsCompiled) warmArms(); world.lens(() => handGL.render(handScene, camera)); };
     const draw = () => {
       world.paint();
       css.render(cssScene, camera);
@@ -2466,10 +2875,14 @@ export async function prepareTable(opts) {
     const show = () => { if (running) draw(); else world.rest(draw); };
     // (busy: the deal, a card lifting or going down, or one still spinning
     // from a flick)
-    const busyUntil = () => Math.max(settleAt, ...[...lift.values()].map(L => L[3] + 0.5), spinning() ? tNow + 1 : 0, gestureEnd);
+    const busyUntil = () => Math.max(settleAt, ...[...lift.values()].map(L => L[3] + 0.5), ...[...hover.values()].map(H => H[3] + 0.3), spinning() ? tNow + 1 : 0, gestureEnd);
     let woke = 0;
+    // (about 60 frames a second, evenly, on any screen: see makePacer in
+    // intro.mjs)
+    const pacer = world.pacer ? world.pacer() : null, armsPacer = world.pacer ? world.pacer() : null;
     const loop = now => {
       if (!running) return;
+      if (pacer && !pacer.due(now)) { raf = requestAnimationFrame(loop); return; }
       // (slow frames play the shot slower rather than skip through it, down
       // to 10 a second)
       const dt = last ? Math.min(0.1, (now - last) / 1000) : 1 / 60;
@@ -2483,7 +2896,11 @@ export async function prepareTable(opts) {
       draw();
       raf = requestAnimationFrame(loop);
     };
-    const wake = () => { if (disposed || fo.manual) { if (fo.manual) { update(tNow); world.rest(draw); } return; } if (!running) { running = true; last = 0; woke = 0; world.move(); raf = requestAnimationFrame(loop); } };
+    const wake = () => { if (disposed || fo.manual) { if (fo.manual) { update(tNow); world.rest(draw); } return; } if (!running) { running = true; last = 0; woke = 0; if (pacer) pacer.reset(); world.move(); raf = requestAnimationFrame(loop); } };
+    // (a lost context back: its frame drawn again - the table's world first
+    // makes the studio its surfaces mirror again, see intro.mjs)
+    if (world.onRestore) world.onRestore(() => { if (!disposed) show(); });
+    handGL.domElement.addEventListener('webglcontextrestored', () => { if (!disposed) show(); });
 
     // ---- Waiting. Once the deal is done the machine stays up on the table,
     // and while a card you can collect sits there uncollected it lets you
@@ -2510,6 +2927,7 @@ export async function prepareTable(opts) {
       knock: () => ({ per: [[1.15, 0], [1.2, 0], [1.2, 0], [1.1, 0]], thumb: [0.9, 0] })
     };
     const shapes = [[], []];                  // per arm: { t0, t1, fn, fade }
+    (deal.shapes || []).forEach(sh => shapes[sh.k].push({ t0: sh.t0, t1: sh.t1, fn: SHAPES[sh.name], fade: 0.1 }));
     const shapeAt = (k, tt) => {
       const list = shapes[k];
       for (let i = list.length - 1; i >= 0; i--) {
@@ -2536,6 +2954,7 @@ export async function prepareTable(opts) {
     // the hand under way fades out)
     const cutAt = t => {
       for (let i = lifts.length - 1; i >= 0; i--) if (lifts[i].t0 >= t) lifts.splice(i, 1);
+      for (let i = house.length - 1; i >= 0; i--) if (house[i][0] >= t) house.splice(i, 1);
       [0, 1].forEach(k => {
         const S = deal.arms[k];
         while (S.length && S[S.length - 1].t0 >= t) S.pop();
@@ -2628,6 +3047,8 @@ export async function prepareTable(opts) {
         lifts.push({ t0: tS, t1: tS + 1.4, y0: ARM.up, y1: SULK.y, o0: 1, o1: 1, ease: smoother });
         lifts.push({ t0: tS + 1.4, t1: tS + 1.8, y0: SULK.y, y1: SULK.y, o0: 1, o1: SULK.open, ease: smoother });
         [0, 1].forEach(k => upTo(k, tS, tS + 1.8, SULK.y));
+        // (the lights going down as it does)
+        house.push([tS + 0.2, tS + 2.0, houseAt(tS), 0]);
         idle.sulk = true; idle.sinkAt = tS;
         return tS + 1.8;
       },
@@ -2646,7 +3067,10 @@ export async function prepareTable(opts) {
         // (from wherever the sulk or a peek has got to: what they still had
         // planned is dropped)
         const { y, open } = rising(t0);
+        const lit = houseAt(t0);
         cutAt(t0);
+        // (the lights up at once, as it comes)
+        house.push([t0, t0 + 0.55, lit, 1]);
         lifts.push({ t0, t1: t0 + 0.16, y0: y, y1: y, o0: open, o1: 1, ease: smoother });
         lifts.push({ t0: t0 + 0.16, t1: t0 + 0.8, y0: y, y1: ARM.up, o0: 1, o1: 1, ease: backOut });
         const ends = [0, 1].map(k => {
@@ -2661,6 +3085,33 @@ export async function prepareTable(opts) {
       }
     };
     const idle = { since: 0, stage: 0, sulk: false, sinkAt: 0, ready: -1, peekAt: 0, away: false };
+    // The house lights. When the machine sulks down into its port, the room
+    // goes down with it: the lamp to a glow, the room's mirror (the studio
+    // every glossy surface reflects) all but gone, so the brass and the gold
+    // print go dark and the felt goes black; the cards stay as bright as
+    // ever, lying in the dark; the machine, when it peeks out, is only its
+    // edges, drawn by a cool light behind it, and the gold in its circuits,
+    // glowing. A touch brings them straight back up with it. [t0, t1, from,
+    // to] segments, the house's level at 1 (all up) to 0 (down).
+    const house = [];
+    const houseAt = tt => { let L = null; for (const h of house) if (h[0] <= tt) L = h; if (!L) return 1; return lerp(L[2], L[3], smoother((tt - L[0]) / Math.max(1e-4, L[1] - L[0]))); };
+    const hemiRoom = [];
+    scene.traverse(o => { if (o.isHemisphereLight) hemiRoom.push([o, o.intensity]); });
+    const envRoom = scene.environmentIntensity;
+    const lightHouse = tt => {
+      const L = fo.reduced ? 1 : houseAt(tt), d = 1 - L;
+      scene.environmentIntensity *= lerp(0.015, 1, L);
+      if (d === 0 && !lightHouse.was) return;
+      lightHouse.was = d > 0;
+      lampLight.intensity *= lerp(0.1, 1, L);
+      lampGlow.material.color.multiplyScalar(lerp(0.3, 1, L));
+      hemiRoom.forEach(([o, i]) => { o.intensity = i * lerp(0.02, 1, L); });
+      world.lights.pendant.intensity *= lerp(0.15, 1, L);
+      handLights.key.intensity = 2.3 * lerp(0.2, 1, L);
+      handLights.fill.intensity = 0.5 * lerp(0.1, 1, L);
+      handLights.hemi.intensity = 0.55 * lerp(0.08, 1, L);
+      handLights.back.intensity = 2.2 * d;
+    };
     let gestureEnd = 0, armsRaf = 0, armsLast = 0;
     // The arms alone, frame by frame, to the end of what they are doing (the
     // table's own loop, if it starts meanwhile, takes over and draws them):
@@ -2668,6 +3119,7 @@ export async function prepareTable(opts) {
     // last frame, the one that stays, sharp again.
     const armsLoop = now => {
       if (disposed || running) { armsRaf = 0; return; }
+      if (armsPacer && !armsPacer.due(now)) { armsRaf = requestAnimationFrame(armsLoop); return; }
       const dt = armsLast ? Math.min(0.1, (now - armsLast) / 1000) : 1 / 60;
       armsLast = now;
       tNow = Math.min(tNow + dt, gestureEnd);
@@ -2677,7 +3129,7 @@ export async function prepareTable(opts) {
       drawArms();
       armsRaf = done ? 0 : requestAnimationFrame(armsLoop);
     };
-    const playArms = () => { if (fo.manual || running || armsRaf) return; armsLast = 0; armsRaf = requestAnimationFrame(armsLoop); };
+    const playArms = () => { if (fo.manual || running || armsRaf) return; armsLast = 0; if (armsPacer) armsPacer.reset(); armsRaf = requestAnimationFrame(armsLoop); };
     const perform = (name, targets = readyNow()) => {
       if (!targets.length) targets = cardObjs.map((o, i) => i);
       gestureEnd = Math.max(gestureEnd, gestures[name](tNow + 0.02, targets));
@@ -2693,6 +3145,7 @@ export async function prepareTable(opts) {
         // hands for it: the sulk is called off, and the hands go home.)
         if (tNow >= idle.sinkAt) { const t0 = tNow + 0.02; gestureEnd = gestures.pop(t0); wake(); return; }
         for (let i = lifts.length - 1; i >= 0; i--) if (lifts[i].t0 >= tNow) lifts.splice(i, 1);
+        for (let i = house.length - 1; i >= 0; i--) if (house[i][0] >= tNow) house.splice(i, 1);
         idle.sulk = false;
       }
       if (gestureEnd <= tNow + 0.02) return;
@@ -2737,6 +3190,15 @@ export async function prepareTable(opts) {
     // starts over)
     css.domElement.addEventListener('pointerdown', giveWay);
     css.domElement.addEventListener('keydown', giveWay);
+    // (a card under the pointer, or pressed, once the deal is done and no
+    // card is up: see hover)
+    const hoverable = e => { const card = e.target.closest && e.target.closest('.r3t-card'); return card && tNow >= settleAt && !focusId ? card.dataset.id : null; };
+    css.domElement.addEventListener('pointerover', e => { if (e.pointerType === 'mouse') { const id = hoverable(e); if (id) setHover(id, true); } });
+    css.domElement.addEventListener('pointerout', e => { const card = e.target.closest && e.target.closest('.r3t-card'); if (card && !card.contains(e.relatedTarget)) setHover(card.dataset.id, false); });
+    css.domElement.addEventListener('pointerdown', e => { if (e.pointerType !== 'mouse') { const id = hoverable(e); if (id) setHover(id, true); } });
+    const unpress = () => hover.forEach((H, id) => { if (H[1]) setHover(id, false); });
+    css.domElement.addEventListener('pointerup', e => { if (e.pointerType !== 'mouse') unpress(); });
+    css.domElement.addEventListener('pointercancel', unpress);
     // A lifted card goes back down, and its info away.
     const putDown = () => {
       if (focusId) { const F = lift.get(focusId); if (F) { F[2] = F[0]; F[1] = 0; F[3] = tNow; } }
@@ -2864,16 +3326,31 @@ export async function prepareTable(opts) {
       // (lab and tests: which way this deal was dealt, and a turn of the
       // focused card as a drag would give it)
       deal: deal.style,
+      // (lab and tests: how many shaders each canvas has compiled - a count
+      // that grows mid-move is a frame that waits on the GPU)
+      get programs() { return { table: world.renderer.info.programs.length, hand: handGL.info.programs.length }; },
+      // (lab and tests: each card's moments - drawn, flicked and caught,
+      // pitched, laid, turned - in the table's clock)
+      get timing() { return deal.cards.map(c => ({ pull: c.pull, toss: c.toss ? [c.toss.t0, c.toss.t1] : null, pitch: c.pitch ? [c.pitch.t0, c.lay] : null, lay: c.lay, turn: c.turn, turned: turnEnd(c) })); },
       // (lab and tests: the farthest either arm reaches over the whole deal,
       // shoulder to wrist - it must stay under ARM.upper + ARM.fore)
       // (after the first swing out of the upright, which is at full length
       // by design)
-      reach() { const t0 = tNow; farthest = 0; for (let t = dealAt - RISE.swing + DEAL.first; t <= Math.max(settleAt, gestureEnd) + 0.05; t += 1 / 120) poseHand(t); poseHand(t0); return +farthest.toFixed(2); },
+      // (where: reach(true) says when, and which arm)
+      reach(where) { const t0 = tNow; farthest = 0; farthestAt = null; lowest = { y: Infinity }; for (let t = dealAt - RISE.swing + DEAL.first; t <= Math.max(settleAt, gestureEnd) + 0.05; t += 1 / 120) poseHand(t); poseHand(t0); return where ? { reach: +farthest.toFixed(2), at: farthestAt, lowestWrist: lowest } : +farthest.toFixed(2); },
       turnCard(dx, dy) { spinBy(dx, dy); wake(); },
       // (lab: the camera anywhere in the seat's frame, to look a prop over;
       // look() with nothing puts it back in the seat)
       look(eye, aim, fov) { lookAt = eye ? { eye: V(...eye), aim: V(...aim), fov: fov || sv.fov } : null; update(tNow); show(); },
       putDown,
+      // The felt picked in Settings, laid now: the table's and the shot's
+      // cloth, and the print's keyline for it (see FELTS in intro.mjs).
+      setFelt(id) {
+        if (!world.dressFelt) return;
+        world.setFelt(id); world.dressFelt(table.felt, id);
+        if (table.group.userData.printFor) table.group.userData.printFor(table.felt.userData.feltLight || 0);
+        show();
+      },
       // (lab: a gesture now - point, wave, spirit, drum, knock, sulk, peek,
       // pop - at the cards given by index, or the ready ones, and when it
       // runs, in the table's clock)
@@ -2891,6 +3368,18 @@ export async function prepareTable(opts) {
       }
     };
   }
+
+  // Made ready while the intro floats on - its shaders compiled, its
+  // textures uploaded a frame apiece - and only then shown. Its lamp is one
+  // more light in the room, and a light the shaders weren't compiled for
+  // would compile every one of them again in the frame it came on; the
+  // table's own shaders and textures, left to its first frame, would all
+  // land in the first frames of the fly-in.
+  if (o.warm) {
+    await Promise.race([Promise.all(chipLoads), new Promise(res => setTimeout(res, 1500))]);
+    try { await o.warm({ show: [seat], spread: true }); } catch (e) { /* compiled on first draw */ }
+  }
+  seat.visible = true;
 
   return {
     dest,
