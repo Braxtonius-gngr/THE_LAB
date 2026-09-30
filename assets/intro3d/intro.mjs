@@ -648,8 +648,10 @@ const radial = stops => (g, n) => {
 
 // A studio for the reflections: a dark gunmetal room lit by long softbox
 // strips over the table and a broad panel behind the lens - what the
-// glossy dice, brass and felt sheen mirror.
-function studioEnvironment(renderer) {
+// glossy dice, brass and felt sheen mirror. (Exported: the table's dealer
+// has a canvas of its own, which needs the same room in its own context,
+// so its ceramic, gold and glass mirror what the brass beside it does.)
+export function studioEnvironment(renderer) {
   const scene = new THREE.Scene();
   scene.add(new THREE.Mesh(new THREE.BoxGeometry(20, 10, 20), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.018, 0.019, 0.022), side: THREE.BackSide })));
   const panel = (w, h, rgb, k, pos, look) => {

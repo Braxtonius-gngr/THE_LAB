@@ -27,6 +27,7 @@
 
 import * as THREE from '../vendor/three/three.module.js';
 import { CSS3DRenderer, CSS3DObject } from '../vendor/three/three.addons.js';
+import { studioEnvironment } from './intro.mjs';
 
 export const DESTS = ['card'];
 
@@ -359,6 +360,48 @@ function fineSet(set) {
   const brass = finished(set.brass.clone(), 'brushed', 1, 1, 0.18);
   brass.roughness = 0.34;
   return Object.assign({}, set, { brass });
+}
+// The same metal polished: a mirror, no brushing in it - for what a hand
+// rubs or a jeweller buffs (knobs, rollers, rods, feet, bezels), beside
+// the brushed plates, so the two finishes read against each other.
+function polishedOf(mat, roughness = 0.1) {
+  const m = mat.clone();
+  m.normalMap = null; m.roughnessMap = null; m.roughness = roughness;
+  m.needsUpdate = true;
+  return m;
+}
+// Glass and acrylic as they are: what shows on a clear sheet is what it
+// reflects, over whatever is behind it - more of it at a grazing angle
+// (Fresnel), so its faces seen edge-on, and its cut and polished edges,
+// go bright and dense while its face seen square on stays clear. (A
+// transparent material otherwise dims its own reflections by its opacity:
+// here the reflection sets how opaque it is.) edge: its opacity seen
+// edge-on; lift: how strongly a reflection makes it opaque.
+function glassy(mat, edge = 0.85, lift = 1.5) {
+  mat.onBeforeCompile = sh => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', `
+      float gFres = pow(1.0 - saturate(abs(dot(normal, normalize(vViewPosition)))), 3.0);
+      diffuseColor.a = clamp(max(mix(diffuseColor.a, ${edge.toFixed(3)}, gFres), dot(outgoingLight, vec3(0.2126, 0.7152, 0.0722)) * ${lift.toFixed(3)}), 0.0, 1.0);
+      #include <opaque_fragment>`);
+  };
+  mat.customProgramCacheKey = () => `glassy-${edge}-${lift}`;
+  mat.needsUpdate = true;
+  return mat;
+}
+// Several small parts as one mesh (one draw): [[geometry, matrix], ...],
+// each placed by its matrix; positions, normals and uvs.
+function merged(parts) {
+  const pos = [], nor = [], uv = [];
+  parts.forEach(([geo, mx]) => {
+    const g = (geo.index ? geo.toNonIndexed() : geo.clone()).applyMatrix4(mx);
+    pos.push(...g.attributes.position.array); nor.push(...g.attributes.normal.array); uv.push(...g.attributes.uv.array);
+    g.dispose();
+  });
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  out.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  out.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  return out;
 }
 // A rounded rectangle as a Shape (centred), for the phone and the tray.
 function roundRect(w, h, r) {
@@ -698,9 +741,21 @@ function rodBetween(a, b, r, mat) { return laid(new THREE.Mesh(new THREE.Cylinde
 // (the outline of a rounded rectangle on the felt, as points at height y)
 function outline(w, d, r, y, cz = 0) { return roundRect(w, d, r).getSpacedPoints(96).map(p => V(p.x, y, cz - p.y)); }
 let giltM = null;
+// (a deck's gilt edge: a card every few pixels, but never a ruled grid -
+// cards in a stack lie a hair out of true, so a line comes and goes in
+// weight and now and then two sit close or a gap opens)
 function giltEdges() {
   if (!giltM) {
-    const t = canvasTex(64, 256, (c, W, H) => { const g = c.createLinearGradient(0, 0, W, 0); g.addColorStop(0, '#b8914a'); g.addColorStop(0.5, '#e8c77e'); g.addColorStop(1, '#b8914a'); c.fillStyle = g; c.fillRect(0, 0, W, H); c.fillStyle = 'rgba(80,52,16,0.35)'; for (let y = 0; y < H; y += 3) c.fillRect(0, y, W, 1); });
+    const rnd = seeded(808);
+    const t = canvasTex(64, 256, (c, W, H) => {
+      const g = c.createLinearGradient(0, 0, W, 0); g.addColorStop(0, '#b8914a'); g.addColorStop(0.5, '#e8c77e'); g.addColorStop(1, '#b8914a'); c.fillStyle = g; c.fillRect(0, 0, W, H);
+      for (let y = 0; y < H;) {
+        c.fillStyle = `rgba(80,52,16,${(0.2 + rnd() * 0.3).toFixed(2)})`;
+        const lean = (rnd() - 0.5) * 1.2;
+        c.beginPath(); c.moveTo(0, y); c.lineTo(W, y + lean); c.lineTo(W, y + lean + 1); c.lineTo(0, y + 1); c.fill();
+        y += rnd() < 0.08 ? 2 : rnd() < 0.06 ? 5 : 3;
+      }
+    });
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     giltM = new THREE.MeshStandardMaterial({ map: t, metalness: 0.7, roughness: 0.38 });
   }
@@ -712,6 +767,15 @@ function engraved(w, h, draw) {
     c.fillStyle = c.strokeStyle = 'rgba(56,34,8,0.9)';
     draw(c, W, H);
   });
+}
+// An engraved brass face as a material: the engraving's colour, and the
+// same artwork as relief - its cuts sunk into the metal, so the light
+// runs along their walls rather than lying on a printed line.
+function engravedMat(tex, depth = 2.4) {
+  // (the relief placed exactly as the artwork is)
+  const n = embossTex(tex.image, depth); n.repeat.copy(tex.repeat); n.offset.copy(tex.offset);
+  const m = new THREE.MeshStandardMaterial({ map: tex, normalMap: n, metalness: 1, roughness: 0.3 });
+  return finished(m, 'brushed', 1, 1, 0.1);
 }
 function sealTex() {
   return engraved(512, 512, (c, W, H) => {
@@ -728,26 +792,105 @@ function sealTex() {
   });
 }
 
-// The shoe: a lacquered base on brass feet; smoked acrylic walls, their
-// top sloping down to the mouth, edged in brass; the deck inside tilted to
-// the mouth, a lacquered follower with a brass knob behind it; at the mouth
-// a brass plate with a thumb notch over the slot and a roller, the top card
-// out on the tongue; on the back, toward you, the house's engraved seal.
+// The mouth plate's engraving, drawn to the plate as it lies (x across it,
+// -4.85..4.85 cm, y up it, 0.9..2.95): a double rule along the top, broken
+// at the thumb notch, a wave band between them, and over the slot, on
+// either side of the notch, the house and the shoe's number - lettered as
+// a salon's plate is, small, spaced, in capitals.
+function plateTex() {
+  const t = engraved(1024, 224, (c, W, H) => {
+    const px = W / 9.7, py = H / 2.05, X = x => (x + 4.85) * px, Y = y => (2.95 - y) * py;
+    const notch = 1.2 * px + 10;
+    c.lineCap = 'round';
+    // the rules and the wave between them, stopping short of the notch
+    [[0.1, 2.2], [0.24, 1.1], [0.52, 1.1]].forEach(([d, w]) => {
+      c.lineWidth = w;
+      c.beginPath(); c.moveTo(X(-4.72), d * py); c.lineTo(W / 2 - notch, d * py); c.moveTo(W / 2 + notch, d * py); c.lineTo(X(4.72), d * py); c.stroke();
+    });
+    c.lineWidth = 0.9;
+    for (const [x0, x1] of [[X(-4.72), W / 2 - notch], [W / 2 + notch, X(4.72)]]) {
+      for (const ph of [0, Math.PI]) {
+        c.beginPath();
+        for (let x = x0; x <= x1; x += 1.5) { const yy = 0.38 * py + Math.sin((x - x0) / 7 + ph) * 0.1 * py; x === x0 ? c.moveTo(x, yy) : c.lineTo(x, yy); }
+        c.stroke();
+      }
+    }
+    // the lettering, over the slot on either side of the notch
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.font = `600 ${0.26 * py}px Georgia, "Times New Roman", serif`;
+    const spaced = (txt, x, y, sp) => { const w = [...txt].reduce((s, ch) => s + c.measureText(ch).width + sp, -sp); let at = x - w / 2; for (const ch of txt) { const cw = c.measureText(ch).width; c.fillText(ch, at + cw / 2, y); at += cw + sp; } };
+    spaced('DAILY ROLL OVER', X(-2.98), Y(2.02), 3.5);
+    spaced('SALON PRIVÉ', X(2.98), Y(2.02), 3.5);
+    c.font = `italic 400 ${0.22 * py}px Georgia, "Times New Roman", serif`;
+    spaced('baccarat', X(-2.95), Y(1.62), 3);
+    spaced('shoe Nº 08', X(2.95), Y(1.62), 3);
+    // a lozenge either side of the notch
+    [-1, 1].forEach(sd => { const x = W / 2 + sd * (notch + 16), y = 0.38 * py; c.beginPath(); c.moveTo(x, y - 6); c.lineTo(x + 6, y); c.lineTo(x, y + 6); c.lineTo(x - 6, y); c.closePath(); c.fill(); });
+  });
+  // (the plate's face has its uvs in cm: put the artwork on it - turned
+  // about, as that face looks out of the shoe's mouth, so it reads the
+  // right way round to the dealer drawing the cards)
+  t.repeat.set(-1 / 9.7, 1 / 2.05); t.offset.set(0.5, -0.9 / 2.05);
+  return t;
+}
+// A contact shadow: where a thing stands on the felt the room's light can't
+// get under it. A soft dark pad under its footprint (w x d, rounded r,
+// fading over `soft` cm past it), darker at its feet [[x, z], ...]; laid a
+// hair over the felt.
+function contactShadow(w, d, r, soft, feet = [], dark = 0.55) {
+  const N = 128, W = w + 2 * soft, D = d + 2 * soft;
+  const c = document.createElement('canvas'); c.width = c.height = N;
+  const ctx = c.getContext('2d'), img = ctx.createImageData(N, N), px = img.data;
+  const sm = x => { x = clamp01(x); return x * x * (3 - 2 * x); };
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const x = (i + 0.5) / N * W - W / 2, z = (j + 0.5) / N * D - D / 2;
+    // (distance outside the rounded footprint)
+    const qx = Math.abs(x) - (w / 2 - r), qz = Math.abs(z) - (d / 2 - r);
+    const out = Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0) - r;
+    let a = 0.62 * (1 - sm((out + soft * 0.35) / soft));
+    feet.forEach(([fx, fz]) => { a = Math.max(a, 1 - sm(Math.hypot(x - fx, z - fz) / 0.75)); });
+    const k = (j * N + i) * 4; px[k] = px[k + 1] = px[k + 2] = Math.round(a * 255); px[k + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.NoColorSpace;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(W, D), new THREE.MeshBasicMaterial({ color: 0x000000, alphaMap: t, transparent: true, opacity: dark, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+  m.rotation.x = -Math.PI / 2; m.position.y = 0.03; m.renderOrder = 1;
+  return m;
+}
+
+// The shoe, held to a baccarat shoe from a Macau private salon: a base in
+// black piano lacquer on polished brass feet; smoked acrylic walls, their
+// top sloping down to the mouth, polished brass along every edge; the deck
+// inside tilted to the mouth, a lacquered follower with a polished knob
+// behind it; at the mouth a brushed brass plate, engraved with the house
+// and the shoe's number, a thumb notch over the slot and a polished roller,
+// the top card out on the tongue; on the back, toward you, the house's
+// seal, its engraving cut into the metal. Finishes set against each other:
+// what a hand rubs or a jeweller buffs is mirror-polished, the plates are
+// brushed; the acrylic is clear where you look through it square on and
+// dense and bright where you see it edge-on, its polished edges catching
+// the lamp; the lacquer is a hard clear coat over soft black. It stands on
+// the felt: a soft shadow under it, darkest at its feet.
 // (Its mouth is its -z end; the cards come out at local z -11.6, y 0.9.)
 function buildShoe(set) {
   const g = new THREE.Group();
-  const acrylic = new THREE.MeshPhysicalMaterial({ color: 0x3a302a, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.3, clearcoat: 1, clearcoatRoughness: 0.03, depthWrite: false, side: THREE.DoubleSide });
+  const acrylic = glassy(new THREE.MeshPhysicalMaterial({ color: 0x2e2620, roughness: 0.04, metalness: 0, transparent: true, opacity: 0.26, clearcoat: 1, clearcoatRoughness: 0.02, depthWrite: false, side: THREE.DoubleSide }), 0.72, 1.1);
   const lac = finished(new THREE.MeshPhysicalMaterial({ color: 0x0c0a0a, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.08 }), 'peel', 1 / 3, 1 / 3, 0.05);
+  const polish = polishedOf(set.brass);
   const X = 4.85, Z0 = -10.2, Z1 = 7.0, Y0 = 0.9;
-  // feet and base
-  [[-X + 0.5, Z0 + 0.6], [X - 0.5, Z0 + 0.6], [-X + 0.5, Z1 - 0.6], [X - 0.5, Z1 - 0.6]].forEach(([x, z]) => { const f = new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 10), set.brass); f.scale.y = 0.7; f.position.set(x, 0.28, z); g.add(f); });
+  // feet and base, and the shadow it stands in
+  const feet = [[-X + 0.5, Z0 + 0.6], [X - 0.5, Z0 + 0.6], [-X + 0.5, Z1 - 0.6], [X - 0.5, Z1 - 0.6]];
+  feet.forEach(([x, z]) => { const f = new THREE.Mesh(new THREE.SphereGeometry(0.4, 20, 12), polish); f.scale.y = 0.7; f.position.set(x, 0.28, z); g.add(f); });
   const baseShape = roundRect(2 * X + 0.3, Z1 - Z0 + 2.3, 0.9);
-  const base = slab(baseShape, Y0 - 0.35, lac, 0.12); base.position.set(0, 0.35, (Z0 - 2 + Z1) / 2); g.add(base);
-  g.add(tube(outline(2 * X + 0.34, Z1 - Z0 + 2.34, 0.92, Y0 - 0.02, (Z0 - 2 + Z1) / 2), 0.05, set.brass, true));
-  // the walls: the side profile, extruded across
+  const cz = (Z0 - 2 + Z1) / 2;
+  const base = slab(baseShape, Y0 - 0.35, lac, 0.12); base.position.set(0, 0.35, cz); g.add(base);
+  { const sh = contactShadow(2 * X + 0.3, Z1 - Z0 + 2.3, 0.9, 1.6, feet.map(([x, z]) => [x, z - cz])); sh.position.z = cz; g.add(sh); }
+  g.add(tube(outline(2 * X + 0.34, Z1 - Z0 + 2.34, 0.92, Y0 - 0.02, cz), 0.05, polish, true));
+  // the walls: the side profile, extruded across (its edges rounded over
+  // and polished, so each catches a line of light)
   const side = new THREE.Shape();
   side.moveTo(Z0, Y0); side.lineTo(Z1, Y0); side.lineTo(Z1, 6.1); side.quadraticCurveTo(Z1, 6.9, Z1 - 0.8, 6.9); side.lineTo(Z0 + 1.8, 3.5); side.quadraticCurveTo(Z0, 3.1, Z0, 2.7); side.closePath();
-  const sideGeo = new THREE.ExtrudeGeometry(side, { depth: 0.26, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.03, bevelSegments: 2, curveSegments: 10 });
+  const sideGeo = new THREE.ExtrudeGeometry(side, { depth: 0.2, bevelEnabled: true, bevelThickness: 0.06, bevelSize: 0.06, bevelSegments: 3, curveSegments: 12 });
   sideGeo.rotateY(-Math.PI / 2);         // (profile x -> z; across -> -x)
   [X, -X + 0.32].forEach(x => { const w = new THREE.Mesh(sideGeo, acrylic); w.position.x = x; g.add(w); });
   const back = new THREE.Mesh(new THREE.BoxGeometry(2 * X - 0.6, 6.1 - Y0, 0.28), acrylic); back.position.set(0, (6.1 + Y0) / 2, Z1 - 0.14); g.add(back);
@@ -756,13 +899,13 @@ function buildShoe(set) {
   lid.position.copy(lidA).lerp(lidB, 0.5); lid.rotation.x = -Math.atan2(lidB.y - lidA.y, lidB.z - lidA.z); g.add(lid);
   // (the lid's top, front to back, for a hand to rest on)
   g.userData.lid = [lidA.clone().add(V(0, 0.12, 0)), lidB.clone().add(V(0, 0.12, 0))];
-  // brass along the edges
+  // polished brass along the edges
   [X - 0.05, -X + 0.05].forEach(x => {
-    g.add(rodBetween(V(x, lidA.y + 0.05, lidA.z), V(x, lidB.y + 0.05, lidB.z), 0.11, set.brass));
-    g.add(rodBetween(V(x, Y0, Z1 - 0.05), V(x, 6.2, Z1 - 0.05), 0.11, set.brass));
-    g.add(rodBetween(V(x, Y0, Z0 + 0.05), V(x, 2.8, Z0 + 0.05), 0.11, set.brass));
+    g.add(rodBetween(V(x, lidA.y + 0.05, lidA.z), V(x, lidB.y + 0.05, lidB.z), 0.11, polish));
+    g.add(rodBetween(V(x, Y0, Z1 - 0.05), V(x, 6.2, Z1 - 0.05), 0.11, polish));
+    g.add(rodBetween(V(x, Y0, Z0 + 0.05), V(x, 2.8, Z0 + 0.05), 0.11, polish));
   });
-  g.add(rodBetween(V(-X, 6.62, Z1 - 0.3), V(X, 6.62, Z1 - 0.3), 0.14, set.brass));
+  g.add(rodBetween(V(-X, 6.62, Z1 - 0.3), V(X, 6.62, Z1 - 0.3), 0.14, polish));
   // the deck, tilted down to the mouth, and the follower behind it
   const backM = new THREE.MeshStandardMaterial({ map: backTex(), roughness: 0.5 });
   const edgeM = giltEdges();
@@ -770,20 +913,24 @@ function buildShoe(set) {
   deck.rotation.x = -7 * DEG; deck.position.set(0, Y0 + 1.75, Z0 + 5.4); g.add(deck);
   const follower = new THREE.Mesh(new THREE.BoxGeometry(7.2, 3.8, 2.0), lac);
   follower.rotation.x = -7 * DEG; follower.position.set(0, Y0 + 2.4, Z0 + 11.1); g.add(follower);
-  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 1.2, 12), set.brass); stem.position.set(0, Y0 + 4.8, Z0 + 11.25); g.add(stem);
-  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.55, 20, 14), set.brass); knob.position.set(0, Y0 + 5.5, Z0 + 11.25); g.add(knob);
-  // the mouth: a brass plate with a thumb notch, over the slot, a roller
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 1.2, 16), polish); stem.position.set(0, Y0 + 4.8, Z0 + 11.25); g.add(stem);
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.55, 28, 18), polish); knob.position.set(0, Y0 + 5.5, Z0 + 11.25); g.add(knob);
+  // the mouth: a brushed, engraved plate with a thumb notch, over the slot,
+  // a polished roller
   const plate = new THREE.Shape();
   plate.moveTo(-X, Y0); plate.lineTo(-3.4, Y0); plate.lineTo(-3.4, 1.38); plate.lineTo(3.4, 1.38); plate.lineTo(3.4, Y0); plate.lineTo(X, Y0);
   plate.lineTo(X, 2.95); plate.lineTo(1.2, 2.95); plate.absarc(0, 2.95, 1.2, 0, Math.PI, true); plate.lineTo(-X, 2.95); plate.closePath();
   const plateGeo = new THREE.ExtrudeGeometry(plate, { depth: 0.22, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.05, bevelSegments: 2, curveSegments: 16 });
-  const face = new THREE.Mesh(plateGeo, set.brass); face.position.z = Z0 - 0.28; g.add(face);
-  const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 7.0, 20), set.brass); roller.rotation.z = Math.PI / 2; roller.position.set(0, 1.62, Z0 - 0.62); g.add(roller);
+  // (the engraving on its faces, plain brushed brass on its edges: the
+  // extrusion's groups are its faces, then its sides)
+  const face = new THREE.Mesh(plateGeo, [engravedMat(plateTex(), 2.0), set.brass]); face.position.z = Z0 - 0.28; g.add(face);
+  const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 7.0, 28), polish); roller.rotation.z = Math.PI / 2; roller.position.set(0, 1.62, Z0 - 0.62); g.add(roller);
   // the top card, out on the tongue, ready to be drawn
   const card = new THREE.Mesh(new THREE.BoxGeometry(6.35, 0.03, 8.89), [edgeM, edgeM, backM, edgeM, edgeM, edgeM]);
   card.position.set(0, Y0 + 0.03, Z0 + 1.5); card.rotation.x = 2 * DEG; card.castShadow = true; g.add(card);
-  // the seal on the back, toward you
-  const seal = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.35, 0.14, 48), [set.brass, finished(new THREE.MeshStandardMaterial({ map: sealTex(), metalness: 1, roughness: 0.34 }), 'brushed', 1, 1, 0.1), set.brass]);
+  // the seal on the back, toward you, its engraving cut into it, in a
+  // polished rim
+  const seal = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.35, 0.14, 64), [polish, engravedMat(sealTex(), 2.6), polish]);
   seal.rotation.set(Math.PI / 2, Math.PI / 2, 0); seal.position.set(0, 3.5, Z1 + 0.1); g.add(seal);
   return g;
 }
@@ -965,13 +1112,17 @@ function elbowWay(k, side, out) {
 // the wrist (J6's centre), in the hand's frame: behind the heel of the palm,
 // past the tool flange
 const WRIST = V(0, 0.6, -15.0);
-// Gold traces on ceramic (glow: the same traces alone, for the light in them).
-function circuitTex(glow) {
+// Gold traces on ceramic. kind: false the colour (white glaze, the gold
+// inlaid in it); true the same traces alone, for the light in them; 'rm'
+// the traces as metal - roughness in green, metalness in blue - so the
+// inlay is gold, a mirror under the glaze, not paint on it.
+function circuitTex(kind) {
+  const glow = kind === true, rm = kind === 'rm';
   let seed = 20260928;
   const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
   const t = canvasTex(512, 256, (c, W, H) => {
-    c.fillStyle = glow ? '#000000' : '#f4f1eb'; c.fillRect(0, 0, W, H);
-    c.strokeStyle = c.fillStyle = glow ? '#ffd48c' : '#b08745';
+    c.fillStyle = glow ? '#000000' : rm ? 'rgb(255,255,0)' : '#f4f1eb'; c.fillRect(0, 0, W, H);
+    c.strokeStyle = c.fillStyle = glow ? '#ffd48c' : rm ? 'rgb(255,120,255)' : '#caa25e';
     c.lineWidth = 1.5; c.lineJoin = 'round'; c.lineCap = 'round';
     // buses: three traces running together, then single runs breaking off
     for (let b = 0; b < 4; b++) {
@@ -992,12 +1143,160 @@ function circuitTex(glow) {
       c.beginPath(); c.arc(x, y, 2.4, 0, 7); c.stroke();
     }
   });
+  if (rm) t.colorSpace = THREE.NoColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return t;
 }
+// A watch's movement, under each joint's crystal, as the caseback of a
+// Swiss watch shows one: a rhodium plate finished in Côtes de Genève -
+// broad stripes, each brushed across in shallow arcs by the turning tool,
+// so the light runs down it in bands - a gold rotor over half of it,
+// finished the same, perlage (overlapping circles of graining) round the
+// centre, rubies in gold settings, blued screws with their slots every
+// which way, and round the edge a gold ring engraved and filled. Its
+// colour, its relief (made into a normal map), its finish (roughness in
+// green, metalness in blue: the rubies and the filled engraving are not
+// metal, and the grained plate is a frosted metal that also scatters a
+// little of the lamp, so it reads silver in a dim room, not black) and the rubies alone (the light in them). Made once; each joint
+// shows it turned its own way.
+let MOVEMENT = null;
+function movementTex() {
+  if (MOVEMENT) return MOVEMENT;
+  const N = 512, O = N / 2, R = N / 2;
+  const layer = () => { const cv = document.createElement('canvas'); cv.width = cv.height = N; return cv; };
+  const col = layer(), hgt = layer(), fin = layer(), lit = layer();
+  const C = col.getContext('2d'), H = hgt.getContext('2d'), F = fin.getContext('2d'), L = lit.getContext('2d');
+  const rnd = seeded(417);
+  const gray = v => { const k = Math.round(v * 255); return `rgb(${k},${k},${k})`; };
+  C.fillStyle = '#ccd0d5'; C.fillRect(0, 0, N, N);
+  H.fillStyle = gray(0.5); H.fillRect(0, 0, N, N);
+  F.fillStyle = 'rgb(255,100,180)'; F.fillRect(0, 0, N, N);
+  L.fillStyle = '#000'; L.fillRect(0, 0, N, N);
+  const clipped = (path, fn) => { [C, H, F].forEach(g => { g.save(); g.beginPath(); path(g); g.clip(); }); fn(); [C, H, F].forEach(g => g.restore()); };
+  const disc = (r, a0 = 0, a1 = Math.PI * 2, r0 = 0) => g => { g.arc(O, O, r, a0, a1); if (r0) g.arc(O, O, r0, a1, a0, true); else g.lineTo(O, O); g.closePath(); };
+  // Côtes de Genève over whatever is clipped: stripes W px wide across the
+  // angle ang, each struck with arcs of a tool of radius Rt, a little
+  // brighter and darker in turn; a fine ridge where one stripe's cut ran
+  // over the last
+  const cotes = (light, dark, ang, Wd = 34, Rt = 44) => {
+    const ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux;
+    for (let k = -9; k <= 9; k++) {
+      const sx = O + nx * k * Wd, sy = O + ny * k * Wd;
+      // (each stripe light along one side and darker along the other, as
+      // the arcs turn their faces to the light: the broad banding that
+      // reads across a room)
+      const band = g => { g.beginPath(); [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([a, b], i) => { const x = sx + nx * a * Wd / 2 + ux * b * R * 2, y = sy + ny * a * Wd / 2 + uy * b * R * 2; i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.closePath(); };
+      const gr = C.createLinearGradient(sx - nx * Wd / 2, sy - ny * Wd / 2, sx + nx * Wd / 2, sy + ny * Wd / 2);
+      gr.addColorStop(0, light); gr.addColorStop(0.55, light); gr.addColorStop(1, dark);
+      C.fillStyle = gr; band(C); C.fill();
+      const hr = H.createLinearGradient(sx - nx * Wd / 2, sy - ny * Wd / 2, sx + nx * Wd / 2, sy + ny * Wd / 2);
+      hr.addColorStop(0, gray(0.42)); hr.addColorStop(1, gray(0.58));
+      H.fillStyle = hr; band(H); H.fill();
+      // (the fine arcs of the tool across it)
+      for (let u = -R * 1.5; u <= R * 1.5; u += 2.5) {
+        const lvl = ((u / 2.5) & 1);
+        C.strokeStyle = lvl ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)'; H.strokeStyle = lvl ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
+        [C, H].forEach(g => {
+          g.lineWidth = 1.4; g.beginPath();
+          for (let s = -Wd / 2; s <= Wd / 2 + 0.1; s += Wd / 8) {
+            const bow = Rt - Math.sqrt(Rt * Rt - s * s);
+            const x = sx + ux * (u + bow) + nx * s, y = sy + uy * (u + bow) + ny * s;
+            s === -Wd / 2 ? g.moveTo(x, y) : g.lineTo(x, y);
+          }
+          g.stroke();
+        });
+      }
+      // (and a fine ridge where this stripe's cut ran over the last)
+      H.strokeStyle = gray(0.78); H.lineWidth = 1.6;
+      H.beginPath(); H.moveTo(sx + nx * Wd / 2 - ux * R * 2, sy + ny * Wd / 2 - uy * R * 2); H.lineTo(sx + nx * Wd / 2 + ux * R * 2, sy + ny * Wd / 2 + uy * R * 2); H.stroke();
+    }
+  };
+  // the plate
+  clipped(disc(R * 0.86), () => cotes('#d2d6db', '#b4b9bf', -0.52));
+  // perlage round the centre (on the half the rotor leaves open)
+  clipped(disc(R * 0.46, Math.PI * 0.95, Math.PI * 2.05, R * 0.16), () => {
+    for (let k = 0; k < 150; k++) {
+      const a = k * 2.39996, r = R * 0.16 + (R * 0.3) * Math.sqrt(k / 150);
+      const x = O + Math.cos(a) * r, y = O + Math.sin(a) * r;
+      C.fillStyle = '#c9cdd2'; C.beginPath(); C.arc(x, y, 13, 0, 7); C.fill();
+      for (let rr = 13; rr > 1; rr -= 2.5) {
+        C.strokeStyle = (rr / 2.5 | 0) % 2 ? '#d8dce0' : '#b6bbc1'; C.lineWidth = 1.3; C.beginPath(); C.arc(x, y, rr, 0, 7); C.stroke();
+        H.strokeStyle = gray((rr / 2.5 | 0) % 2 ? 0.68 : 0.32); H.lineWidth = 1.3; H.beginPath(); H.arc(x, y, rr, 0, 7); H.stroke();
+      }
+    }
+  });
+  // settings and rubies, blued screws, on the open half
+  const ruby = (x, y) => {
+    C.fillStyle = '#d7b46c'; C.beginPath(); C.arc(x, y, 12, 0, 7); C.fill();
+    H.fillStyle = gray(0.75); H.beginPath(); H.arc(x, y, 12, 0, 7); H.fill();
+    F.fillStyle = 'rgb(255,50,255)'; F.beginPath(); F.arc(x, y, 12, 0, 7); F.fill();
+    const g = C.createRadialGradient(x - 1.6, y - 1.6, 0, x, y, 5.2); g.addColorStop(0, '#ff8a98'); g.addColorStop(0.35, '#b3122c'); g.addColorStop(1, '#4a0510');
+    C.fillStyle = g; C.beginPath(); C.arc(x, y, 5.2, 0, 7); C.fill();
+    const hg = H.createRadialGradient(x, y, 0, x, y, 5.2); hg.addColorStop(0, gray(0.95)); hg.addColorStop(1, gray(0.6));
+    H.fillStyle = hg; H.beginPath(); H.arc(x, y, 5.2, 0, 7); H.fill();
+    F.fillStyle = 'rgb(255,14,0)'; F.beginPath(); F.arc(x, y, 5.2, 0, 7); F.fill();
+    L.fillStyle = '#ffffff'; L.beginPath(); L.arc(x, y, 4.4, 0, 7); L.fill();
+  };
+  const screw = (x, y, r = 9) => {
+    const g = C.createRadialGradient(x - r * 0.35, y - r * 0.35, 0, x, y, r); g.addColorStop(0, '#6f8fd8'); g.addColorStop(0.6, '#2c4c9e'); g.addColorStop(1, '#172a5c');
+    C.fillStyle = g; C.beginPath(); C.arc(x, y, r, 0, 7); C.fill();
+    const hg = H.createRadialGradient(x, y, 0, x, y, r); hg.addColorStop(0, gray(0.85)); hg.addColorStop(1, gray(0.55));
+    H.fillStyle = hg; H.beginPath(); H.arc(x, y, r, 0, 7); H.fill();
+    F.fillStyle = 'rgb(255,36,255)'; F.beginPath(); F.arc(x, y, r, 0, 7); F.fill();
+    const a = rnd() * Math.PI, dx = Math.cos(a) * r * 0.85, dy = Math.sin(a) * r * 0.85;
+    [C, H].forEach(gg => { gg.strokeStyle = gg === C ? '#0b1022' : gray(0.3); gg.lineWidth = 2.4; gg.beginPath(); gg.moveTo(x - dx, y - dy); gg.lineTo(x + dx, y + dy); gg.stroke(); });
+  };
+  [[0.62, 1.12], [0.4, 1.3], [0.66, 1.5], [0.36, 1.72], [0.58, 1.88]].forEach(([r, a]) => ruby(O + Math.cos(a * Math.PI) * R * r, O + Math.sin(a * Math.PI) * R * r));
+  [[0.74, 1.24], [0.52, 1.6], [0.74, 1.8]].forEach(([r, a]) => screw(O + Math.cos(a * Math.PI) * R * r, O + Math.sin(a * Math.PI) * R * r));
+  // the rotor: half a disc in gold, struck the other way, its heavy rim a
+  // band of its own, lettered along its arc
+  const a0 = -0.05 * Math.PI, a1 = a0 + Math.PI;
+  clipped(disc(R * 0.8, a0, a1, R * 0.1), () => {
+    C.fillStyle = '#d4b06a'; C.fillRect(0, 0, N, N);
+    F.fillStyle = 'rgb(255,86,215)'; F.fillRect(0, 0, N, N);
+    cotes('#e6c886', '#bf9a55', 0.9, 30, 40);
+  });
+  clipped(disc(R * 0.8, a0, a1, R * 0.7), () => {
+    C.fillStyle = '#cfa95f'; C.fillRect(0, 0, N, N); H.fillStyle = gray(0.66); H.fillRect(0, 0, N, N);
+    for (let r = R * 0.7; r < R * 0.8; r += 2.5) { C.strokeStyle = ((r / 2.5) | 0) % 2 ? '#e2c27e' : '#b8924e'; C.lineWidth = 1.4; C.beginPath(); C.arc(O, O, r, a0, a1); C.stroke(); }
+  });
+  [C, H].forEach(g => { g.strokeStyle = g === C ? '#8a6a2c' : gray(0.3); g.lineWidth = 2; g.beginPath(); g.arc(O, O, R * 0.8, a0, a1); g.lineTo(O + Math.cos(a0) * R * 0.1, O + Math.sin(a0) * R * 0.1); g.stroke(); });
+  const arcText = (txt, r, mid, size, fill, ht) => {
+    [C, H, F].forEach(g => { g.font = `600 ${size}px Georgia, "Times New Roman", serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; });
+    const w = [...txt].map(ch => C.measureText(ch).width + size * 0.25), tot = w.reduce((s, x) => s + x, 0);
+    let at = mid - tot / r / 2;
+    [...txt].forEach((ch, i) => {
+      const a = at + w[i] / r / 2;
+      [[C, fill], [H, gray(ht)], [F, 'rgb(255,200,0)']].forEach(([g, st]) => { g.save(); g.translate(O + Math.cos(a) * r, O + Math.sin(a) * r); g.rotate(a + Math.PI / 2); g.fillStyle = st; g.fillText(ch, 0, 0); g.restore(); });
+      at += w[i] / r;
+    });
+  };
+  arcText('DAILY ✦ ROLL ✦ OVER', R * 0.58, a0 + Math.PI / 2, 17, '#5a3e14', 0.3);
+  arcText('SEPT AXES ✦ 21 RUBIS', R * 0.44, a0 + Math.PI / 2, 12, '#5a3e14', 0.3);
+  // the centre: the rotor's arbor, a ruby under a blued screw
+  ruby(O, O);
+  screw(O, O, 7);
+  // the ring round it all: polished gold, engraved and filled
+  clipped(disc(R * 0.98, 0, Math.PI * 2, R * 0.86), () => {
+    C.fillStyle = '#dcb872'; C.fillRect(0, 0, N, N); H.fillStyle = gray(0.62); H.fillRect(0, 0, N, N);
+    F.fillStyle = 'rgb(255,66,235)'; F.fillRect(0, 0, N, N);
+  });
+  [C, H].forEach(g => { g.strokeStyle = g === C ? '#8f6c2e' : gray(0.35); g.lineWidth = 1.5; [R * 0.865, R * 0.975].forEach(r => { g.beginPath(); g.arc(O, O, r, 0, 7); g.stroke(); }); });
+  arcText('ADJUSTED ✦ FIVE ✦ POSITIONS ✦ Nº 0417 ✦ DRO ✦', R * 0.92, -Math.PI / 2, 15, '#3c2a0e', 0.28);
+  arcText('ADJUSTED ✦ FIVE ✦ POSITIONS ✦ Nº 0417 ✦ DRO ✦', R * 0.92, Math.PI / 2, 15, '#3c2a0e', 0.28);
+  const map = new THREE.CanvasTexture(col); map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 8;
+  const rf = new THREE.CanvasTexture(fin); rf.colorSpace = THREE.NoColorSpace; rf.anisotropy = 8;
+  const glow = new THREE.CanvasTexture(lit); glow.colorSpace = THREE.SRGBColorSpace;
+  return (MOVEMENT = { map, normal: embossTex(hgt, 3.2), rf, glow });
+}
 function dealerMaterials() {
-  const ceramic = new THREE.MeshPhysicalMaterial({ color: 0xffffff, map: circuitTex(false), roughness: 0.34, clearcoat: 0.85, clearcoatRoughness: 0.16,
+  // (the gold inlaid in the glaze: gold where the traces are - metal, and
+  // brighter - and each trace a hair proud of the glaze under its clear)
+  const rm = circuitTex('rm');
+  const ceramic = new THREE.MeshPhysicalMaterial({ color: 0xffffff, map: circuitTex(false), roughness: 0.34, roughnessMap: rm, metalness: 1, metalnessMap: rm,
+    clearcoat: 0.85, clearcoatRoughness: 0.12, sheen: 0.4, sheenRoughness: 0.45, sheenColor: new THREE.Color(0xfff0dc),
     emissive: 0xffc877, emissiveMap: circuitTex(true), emissiveIntensity: 0 });
+  { const n = embossTex(circuitTex(true).image, 1.4); n.wrapS = n.wrapT = THREE.RepeatWrapping; ceramic.normalMap = n; ceramic.normalScale = new THREE.Vector2(0.6, 0.6); }
   // (the light in the traces runs in pulses along each part, from the
   // column up to the hand: pulse.value is the time)
   const pulse = { value: 0 };
@@ -1009,21 +1308,35 @@ function dealerMaterials() {
       #endif`);
   };
   ceramic.customProgramCacheKey = () => 'dealer-ceramic-pulse';
-  const plain = new THREE.MeshPhysicalMaterial({ color: 0xf4f1eb, roughness: 0.34, clearcoat: 0.85, clearcoatRoughness: 0.16 });
-  const clear = new THREE.MeshPhysicalMaterial({ color: 0xeaf2f6, roughness: 0.05, transparent: true, opacity: 0.32, clearcoat: 1, depthWrite: false });
+  // (the glaze: a hard clear coat over soft white, and at its thin edges,
+  // seen edge-on, the warm glow of light carried through it)
+  const plain = new THREE.MeshPhysicalMaterial({ color: 0xf4f1eb, roughness: 0.34, clearcoat: 0.85, clearcoatRoughness: 0.12, sheen: 0.4, sheenRoughness: 0.45, sheenColor: new THREE.Color(0xfff0dc) });
+  // (sapphire over each movement and over every knuckle: no colour of its
+  // own, only what it mirrors, and the faint violet-to-green bloom of its
+  // anti-reflective coat at an angle)
+  const clear = glassy(new THREE.MeshPhysicalMaterial({ color: 0x000000, roughness: 0.03, metalness: 0, ior: 1.77, specularIntensity: 1, transparent: true, opacity: 0.05, depthWrite: false,
+    iridescence: 0.45, iridescenceIOR: 1.38, iridescenceThicknessRange: [240, 420] }), 0.7, 1.4);
   const gold = new THREE.MeshStandardMaterial({ color: 0xd6b064, metalness: 1, roughness: 0.26, emissive: 0x6a4512, emissiveIntensity: 0.25 });
-  const graphite = new THREE.MeshStandardMaterial({ color: 0x1c1b1e, metalness: 0.55, roughness: 0.36 });
+  // (the bezels round the crystals: gold, buffed to a mirror)
+  const bright = new THREE.MeshStandardMaterial({ color: 0xe0bc70, metalness: 1, roughness: 0.1 });
+  // (tempered steel, heated to a deep blue: the screws)
+  const blued = new THREE.MeshStandardMaterial({ color: 0x2a4c9c, metalness: 1, roughness: 0.14 });
+  const graphite = new THREE.MeshStandardMaterial({ color: 0x28272b, metalness: 0.6, roughness: 0.34, envMapIntensity: 1.4 });
   const chrome = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, metalness: 1, roughness: 0.12 });
   const led = new THREE.MeshBasicMaterial({ color: 0xffb860 });
-  // (under each drum's glass cap: a disc of gold circuitry on graphite,
-  // lit from within while the arm works)
-  const circuit = new THREE.MeshStandardMaterial({ color: 0x1b1916, metalness: 0.4, roughness: 0.45, map: circuitTex(false), emissive: 0xffc877, emissiveMap: circuitTex(true), emissiveIntensity: 0.3 });
-  circuit.map.repeat.set(0.5, 1); circuit.emissiveMap.repeat.set(0.5, 1);
+  // (under each drum's crystal: the movement - its rubies lit from within
+  // while the arm works)
+  const mv = movementTex();
+  // (a movement is lit by what it faces: turned to the lamp it flashes, and
+  // it is the one thing on the machine a watchmaker's loupe would be on -
+  // it mirrors the room a little more strongly than the glaze does)
+  const circuit = new THREE.MeshStandardMaterial({ map: mv.map, normalMap: mv.normal, normalScale: new THREE.Vector2(1.1, 1.1), roughness: 1, roughnessMap: mv.rf, metalness: 1, metalnessMap: mv.rf,
+    envMapIntensity: 2.2, emissive: 0x6a160c, emissiveMap: mv.glow, emissiveIntensity: 0 });
   // (the glaze's peel under its clear; the graphite bead-blasted, the gold
   // and the chrome brushed)
   finished(ceramic, 'peel', 4, 4, 0.05); finished(plain, 'peel', 4, 4, 0.05);
   finished(graphite, 'blast', 2, 2, 0.3); finished(gold, 'brushed', 1, 1, 0.12); finished(chrome, 'brushed', 1, 1, 0.1);
-  return { ceramic, plain, clear, gold, graphite, chrome, led, circuit, pulse };
+  return { ceramic, plain, clear, gold, bright, blued, graphite, chrome, led, circuit, pulse };
 }
 // A mesh laid from a to b along its own y (a unit-height cylinder, or a
 // capsule built to the length).
@@ -1035,23 +1348,44 @@ function laid(mesh, a, b, unit) {
   return mesh;
 }
 // A drum: one joint's motor housing - a ceramic barrel on its axis (local
-// y), a graphite band round its middle, and at each end a white rim and a
-// shallow glass cap over a disc of gold circuitry, a graphite hub in it.
+// y), a graphite band round its middle, and at each end, like a watch's
+// back, a white rim, a buffed gold bezel and a sapphire crystal over the
+// movement, six blued screws round the rim holding it (each screw's slot
+// its own way, as a watchmaker leaves them). The movement is turned its
+// own way in every drum. (The bezels, the screws and their slots are one
+// mesh each for the whole drum.)
+let drumNo = 0;
 function drum(m, r, len) {
-  const g = new THREE.Group();
+  const g = new THREE.Group(), rnd = seeded(9001 + 7919 * drumNo++);
   g.add(new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 44, 1), m.ceramic));
   g.add(new THREE.Mesh(new THREE.CylinderGeometry(r * 1.015, r * 1.015, len * 0.18, 44, 1, true), m.graphite));
   const R = r * 0.86 / Math.sin(0.5);
+  const hr = r * 0.058;
+  // (a cheese-head screw: a low, slightly domed head; its slot a dark bar
+  // let into the top)
+  const head = new THREE.LatheGeometry([[0.001, 0.5], [0.5, 0.48], [0.85, 0.4], [1, 0.26], [1, 0]].map(([x, y]) => new THREE.Vector2(x * hr, y * hr)), 16);
+  const slot = new THREE.BoxGeometry(hr * 1.6, hr * 0.14, hr * 0.26); slot.translate(0, hr * 0.44, 0);
+  const bezels = [], screws = [], slots = [];
+  const mx = (p, q) => new THREE.Matrix4().compose(p, q, V(1, 1, 1));
   [-1, 1].forEach(s => {
     const rim = new THREE.Mesh(new THREE.TorusGeometry(r * 0.93, r * 0.075, 10, 44), m.plain);
     rim.rotation.x = Math.PI / 2; rim.position.y = s * len / 2; g.add(rim);
-    const disc = new THREE.Mesh(new THREE.CircleGeometry(r * 0.87, 44), m.circuit);
-    disc.rotation.x = -s * Math.PI / 2; disc.position.y = s * (len / 2 + 0.01); g.add(disc);
-    const cap = new THREE.Mesh(new THREE.SphereGeometry(R, 44, 6, 0, Math.PI * 2, 0, 0.5), m.clear);
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(r * 0.87, 48), m.circuit);
+    disc.rotation.set(-s * Math.PI / 2, 0, rnd() * Math.PI * 2); disc.position.y = s * (len / 2 + 0.01); g.add(disc);
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(R, 48, 6, 0, Math.PI * 2, 0, 0.5), m.clear);
     cap.position.y = s * (len / 2 - R * Math.cos(0.5)); if (s < 0) cap.rotation.x = Math.PI; g.add(cap);
-    const hub = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.2, r * 0.2, 0.24, 20), m.graphite);
-    hub.position.y = s * (len / 2 + 0.12); g.add(hub);
+    bezels.push([new THREE.TorusGeometry(r * 0.868, r * 0.03, 8, 56), mx(V(0, s * (len / 2 + 0.015), 0), new THREE.Quaternion().setFromAxisAngle(V(1, 0, 0), Math.PI / 2))]);
+    const up = V(0, s, 0), qUp = new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), up);
+    for (let k = 0; k < 6; k++) {
+      const a = (k + 0.5 + (s > 0 ? 0 : 0.5)) / 6 * Math.PI * 2;
+      const q = new THREE.Quaternion().setFromAxisAngle(up, rnd() * Math.PI).multiply(qUp);
+      const at = V(Math.cos(a) * r * 0.93, s * (len / 2 + r * 0.068), Math.sin(a) * r * 0.93);
+      screws.push([head, mx(at, q)]); slots.push([slot, mx(at, q)]);
+    }
   });
+  const fit = [new THREE.Mesh(merged(bezels), m.bright), new THREE.Mesh(merged(screws), m.blued), new THREE.Mesh(merged(slots), m.graphite)];
+  // (too fine to throw a shadow of their own: see what casts, prepareTable)
+  fit.forEach(f => { f.userData.noShadow = true; g.add(f); });
   return g;
 }
 // (a drum, or anything built along its local y, turned onto an axis)
@@ -1103,6 +1437,9 @@ function buildDealerHand(m, mirror = false) {
     palmShape.lineTo(-w - 0.1, -h + r); palmShape.quadraticCurveTo(-w, -h, -w + r * 0.4, -h); }
   const palmGeo = new THREE.ExtrudeGeometry(palmShape, { depth: 0.5, bevelEnabled: true, bevelThickness: 0.45, bevelSize: 0.4, bevelSegments: 5, curveSegments: 10 });
   palmGeo.center();
+  // (its uvs are in cm: the traces laid across it at the scale they run
+  // along the arm, not squeezed into stripes)
+  scaleUV(palmGeo, 1 / 7, 1 / 7);
   const palm = new THREE.Mesh(palmGeo, m.ceramic); palm.rotation.x = Math.PI / 2; palm.position.set(0, 1.3, -9.7); hand.add(palm);
   // a clear cover over the back of the hand, the gold traces under it,
   // held by four screws
@@ -1655,6 +1992,11 @@ export async function prepareTable(opts) {
     handGL.outputColorSpace = renderer.outputColorSpace;
     handGL.domElement.className = 'r3t-hand';
     const handScene = new THREE.Scene();
+    // (the same studio the table's own brass mirrors, made again in this
+    // canvas's context: without it the glaze, the gold and the crystals
+    // had nothing to reflect but the three lights)
+    handScene.environment = studioEnvironment(handGL);
+    handScene.environmentIntensity = 0.95;
     const handSeat = new THREE.Group();
     handSeat.position.copy(seat.position); handSeat.quaternion.copy(seat.quaternion);
     // (anything of the arm below the felt is inside the table: clipped)
@@ -1739,7 +2081,7 @@ export async function prepareTable(opts) {
     // the shadow's draws, for the same shadow.)
     const extent = new THREE.Vector3();
     [torso.group, ...arms.flatMap(a => [a.hand, a.arm.group])].forEach(g => g.traverse(m => {
-      if (!m.isMesh || m.material.isMeshBasicMaterial || [dealerMats.clear, dealerMats.gold, dealerMats.circuit].includes(m.material)) return;
+      if (!m.isMesh || m.userData.noShadow || m.material.isMeshBasicMaterial || [dealerMats.clear, dealerMats.gold, dealerMats.bright, dealerMats.blued, dealerMats.circuit].includes(m.material)) return;
       const geo = m.geometry;
       if (!geo.boundingBox) geo.computeBoundingBox();
       // (the cable's shape comes later, frame by frame: it casts)
@@ -2655,6 +2997,14 @@ export async function prepareTable(opts) {
       const h0 = 1 - 10 * k3 + 15 * k4 - 6 * k5, h1 = k - 6 * k3 + 8 * k4 - 3 * k5, h2 = -4 * k3 + 7 * k4 - 3 * k5, h3 = 10 * k3 - 15 * k4 + 6 * k5;
       const p = sg.a.p.clone().multiplyScalar(h0).addScaledVector(sg.v0, h1 * dt).addScaledVector(sg.v1, h2 * dt).addScaledVector(sg.b.p, h3);
       p.y += sg.lift * Math.pow(Math.sin(Math.PI * k), 2);
+      // (a wind-up: leaving a stop on a long move, the hand first gives a
+      // few millimetres back the other way, as a servo loop takes up its
+      // slack - level, never down toward the felt - and a little more or
+      // less each time)
+      if (!sg.s0 && !sg.pivot && k < 0.22) {
+        const dx = sg.b.p.x - sg.a.p.x, dz = sg.b.p.z - sg.a.p.z, Lh = Math.hypot(dx, dz);
+        if (Lh > 5) { const w = Math.pow(Math.sin(Math.PI * k / 0.22), 4) * Math.min(0.26, 0.018 * Lh) * (0.7 + 0.6 * jitter(sg.t0, 1)); p.x -= dx / Lh * w; p.z -= dz / Lh * w; }
+      }
       const q = sg.a.q.clone().slerp(sg.b.q, clamp01(h1 * sg.s0 + h2 * sg.s1 + h3));
       // (the wrist's attitude, about the fingertips)
       const e = smoother(k), bump = Math.pow(Math.sin(Math.PI * k), 2);
@@ -2673,6 +3023,9 @@ export async function prepareTable(opts) {
       return { p, q };
     };
     const _attQ = new THREE.Quaternion(), _attE = new THREE.Euler();
+    // (a number 0..1 fixed for a moment in the plan and a channel: the same
+    // move always varies the same way, but no two moves alike)
+    const jitter = (t, ch) => { const v = Math.sin(t * 127.1 + ch * 311.7) * 43758.5453; return v - Math.floor(v); };
     const fingersAt = (sg, k) => { const e = smoother(clamp01(k * 2.4)); return [lerp(sg.f0[0], sg.f1[0], e), lerp(sg.f0[1], sg.f1[1], e)]; };
     // (arm k's fingers alone at any moment)
     const fingersNow = (k, tt) => {
@@ -2720,7 +3073,8 @@ export async function prepareTable(opts) {
       const prev = segAt(S, tt - 0.13);
       if (prev && prev !== sg && prev.settle && tt - prev.t1 < 0.13 && tt >= prev.t1) {
         const dir = prev.b.p.clone().sub(prev.a.p); const L0 = dir.length();
-        if (L0 > 0.5) { const b = tt - prev.t1; hp.p.addScaledVector(dir.multiplyScalar(1 / L0), 0.16 * Math.sin(b * 70) * Math.exp(-b * 32)); }
+        // (no two alike: each settle its own size, pitch and damping)
+        if (L0 > 0.5) { const b = tt - prev.t1, j = jitter(prev.t1, 2), j2 = jitter(prev.t1, 3); hp.p.addScaledVector(dir.multiplyScalar(1 / L0), (0.11 + 0.09 * j) * Math.sin(b * (60 + 20 * j2)) * Math.exp(-b * (28 + 8 * j))); }
       }
       // (how much it trails, below: none where a move starts or ends dead
       // still - it comes in over the first few hundredths of the move and
@@ -2793,6 +3147,9 @@ export async function prepareTable(opts) {
       maskIris(open);
       torso.group.visible = shown;
       glow = lerp(glow, shown ? 0.3 + Math.min(0.6, speed / 140) : 0, 0.35);
+      dealerMats.ceramic.emissiveIntensity = glow;
+      // (the rubies warm only while the arm works, and only a little)
+      dealerMats.circuit.emissiveIntensity = Math.max(0, glow - 0.3) * 2.5;
       // (in the dark, the gold in its circuits glows)
       const dark = fo.reduced ? 0 : 1 - houseAt(tt);
       dealerMats.ceramic.emissiveIntensity = glow + 0.5 * dark;
@@ -3363,6 +3720,7 @@ export async function prepareTable(opts) {
         disposed = true; running = false; cancelAnimationFrame(raf); cancelAnimationFrame(armsRaf);
         clearInterval(clock); clearInterval(idleClock);
         window.removeEventListener('resize', onResize);
+        if (handScene.environment) handScene.environment.dispose();
         handGL.dispose();
         css.domElement.remove();
       }
