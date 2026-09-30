@@ -1996,7 +1996,8 @@ export async function prepareTable(opts) {
     // canvas's context: without it the glaze, the gold and the crystals
     // had nothing to reflect but the three lights)
     handScene.environment = studioEnvironment(handGL);
-    handScene.environmentIntensity = 0.95;
+    const HAND_ENV = 0.95;
+    handScene.environmentIntensity = HAND_ENV;
     const handSeat = new THREE.Group();
     handSeat.position.copy(seat.position); handSeat.quaternion.copy(seat.quaternion);
     // (anything of the arm below the felt is inside the table: clipped)
@@ -3000,8 +3001,9 @@ export async function prepareTable(opts) {
       // (a wind-up: leaving a stop on a long move, the hand first gives a
       // few millimetres back the other way, as a servo loop takes up its
       // slack - level, never down toward the felt - and a little more or
-      // less each time)
-      if (!sg.s0 && !sg.pivot && k < 0.22) {
+      // less each time; not a flick or a catch: those start at speed, or wind
+      // up on purpose)
+      if (!sg.s0 && !sg.pivot && !sg.stiff && sg.v0.lengthSq() < 1e-6 && k < 0.22) {
         const dx = sg.b.p.x - sg.a.p.x, dz = sg.b.p.z - sg.a.p.z, Lh = Math.hypot(dx, dz);
         if (Lh > 5) { const w = Math.pow(Math.sin(Math.PI * k / 0.22), 4) * Math.min(0.26, 0.018 * Lh) * (0.7 + 0.6 * jitter(sg.t0, 1)); p.x -= dx / Lh * w; p.z -= dz / Lh * w; }
       }
@@ -3147,13 +3149,12 @@ export async function prepareTable(opts) {
       maskIris(open);
       torso.group.visible = shown;
       glow = lerp(glow, shown ? 0.3 + Math.min(0.6, speed / 140) : 0, 0.35);
-      dealerMats.ceramic.emissiveIntensity = glow;
-      // (the rubies warm only while the arm works, and only a little)
-      dealerMats.circuit.emissiveIntensity = Math.max(0, glow - 0.3) * 2.5;
-      // (in the dark, the gold in its circuits glows)
+      // (in the dark, the gold in its circuits glows, and the rubies in its
+      // movements warm - otherwise only while the arm works, and only a
+      // little)
       const dark = fo.reduced ? 0 : 1 - houseAt(tt);
       dealerMats.ceramic.emissiveIntensity = glow + 0.5 * dark;
-      dealerMats.circuit.emissiveIntensity = 0.15 + glow * 1.8 + 0.9 * dark;
+      dealerMats.circuit.emissiveIntensity = Math.max(0, glow - 0.3) * 2.5 + 1.2 * dark;
       dealerMats.pulse.value = tt;
       prevT = tt;
     };
@@ -3257,7 +3258,15 @@ export async function prepareTable(opts) {
     // (a lost context back: its frame drawn again - the table's world first
     // makes the studio its surfaces mirror again, see intro.mjs)
     if (world.onRestore) world.onRestore(() => { if (!disposed) show(); });
-    handGL.domElement.addEventListener('webglcontextrestored', () => { if (!disposed) show(); });
+    // (the dealer's copy of the studio is a buffer in its own context, which
+    // the loss empties too: made again before its frame is drawn)
+    handGL.domElement.addEventListener('webglcontextrestored', () => {
+      if (disposed) return;
+      const old = handScene.environment;
+      handScene.environment = studioEnvironment(handGL);
+      if (old) old.dispose();
+      show();
+    });
 
     // ---- Waiting. Once the deal is done the machine stays up on the table,
     // and while a card you can collect sits there uncollected it lets you
@@ -3458,6 +3467,8 @@ export async function prepareTable(opts) {
     const lightHouse = tt => {
       const L = fo.reduced ? 1 : houseAt(tt), d = 1 - L;
       scene.environmentIntensity *= lerp(0.015, 1, L);
+      // (and the dealer's own copy of the room's mirror with it)
+      handScene.environmentIntensity = HAND_ENV * lerp(0.015, 1, L);
       if (d === 0 && !lightHouse.was) return;
       lightHouse.was = d > 0;
       lampLight.intensity *= lerp(0.1, 1, L);
