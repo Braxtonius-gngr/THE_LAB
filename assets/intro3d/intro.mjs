@@ -30,6 +30,7 @@
 import * as THREE from '../vendor/three/three.module.js';
 import { EffectComposer, RenderPass, UnrealBloomPass, OutputPass } from '../vendor/three/three.addons.js';
 import * as P from './physics.mjs';
+import { finish, finished, embossTex } from './finish.mjs';
 
 const HERE = new URL('./', import.meta.url);
 const asset = f => new URL(f, HERE).href;
@@ -1123,17 +1124,42 @@ async function buildIntro(opts, undo, teardown) {
   const edgeSpot = new THREE.SpotLight(0xfff0dc, 0, 0, 0.1, 0.5, 0);
   scene.add(edgeSpot, edgeSpot.target);
 
-  // ---- The cup.
+  // ---- The cup, held to a backgammon cup from a saddlery: pebble-grain
+  // calfskin over a rigid form, its top edge rolled and burnished under a
+  // brass lip, a felt lining, and an enamelled badge set on the curve.
+  //   Across the room: a dark tapered cylinder, its brass lip and bands.
+  //   At arm's length: an even, fine grain with one soft sheen running up
+  //   the side toward the lamp; the leather darker at the rim and the base,
+  //   where hands have held it (burnished), a shade warmer between.
+  //   Pinched in: each pebble of the grain round-topped and glossy, the
+  //   creases between them dull; the badge's enamel under a hard clear
+  //   gloss, its brass rim and letters standing up from it.
+  //   Contact: it stands on the felt with a tight shadow at its foot; the
+  //   dice rattle inside (the shake: see CUP_KEYS).
+  //   Motion: the shake's wind-up, throw and settle are the cup's keys.
+  // (Before, a coarse leather map at 5 cm a tile read as crinkled vinyl.)
   const cup = new THREE.Group();
   {
     const H = CUP.h, rt = CUP.rTop, rb = CUP.rBot;
     const outer = [];
     for (let k = 0; k <= 12; k++) { const y = -H / 2 + (H * k) / 12; outer.push(new THREE.Vector2(rb + (rt - rb) * (k / 12), y)); }
-    const leather = new THREE.MeshStandardMaterial({ color: 0x4a2819, roughness: 0.58, normalMap: leatherN, normalScale: new THREE.Vector2(0.7, 0.7) });
+    // (the burnish: a map down the cup's height, dark at rim and base)
+    const burnish = (() => {
+      const c = document.createElement('canvas'); c.width = 4; c.height = 256;
+      const g = c.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 256);
+      [[0, '#6f6f6f'], [0.1, '#d6d6d6'], [0.45, '#ffffff'], [0.82, '#dcdcdc'], [0.94, '#8a8a8a'], [1, '#5e5e5e']].forEach(([o, col]) => gr.addColorStop(o, col));
+      g.fillStyle = gr; g.fillRect(0, 0, 4, 256);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.flipY = false;
+      return t;
+    })();
+    const leather = new THREE.MeshPhysicalMaterial({ color: 0x6c3a26, map: burnish, roughness: 0.62, sheen: 0.35, sheenRoughness: 0.45, sheenColor: new THREE.Color(0x7a4a34), envMapIntensity: 0.8 });
+    // (the grain at 2.5 cm a tile: round the cup 25 cm, up it 10)
+    finished(leather, 'pebble', 10, 4, 0.9);
     const shell = new THREE.Mesh(new THREE.LatheGeometry(outer, 56), leather);
     shell.castShadow = true; cup.add(shell);
     const inner = outer.map(v => new THREE.Vector2(v.x - 0.32, v.y)).reverse();
-    const lining = new THREE.MeshStandardMaterial({ color: 0x06120c, roughness: 1, side: THREE.DoubleSide });
+    // (the lining: a deep green baize, its nap soaking up the light)
+    const lining = new THREE.MeshPhysicalMaterial({ color: 0x06120c, roughness: 1, sheen: 0.8, sheenRoughness: 0.6, sheenColor: new THREE.Color(0x1d3a2a), side: THREE.DoubleSide });
     cup.add(new THREE.Mesh(new THREE.LatheGeometry(inner, 56), lining));
     const lip = new THREE.Mesh(new THREE.TorusGeometry(rt - 0.16, 0.2, 12, 64), brass);
     lip.rotation.x = Math.PI / 2; lip.position.y = H / 2; cup.add(lip);
@@ -1151,8 +1177,16 @@ async function buildIntro(opts, undo, teardown) {
     // turned to face the lens through the shake.
     const bh = 2.5, by = 0.4, th = 1.0;
     const rAt = y => rb + (rt - rb) * ((y + H / 2) / H) + 0.09;
-    const plate = new THREE.Mesh(new THREE.CylinderGeometry(rAt(by + bh / 2), rAt(by - bh / 2), bh, 24, 1, true, -30 * DEG - th / 2, th),
-      new THREE.MeshStandardMaterial({ map: badge, transparent: true, alphaTest: 0.4, metalness: 0.55, roughness: 0.3 }));
+    // (enamel and brass: the letters and rim raised out of the badge's own
+    // artwork, the whole under a hard clear gloss as fired enamel is)
+    const badgeMat = new THREE.MeshPhysicalMaterial({ map: badge, transparent: true, alphaTest: 0.4, metalness: 0.55, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.06 });
+    if (badge.image && badge.image.width) {
+      const c = document.createElement('canvas'); c.width = badge.image.width; c.height = badge.image.height;
+      const g = c.getContext('2d'); g.drawImage(badge.image, 0, 0);
+      badgeMat.normalMap = embossTex(c, 2.6); badgeMat.normalMap.flipY = badge.flipY;
+      badgeMat.normalScale = new THREE.Vector2(0.9, 0.9);
+    }
+    const plate = new THREE.Mesh(new THREE.CylinderGeometry(rAt(by + bh / 2), rAt(by - bh / 2), bh, 24, 1, true, -30 * DEG - th / 2, th), badgeMat);
     plate.position.y = by; cup.add(plate);
   }
   scene.add(cup);
@@ -1187,7 +1221,23 @@ async function buildIntro(opts, undo, teardown) {
     return { g, mat, glow };
   });
 
-  // ---- The stick (standard, hardways).
+  // ---- The stick (standard, hardways), held to a stickman's stick from a
+  // craps-table maker: a walnut shaft, turned, tapering to the hook; the
+  // hook bent rattan, steamed round a form into its J and lacquered; a
+  // turned brass ferrule where the two are joined.
+  //   Across the room: a long dark line with a pale hook at its end.
+  //   At arm's length: the shaft's lacquer carries one long highlight down
+  //   its length; the rattan is honey-coloured, a shade darker down the
+  //   side that lay against the form as it was steamed; the ferrule turned
+  //   with two fine grooves, catching the lamp in rings.
+  //   Pinched in: the walnut's open pores and the rattan's fibres, both
+  //   running along the stick under their lacquer.
+  //   Contact: the hook's bend pushes the dice, and its shadow and theirs
+  //   meet on the felt.
+  //   Motion: the hook's path (makeHookPath) - a reach, a draw, the dice
+  //   carried and let go - is the stick's.
+  // (Before, the hook was the shaft's walnut on a thin tube and read as a
+  // bent metal rod.)
   let stick = null;
   if (plan.stick) {
     const hp = plan.stick.hp;
@@ -1196,7 +1246,26 @@ async function buildIntro(opts, undo, teardown) {
     // (UVs in cm, the grain along the wood: a tube's u already runs along it)
     const hookGeo = new THREE.TubeGeometry(curve, 120, HOOK.cap, 10, false);
     scaleUV(hookGeo, curve.getLength() / WOOD_TILE[0], (2 * Math.PI * HOOK.cap) / WOOD_TILE[1]);
-    const hook = new THREE.Mesh(hookGeo, wood);
+    // (rattan: its fibres are the pores' streaks at half the size)
+    const rattan = new THREE.MeshPhysicalMaterial({ color: 0x8c6438, roughness: 0.5, clearcoat: 0.7, clearcoatRoughness: 0.18, envMapIntensity: 0.8 });
+    finished(rattan, 'pores', WOOD_TILE[0], WOOD_TILE[1] / 1.5, 0.45);
+    // (browned by the steam where it lay against the form: a darker streak
+    // down one side of the cane, v = 0.5 round it)
+    // (and the cane's fibres: fine streaks along it, lighter and darker, a
+    // node now and then where a leaf grew - 6 cm of cane a tile)
+    rattan.map = (() => {
+      const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+      const x = c.getContext('2d'), gr = x.createLinearGradient(0, 0, 0, 64);
+      [[0, '#ffffff'], [0.35, '#f2eadc'], [0.5, '#b89a78'], [0.65, '#f2eadc'], [1, '#ffffff']].forEach(([o, col]) => gr.addColorStop(o, col));
+      x.fillStyle = gr; x.fillRect(0, 0, 256, 64);
+      let sd = 71; const r = () => { sd = (Math.imul(sd, 1664525) + 1013904223) >>> 0; return sd / 4294967296; };
+      for (let k = 0; k < 90; k++) { const y = r() * 64; x.fillStyle = r() < 0.5 ? `rgba(90,58,26,${(0.08 + r() * 0.14).toFixed(2)})` : `rgba(255,236,200,${(0.08 + r() * 0.12).toFixed(2)})`; x.fillRect(0, y, 256, 0.6 + r() * 1.2); }
+      x.fillStyle = 'rgba(80,50,22,0.35)'; x.fillRect(178, 0, 3, 64); x.fillStyle = 'rgba(255,240,210,0.25)'; x.fillRect(181, 0, 2, 64);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8;
+      t.repeat.set(WOOD_TILE[0] / 6, WOOD_TILE[1] / (2 * Math.PI * HOOK.cap));
+      return t;
+    })();
+    const hook = new THREE.Mesh(hookGeo, rattan);
     hook.castShadow = true; g.add(hook);
     // The shaft and its ferrule hang from a pivot at the hook, laid along
     // the pull (+z) and tipped up per frame (see shaftLean).
@@ -1206,10 +1275,17 @@ async function buildIntro(opts, undo, teardown) {
     // (a cylinder's u runs round it: swapped, so the grain runs along)
     const shaftGeo = new THREE.CylinderGeometry(0.42, 0.48, len, 14);
     { const uv = shaftGeo.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getY(i) * len) / WOOD_TILE[0], (uv.getX(i) * 2.8) / WOOD_TILE[1]); }
-    const shaft = new THREE.Mesh(shaftGeo, wood);
+    // (the shaft's walnut with its pores open under the lacquer, as the
+    // table's is: 2 cm a tile)
+    const shaftWood = wood.clone(); shaftWood.normalMap = null; shaftWood.roughnessMap = null;
+    finished(shaftWood, 'pores', WOOD_TILE[0] / 2, WOOD_TILE[1] / 2, 0.5);
+    const shaft = new THREE.Mesh(shaftGeo, shaftWood);
     shaft.rotation.x = Math.PI / 2; shaft.position.z = len / 2;
     shaft.castShadow = true; pivot.add(shaft);
-    const ferrule = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 1.8, 16), new THREE.MeshStandardMaterial({ color: 0x8c6d34, metalness: 1, roughness: 0.45 }));
+    // (turned brass: a lathe profile with a bead at each end and two fine
+    // grooves, so the lamp lies on it in rings)
+    const fp = [[0, -0.9], [0.46, -0.9], [0.53, -0.82], [0.53, -0.66], [0.5, -0.6], [0.5, -0.3], [0.46, -0.26], [0.5, -0.22], [0.5, 0.18], [0.46, 0.22], [0.5, 0.26], [0.5, 0.6], [0.53, 0.66], [0.53, 0.82], [0.46, 0.9], [0, 0.9]].map(([r, y]) => new THREE.Vector2(r, y));
+    const ferrule = new THREE.Mesh(new THREE.LatheGeometry(fp, 32), new THREE.MeshStandardMaterial({ color: 0xc19a52, metalness: 1, roughness: 0.24, envMapIntensity: 1.1 }));
     ferrule.rotation.x = Math.PI / 2; ferrule.position.z = 1.2;
     pivot.add(ferrule);
     g.add(pivot);

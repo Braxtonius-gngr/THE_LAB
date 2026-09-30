@@ -28,6 +28,7 @@
 import * as THREE from '../vendor/three/three.module.js';
 import { CSS3DRenderer, CSS3DObject } from '../vendor/three/three.addons.js';
 import { studioEnvironment, dressTrim, trimBaseOf } from './intro.mjs';
+import { retile, canvasTex, embossTex, seeded, wrapNoise, dataTex, finish, finished } from './finish.mjs';
 
 export const DESTS = ['card'];
 
@@ -106,14 +107,6 @@ function scaleUV(geo, su, sv) {
   for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * su, uv.getY(i) * sv);
   uv.needsUpdate = true;
   return geo;
-}
-// A texture sharing another's image, with its own repeat.
-function retile(tex, rx, ry) {
-  const t = tex.clone();
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.repeat.set(rx, ry);
-  t.needsUpdate = true;
-  return t;
 }
 // A path in the table plane, [[x, z], ...], resampled evenly.
 function resample(path, step) {
@@ -207,15 +200,6 @@ function strip(path, o0, o1, y, tile) {
   g.computeVertexNormals();
   return g;
 }
-function canvasTex(w, h, paint) {
-  const c = document.createElement('canvas');
-  c.width = w; c.height = h;
-  paint(c.getContext('2d'), w, h);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 8;
-  return t;
-}
 // A card's shadow as an alpha map: the card's rounded outline in white on
 // black, blurred by `blur` cm, with room round it for the blur (`pad` cm).
 // (A shape drawn off the canvas casts its blurred shadow onto it: the one
@@ -236,123 +220,6 @@ function cardShadowTex(blur, pad, rim = false) {
   });
   tex.colorSpace = THREE.NoColorSpace; tex.anisotropy = 4;
   return { tex, pad };
-}
-// A normal map from white-on-black artwork (a canvas): its strokes raised,
-// their edges softened over a few pixels first, `strength` how steep.
-function embossTex(src, strength) {
-  const W = src.width, H = src.height;
-  const a = src.getContext('2d').getImageData(0, 0, W, H).data;
-  let h = new Float32Array(W * H), t = new Float32Array(W * H);
-  for (let i = 0; i < W * H; i++) h[i] = a[i * 4 + 1] / 255;
-  // (a box blur, twice, across then down)
-  const R = 2;
-  for (let pass = 0; pass < 2; pass++) {
-    for (let y = 0; y < H; y++) { let acc = 0; for (let x = -R; x <= R; x++) acc += h[y * W + Math.min(W - 1, Math.max(0, x))]; for (let x = 0; x < W; x++) { t[y * W + x] = acc / (2 * R + 1); acc += h[y * W + Math.min(W - 1, x + R + 1)] - h[y * W + Math.max(0, x - R)]; } }
-    for (let x = 0; x < W; x++) { let acc = 0; for (let y = -R; y <= R; y++) acc += t[Math.min(H - 1, Math.max(0, y)) * W + x]; for (let y = 0; y < H; y++) { h[y * W + x] = acc / (2 * R + 1); acc += t[Math.min(H - 1, y + R + 1) * W + x] - t[Math.max(0, y - R) * W + x]; } }
-  }
-  const c = document.createElement('canvas'); c.width = W; c.height = H;
-  const ctx = c.getContext('2d'), img = ctx.createImageData(W, H), d = img.data;
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const i = y * W + x;
-    const dx = (h[y * W + Math.min(W - 1, x + 1)] - h[y * W + Math.max(0, x - 1)]) * strength;
-    const dy = (h[Math.min(H - 1, y + 1) * W + x] - h[Math.max(0, y - 1) * W + x]) * strength;
-    const l = Math.hypot(dx, dy, 1);
-    // (canvas y runs down, a normal map's green up)
-    d[i * 4] = (-dx / l * 0.5 + 0.5) * 255; d[i * 4 + 1] = (dy / l * 0.5 + 0.5) * 255; d[i * 4 + 2] = (1 / l * 0.5 + 0.5) * 255; d[i * 4 + 3] = 255;
-  }
-  ctx.putImageData(img, 0, 0);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.NoColorSpace; tex.anisotropy = 16;
-  return tex;
-}
-// ---- The finishes. Up close every surface has a texture of its own that
-// catches the light: brass is brushed, fine lines running along the part
-// (round a turned one); lacquer, lacquered walnut and glazed ceramic carry
-// the faint orange peel of a sprayed coat under their clear; the iris
-// blades are bead-blasted; clay chips are grained. Each is a small height
-// field that tiles, made once from a fixed seed, turned into a normal map
-// and a roughness map to go with it (a roughness map scales the
-// material's roughness by its green).
-const FINISHES = {};
-function seeded(seed) { return () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; }; }
-// (value noise that wraps: a lattice of cells x cells, smoothly joined)
-function wrapNoise(N, cells, rnd) {
-  const L = Float32Array.from({ length: cells * cells }, rnd), out = new Float32Array(N * N);
-  const s = t => t * t * (3 - 2 * t);
-  for (let y = 0; y < N; y++) {
-    const fy = y / N * cells, y0 = Math.floor(fy), ty = s(fy - y0), y1 = (y0 + 1) % cells;
-    for (let x = 0; x < N; x++) {
-      const fx = x / N * cells, x0 = Math.floor(fx), tx = s(fx - x0), x1 = (x0 + 1) % cells;
-      out[y * N + x] = lerp(lerp(L[y0 * cells + x0], L[y0 * cells + x1], tx), lerp(L[y1 * cells + x0], L[y1 * cells + x1], tx), ty);
-    }
-  }
-  return out;
-}
-function dataTex(N, fill) {
-  const c = document.createElement('canvas'); c.width = c.height = N;
-  const ctx = c.getContext('2d'), img = ctx.createImageData(N, N);
-  fill(img.data);
-  ctx.putImageData(img, 0, 0);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.NoColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8;
-  return t;
-}
-function finish(kind) {
-  if (FINISHES[kind]) return FINISHES[kind];
-  const N = 256, h = new Float32Array(N * N);
-  const rnd = seeded({ brushed: 11, peel: 23, blast: 37, clay: 41 }[kind] || 5);
-  const add = (src, k) => { for (let i = 0; i < h.length; i++) h[i] += src[i] * k; };
-  let strength = 1, lo = 0.8, hi = 1;
-  if (kind === 'brushed') {
-    // each row its own depth, then scratches over them, fading in and out
-    const row = Float32Array.from({ length: N }, rnd);
-    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) h[y * N + x] = row[y] * 0.5;
-    for (let k = 0; k < 520; k++) {
-      const y = Math.floor(rnd() * N), x0 = Math.floor(rnd() * N), len = 24 + rnd() * 200, a = (rnd() - 0.5) * 0.9;
-      for (let i = 0; i < len; i++) h[y * N + (x0 + i) % N] += a * Math.sin(Math.PI * i / len);
-    }
-    // (and a broad cloud, the part's own unevenness, felt mostly as sheen)
-    const cloud = wrapNoise(N, 4, rnd); add(cloud, 0.6);
-    strength = 0.9; lo = 0.62; hi = 1;
-  } else if (kind === 'peel') {
-    add(wrapNoise(N, 16, rnd), 0.6); add(wrapNoise(N, 32, rnd), 0.3); add(wrapNoise(N, 64, rnd), 0.1);
-    strength = 2.2; lo = 0.85; hi = 1;
-  } else if (kind === 'blast') {
-    for (let i = 0; i < h.length; i++) h[i] = rnd() * 0.5;
-    add(wrapNoise(N, 64, rnd), 0.5); add(wrapNoise(N, 8, rnd), 0.4);
-    strength = 1.6; lo = 0.8; hi = 1;
-  } else {
-    // clay: a fine grain, pressed, with a looser mottle through it
-    for (let i = 0; i < h.length; i++) h[i] = rnd() * 0.45;
-    add(wrapNoise(N, 96, rnd), 0.35); add(wrapNoise(N, 12, rnd), 0.35);
-    strength = 1.8; lo = 0.78; hi = 1;
-  }
-  let mn = Infinity, mx = -Infinity;
-  for (const v of h) { if (v < mn) mn = v; if (v > mx) mx = v; }
-  for (let i = 0; i < h.length; i++) h[i] = (h[i] - mn) / (mx - mn || 1);
-  const at = (x, y) => h[((y + N) % N) * N + (x + N) % N];
-  const normal = dataTex(N, d => {
-    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-      const dx = (at(x + 1, y) - at(x - 1, y)) * strength, dy = (at(x, y + 1) - at(x, y - 1)) * strength, l = Math.hypot(dx, dy, 1), i = (y * N + x) * 4;
-      d[i] = (-dx / l * 0.5 + 0.5) * 255; d[i + 1] = (dy / l * 0.5 + 0.5) * 255; d[i + 2] = (1 / l * 0.5 + 0.5) * 255; d[i + 3] = 255;
-    }
-  });
-  const rough = dataTex(N, d => { for (let i = 0; i < N * N; i++) { const v = (lo + (hi - lo) * h[i]) * 255; d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v; d[i * 4 + 3] = 255; } });
-  return (FINISHES[kind] = { normal, rough });
-}
-// A material given a finish: its normal map (under the clear coat, if it
-// has one: the coat is what the peel is in) and roughness map, at a repeat.
-function finished(mat, kind, rx, ry, depth) {
-  const f = finish(kind);
-  const n = retile(f.normal, rx, ry), r = retile(f.rough, rx, ry);
-  if (mat.isMeshPhysicalMaterial && mat.clearcoat > 0 && kind === 'peel') {
-    mat.clearcoatNormalMap = n; mat.clearcoatNormalScale = new THREE.Vector2(depth, depth);
-  } else if (!mat.normalMap) {
-    mat.normalMap = n; mat.normalScale = new THREE.Vector2(depth, depth);
-  }
-  if (!mat.roughnessMap) mat.roughnessMap = r;
-  mat.needsUpdate = true;
-  return mat;
 }
 // The house's finished set: the intro's materials, the brass brushed (a
 // copy: the intro's own brass is left as it is).
@@ -472,6 +339,14 @@ function buildCardTable(set) {
   column.position.set(0, -9 - 32, b * 0.55); g.add(column);
   const foot = new THREE.Mesh(new THREE.CylinderGeometry(34, 38, 5, 48), black);
   foot.position.set(0, -80.5, b * 0.55); g.add(foot);
+  // (a salon table's base is finished like its top: a polished brass shoe
+  // where the column stands on the foot - it closes the column's last few
+  // centimetres down to it - and a collar where it meets the top; from
+  // across the room, gold in the dark under the table)
+  const collar = polishedOf(set.brass, 0.16);
+  [[-75.45, 12.15, 12.6, 5.1], [-9.6, 9.2, 9.7, 1.0]].forEach(([y, r0, r1, h]) => {
+    const c = new THREE.Mesh(new THREE.CylinderGeometry(r0, r1, h, 48), collar); c.position.set(0, y, b * 0.55); g.add(c);
+  });
   // The padded rail round the arc: stitched leather over a walnut edge.
   const cushionMat = set.cushion.clone();
   cushionMat.normalMap = retile(set.tex.cushionN, 1, 1);
@@ -482,11 +357,14 @@ function buildCardTable(set) {
   const rail = new THREE.Mesh(railGeo, cushionMat);
   rail.castShadow = true; rail.receiveShadow = true; g.add(rail);
   railGeo.userData.caps.forEach(cg => g.add(new THREE.Mesh(cg, cushionMat)));
-  const woodMat = set.wood.clone();
-  woodMat.map = retile(set.tex.walnut, 1, 1);
-  woodMat.normalMap = retile(set.tex.walnutN, 1, 1);
-  // (its lacquer's peel at 3 cm a tile: u here is 60 cm, v 15)
-  finished(woodMat, 'peel', 20, 5, 0.05);
+  // Figured black walnut, as a cabinetmaker finishes a salon table: open
+  // pore under a satin catalysed lacquer. Across the room, a warm dark edge
+  // with one long highlight; at arm's length the figure - dark streaks and
+  // lighter bands running along the rail; pinched in, the pores, sunk
+  // under the lacquer, which lies smooth over them and mirrors the lamp as
+  // a soft band (its own faint peel). The pores are the wood's normal map
+  // (see finish('pores')); the board's broad figure is its colour.
+  const woodMat = walnutOf(set, 60, 15);
   // (the edge's u runs round its section; the grain wants to run along the
   // rail, so the section is walked in v: see the swapped tile below)
   const edgeSection = [[0.5, -0.6], [12.2, -0.6], [12.8, -1.6], [12.8, -8.2], [12.2, -9.2], [0.5, -9.2]];
@@ -512,14 +390,47 @@ function buildCardTable(set) {
   // (dressed as the shot's band is: the trim picked in Settings)
   const trimMats = { band: [satinGold], line: [trimLine] };
   dressTrim(trimMats, set.gold.userData.trim || 'gold');
-  // the rail's stitching: two rows of gold thread either side of its crest
-  const stitch = canvasTex(8, 64, (c, W, H) => { c.clearRect(0, 0, W, H); c.fillStyle = '#8f6f36'; c.fillRect(1, 14, W - 2, 34); c.fillStyle = 'rgba(214,180,110,0.7)'; c.fillRect(2, 16, W - 4, 8); });
-  stitch.wrapS = stitch.wrapT = THREE.RepeatWrapping;
-  const stitchMat = new THREE.MeshStandardMaterial({ map: stitch, transparent: true, alphaTest: 0.3, roughness: 0.75, metalness: 0.1, side: THREE.DoubleSide });
+  // The rail's stitching, as a saddler sews it: two rows of waxed linen
+  // thread, gold, either side of the crest, saddle stitched through holes
+  // pricked with a diamond iron at 4 mm. Across the room, two fine gold
+  // lines; at arm's length, a row of stitches each laid at a slant (a
+  // saddle stitch's lean), not dashes; pinched in, each stitch a twisted
+  // cord - its strands catching the lamp in a diagonal, round across its
+  // width - sunk into the leather at both ends, where the hole pulls the
+  // leather down into a small dark pit. (u across the row, v along it,
+  // one stitch a tile.)
+  const paintStitch = relief => (c, W, H) => {
+    c.clearRect(0, 0, W, H);
+    if (relief) { c.fillStyle = '#000'; c.fillRect(0, 0, W, H); }
+    c.save(); c.translate(W / 2, H / 2); c.rotate(-0.42);
+    const L = H * 0.4, T = W * 0.2;
+    // (the cord: a lozenge, round across, darker at its ends where it dives)
+    const g = c.createLinearGradient(-T, 0, T, 0);
+    if (relief) { g.addColorStop(0, '#333'); g.addColorStop(0.5, '#fff'); g.addColorStop(1, '#333'); }
+    else { g.addColorStop(0, '#6e5224'); g.addColorStop(0.45, '#d9b56a'); g.addColorStop(0.6, '#c49a50'); g.addColorStop(1, '#5c431c'); }
+    c.fillStyle = g;
+    c.beginPath(); c.moveTo(0, -L); c.bezierCurveTo(T * 1.1, -L * 0.45, T * 1.1, L * 0.45, 0, L); c.bezierCurveTo(-T * 1.1, L * 0.45, -T * 1.1, -L * 0.45, 0, -L); c.fill();
+    // (the twist: strands crossing the cord at a steep diagonal)
+    c.strokeStyle = relief ? 'rgba(0,0,0,0.45)' : 'rgba(60,40,14,0.55)'; c.lineWidth = W * 0.035;
+    for (let k = -4; k <= 4; k++) { const y = k * L * 0.21; c.beginPath(); c.moveTo(-T * 0.9, y + T * 0.55); c.lineTo(T * 0.9, y - T * 0.55); c.stroke(); }
+    c.restore();
+    // (the pricked holes, each end: the leather pulled down into them)
+    if (!relief) {
+      [[0.5 + 0.17, 0.5 - 0.37], [0.5 - 0.17, 0.5 + 0.37]].forEach(([x, y]) => {
+        const r = c.createRadialGradient(x * W, y * H, 0, x * W, y * H, W * 0.16);
+        r.addColorStop(0, 'rgba(0,0,0,0.9)'); r.addColorStop(1, 'rgba(0,0,0,0)');
+        c.fillStyle = r; c.fillRect(0, 0, W, H);
+      });
+    }
+  };
+  const stitch = canvasTex(64, 128, paintStitch(false));
+  stitch.wrapS = stitch.wrapT = THREE.RepeatWrapping; stitch.anisotropy = 8;
+  const stitchMat = new THREE.MeshStandardMaterial({ map: stitch, normalMap: embossTex(canvasTex(64, 128, paintStitch(true)).image, 2.2), transparent: true, alphaTest: 0.08, roughness: 0.55, metalness: 0.2, envMapIntensity: 0.8, side: THREE.DoubleSide });
+  stitchMat.normalMap.wrapS = stitchMat.normalMap.wrapT = THREE.RepeatWrapping;
   [66, 114].forEach(deg => {
-    const t0 = (deg - 0.5) * DEG, t1 = (deg + 0.5) * DEG;
+    const t0 = (deg - 0.6) * DEG, t1 = (deg + 0.6) * DEG;
     const at = t => [5.6 + 5.82 * Math.cos(t), 3.1 + 4.32 * Math.sin(t)];
-    const row = new THREE.Mesh(sweep(rim, [at(t0), at(t1)], 0.5, false, true), stitchMat);
+    const row = new THREE.Mesh(sweep(rim, [at(t0), at(t1)], 0.4, false, true), stitchMat);
     g.add(row);
   });
   // The printed felt: a fine gold arc, the house line round it, the
@@ -621,7 +532,39 @@ function buildCardTable(set) {
   return { group: g, rim, focus: [0, 0, 30], felt: feltMat, trim: trimMats };
 }
 
-// The chip float, as a dealer keeps it: a black lacquer rack let into the
+// The house's walnut on a part whose UVs run `lu` cm along the grain (u)
+// and `lv` cm across it per unit (see buildCardTable).
+function walnutOf(set, lu, lv) {
+  const m = set.wood.clone();
+  m.map = retile(set.tex.walnut, 1, 1);
+  m.map.repeat.set(lu / 60, lv / 15);
+  m.normalMap = null;
+  // (the pores at 2 cm a tile; the lacquer's peel at 3)
+  finished(m, 'pores', lu / 2, lv / 2, 0.55);
+  m.clearcoat = 0.7; m.clearcoatRoughness = 0.14;
+  finished(m, 'peel', lu / 3, lv / 3, 0.012);
+  return m;
+}
+
+// The chip float, as a dealer keeps it - held to a float from a Macau
+// private salon: the rack a cabinetmaker's, in black piano lacquer with
+// solid brass end caps, the chips Paulson clay.
+//   Across the room: a black bar with ten columns of colour, its brass caps
+//   and rails catching the lamp.
+//   At arm's length: the lacquer mirrors the lamp as one clean soft band
+//   over black (it is polished flat - no visible peel); the brass caps are
+//   polished, the value strip brushed; each chip's edge shows its inserts,
+//   clay set into clay, the columns never quite in step.
+//   Pinched in: the values are cut into the strip, the light running along
+//   the walls of each figure; each cap is held by two slotted screws, the
+//   slots turned every which way, as they came to rest when driven; the
+//   inserts' edges are a hair soft, as clay pressed into clay is, with the
+//   grain of the clay across them.
+//   Contact: the chips stand in their troughs and lean on each other; the
+//   front one leans back on its row; each column shadows the trough under
+//   it, darkest where the chips meet the lacquer.
+//   Motion: none - the dealer draws cards, not chips.
+// A black lacquer rack let into the
 // dealer's bar, its top scalloped into ten troughs that run toward the
 // player, the chips standing on edge in them by colour - more of the small
 // ones, fewer of the large - each trough's value engraved on a brass strip
@@ -645,7 +588,10 @@ function chipFace(name) {
 }
 function chipTray(set) {
   const g = new THREE.Group();
-  const lacquer = finished(new THREE.MeshPhysicalMaterial({ color: 0x0b0a0a, roughness: 0.3, clearcoat: 0.9, clearcoatRoughness: 0.1 }), 'peel', 1 / 3, 1 / 3, 0.05);
+  // (piano lacquer: rubbed out and polished, so the coat is a mirror - its
+  // peel all but gone, a whisper at 1 cm - over a black that is soft under
+  // it; before, a coarse peel read as crumpled foil pinched in)
+  const lacquer = finished(new THREE.MeshPhysicalMaterial({ color: 0x0b0a0a, roughness: 0.34, clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 1.1 }), 'peel', 1, 1, 0.01);
   // (troughs deeper than their radius above the top: a chip stands in its
   // trough to a little past half its height)
   const TR = { n: 10, pitch: 5.95, r: 2.1, sink: 0.55, len: 10.4, h: 3.1 };
@@ -668,7 +614,35 @@ function chipTray(set) {
   const top = 0.4 + TR.h;
   // brass: a rail along the back and the front of the top, end plates
   [-1, 1].forEach(sz => { const r = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, W + 0.2, 12), set.brass); r.rotation.z = Math.PI / 2; r.position.set(0, top + 0.06, sz * (TR.len / 2 + 0.05)); g.add(r); });
-  [-1, 1].forEach(sx => { const e = new THREE.Mesh(new THREE.BoxGeometry(0.4, TR.h + 0.5, TR.len + 0.5), set.brass); e.position.set(sx * (W / 2 + 0.2), 0.4 + (TR.h + 0.5) / 2 - 0.1, 0); g.add(e); });
+  // the end caps: solid brass, polished, a bevelled slab each end, held by
+  // two slotted screws (each slot where it came to rest)
+  // (buffed, not mirror-polished: a mirror here only shows the dark room
+  // and reads as a black block; a buff keeps the brass's own warmth, with
+  // a soft run of light along its bevel)
+  const capMat = set.brass.clone(); capMat.roughness = 0.22; capMat.envMapIntensity = 1.2;
+  const capShape = roundRect(TR.len + 0.5, TR.h + 0.5, 0.25);
+  const capGeo = new THREE.ExtrudeGeometry(capShape, { depth: 0.24, bevelEnabled: true, bevelThickness: 0.08, bevelSize: 0.08, bevelSegments: 3, curveSegments: 6 });
+  capGeo.rotateY(Math.PI / 2); capGeo.translate(-0.2, 0, 0);
+  const screwHead = new THREE.SphereGeometry(0.17, 20, 8, 0, Math.PI * 2, 0, Math.PI / 2.4);
+  screwHead.rotateZ(-Math.PI / 2);
+  // (the dome's base sits on the cap's face; the slot cuts into it along
+  // its whole length, standing a hair proud only at the crown)
+  const slotGeo = new THREE.BoxGeometry(0.06, 0.22, 0.045);
+  const screws = [], slots = [], rs = seeded(97);
+  [-1, 1].forEach(sx => {
+    const e = new THREE.Mesh(capGeo, capMat); e.position.set(sx * (W / 2 + 0.2), 0.4 + (TR.h + 0.5) / 2 - 0.1, 0);
+    if (sx < 0) e.rotation.y = Math.PI;
+    e.castShadow = true; e.receiveShadow = true; g.add(e);
+    [-1, 1].forEach(sz => {
+      const x = sx * (W / 2 + 0.276), y = 0.4 + TR.h * 0.52, z = sz * TR.len * 0.3, turn = rs() * Math.PI;
+      const m = new THREE.Matrix4().compose(V(x, y, z), new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), sx < 0 ? Math.PI : 0), V(1, 1, 1));
+      screws.push([screwHead, m]);
+      const q = new THREE.Quaternion().setFromAxisAngle(V(1, 0, 0), turn);
+      slots.push([slotGeo, new THREE.Matrix4().compose(V(x + sx * 0.15, y, z), q, V(1, 1, 1))]);
+    });
+  });
+  g.add(new THREE.Mesh(merged(screws), capMat));
+  g.add(new THREE.Mesh(merged(slots), new THREE.MeshStandardMaterial({ color: 0x1a1206, roughness: 0.8, metalness: 0.4 })));
   // the value of each trough, on a brass strip along the front
   const COL = ['gold', 'plum', 'onyx', 'onyx', 'emerald', 'emerald', 'oxblood', 'oxblood', 'ivory', 'ivory'];
   const VAL = { gold: '1000', plum: '500', onyx: '100', emerald: '25', oxblood: '5', ivory: '1' };
@@ -682,7 +656,11 @@ function chipTray(set) {
     for (let i = 0; i < TR.n; i++) { const u = 0.5 - cxOf(i) / (W + 0.2); c.fillText(VAL[COL[i]], u * Wc, Hc / 2 + 2); }
     for (let i = 1; i < TR.n; i++) { const u = 0.5 - (cxOf(i) - TR.pitch / 2) / (W + 0.2); c.fillRect(u * Wc - 1, 14, 2, Hc - 28); }
   });
-  const strip = new THREE.Mesh(new THREE.PlaneGeometry(W + 0.2, 0.9), finished(new THREE.MeshStandardMaterial({ map: plate, metalness: 1, roughness: 0.36 }), 'brushed', 1, 1 / 40, 0.12));
+  // (the figures cut into the strip, not printed on it: see engravedMat.
+  // Its brushing runs along it - 1 cm a tile on the relief's own UVs.)
+  const stripMat = engravedMat(plate, 1.8);
+  stripMat.roughness = 0.36;
+  const strip = new THREE.Mesh(new THREE.PlaneGeometry(W + 0.2, 0.9), stripMat);
   strip.position.set(0, 0.4 + TR.h * 0.45, -(TR.len / 2 + 0.13)); strip.rotation.y = Math.PI; g.add(strip);
   // the chips: the edge texture, eight inserts; the faces, the house coin
   const spots = { onyx: ['#121214', '#e8e2d2', '#b8914a'], oxblood: ['#5b1622', '#f1e7d0', '#c9a45a'], emerald: ['#1d3a2a', '#f1e7d0', '#c9a45a'], ivory: ['#e6dfcb', '#6b1320', '#b8914a'], plum: ['#3a2352', '#f1e7d0', '#c9a45a'], gold: ['#b58a2e', '#1a1208', '#f6e2a8'] };
@@ -691,14 +669,19 @@ function chipTray(set) {
   const R = new THREE.Object3D();
   CHIPS.forEach(name => {
     const [base, spot, line] = spots[name];
-    const side = canvasTex(1024, 32, (c, Wc, Hc) => {
+    const rs = seeded(name.length * 131 + name.charCodeAt(0));
+    const side = canvasTex(2048, 64, (c, Wc, Hc) => {
       c.fillStyle = base; c.fillRect(0, 0, Wc, Hc);
+      // (an insert is clay pressed into clay: its edges a hair soft, each
+      // placed by hand a little off the last)
+      c.filter = 'blur(0.8px)';
       for (let k = 0; k < 8; k++) {
-        const x0 = k * Wc / 8 + Wc / 32, w = Wc / 16;
-        c.fillStyle = spot; c.fillRect(x0, 0, w, Hc);
-        c.fillStyle = base; c.fillRect(x0 + w * 0.3, 0, w * 0.08, Hc); c.fillRect(x0 + w * 0.62, 0, w * 0.08, Hc);
-        c.fillStyle = line; c.fillRect(x0 + w + Wc / 64 - 1, Hc * 0.35, 3, Hc * 0.3);
+        const x0 = k * Wc / 8 + Wc / 32 + (rs() - 0.5) * 6, w = Wc / 16 + (rs() - 0.5) * 4;
+        c.fillStyle = spot; c.fillRect(x0, -2, w, Hc + 4);
+        c.fillStyle = base; c.fillRect(x0 + w * 0.3, -2, w * 0.08, Hc + 4); c.fillRect(x0 + w * 0.62, -2, w * 0.08, Hc + 4);
+        c.fillStyle = line; c.fillRect(x0 + w + Wc / 64 - 2, Hc * 0.33, 5, Hc * 0.34);
       }
+      c.filter = 'none';
       const gr = c.createLinearGradient(0, 0, 0, Hc); gr.addColorStop(0, 'rgba(0,0,0,0.35)'); gr.addColorStop(0.2, 'rgba(0,0,0,0)'); gr.addColorStop(0.8, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,0.35)');
       c.fillStyle = gr; c.fillRect(0, 0, Wc, Hc);
     });
@@ -948,8 +931,9 @@ function buildDiscard(set) {
   const smoke = new THREE.MeshPhysicalMaterial({ color: 0x3a302a, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.32, clearcoat: 1, clearcoatRoughness: 0.04, depthWrite: false, side: THREE.DoubleSide });
   const X = 4.3, Z = 5.6, Y0 = 1.0;
   // (the walnut's grain at its own scale: the slab's UVs are in cm)
-  const wood = set.wood.clone(); wood.map = retile(set.tex.walnut, 1 / 18, 1 / 18); wood.normalMap = retile(set.tex.walnutN, 1 / 18, 1 / 18);
-  finished(wood, 'peel', 1 / 3, 1 / 3, 0.05);
+  // (UVs in cm: the grain along x, as the plank was cut; before, the board
+  // was squeezed to 18 cm both ways and its figure read as a granite fleck)
+  const wood = walnutOf(set, 1, 1);
   const plinth = slab(roundRect(2 * X + 1.2, 2 * Z + 1.0, 0.8), Y0, wood, 0.18); g.add(plinth);
   g.add(tube(outline(2 * X + 1.24, 2 * Z + 1.04, 0.82, 0.55), 0.06, set.brass, true));
   const pad = new THREE.Mesh(new THREE.ShapeGeometry(roundRect(2 * X - 0.4, 2 * Z - 0.4, 0.4), 8), new THREE.MeshStandardMaterial({ color: 0x0b0a0c, roughness: 0.95 }));
@@ -977,7 +961,9 @@ function buildDiscard(set) {
     c.rotation.y = Math.sin(k * 1.9 + 0.4) * 0.05; c.castShadow = k === 4;
     g.add(c); y += 0.045;
   }
-  const medal = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.78, 0.5, 64), [set.brass, finished(new THREE.MeshStandardMaterial({ map: sealTex(), metalness: 1, roughness: 0.32 }), 'brushed', 1, 1, 0.1), set.brass]);
+  // (the seal cut into the metal, as the shoe's is: the light runs along the
+  // walls of its cuts; its rim polished by the hands that lift it)
+  const medal = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.78, 0.5, 64), [polishedOf(set.brass, 0.14), engravedMat(sealTex(), 2.6), polishedOf(set.brass, 0.14)]);
   // (turned to read from the seat, a little askew)
   medal.position.set(0.7, y + 0.26, -1.1); medal.rotation.y = Math.PI + 0.35; medal.castShadow = true; g.add(medal);
   return g;
@@ -1056,7 +1042,10 @@ function buildPort(set) {
       c.save(); c.translate(cx + rt * Math.cos(a), cy + rt * Math.sin(a)); c.rotate(a + Math.PI / 2); c.fillText(text[i], 0, 0); c.restore();
     }
   });
-  const ringMat = new THREE.MeshStandardMaterial({ map: ringTex, metalness: 1, roughness: 0.3, envMapIntensity: 1.0, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  // (engraved, not printed: the rules, ticks and letters cut into the ring,
+  // so pinched in the lamp runs along their walls)
+  const ringMat = engravedMat(ringTex, 2.2);
+  Object.assign(ringMat, { roughness: 0.3, envMapIntensity: 1.0, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   const ring = new THREE.Mesh(new THREE.RingGeometry(R + 0.16, R + 0.84, 120, 1), ringMat);
   ring.rotation.x = -Math.PI / 2; ring.position.y = 0.241; g.add(ring);
   // the well: dark walls, a floor, and a ring of warm light round its lip
