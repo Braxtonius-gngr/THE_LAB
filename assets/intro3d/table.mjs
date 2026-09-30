@@ -3875,3 +3875,12 @@ export async function prepareTable(opts) {
     dispose() { made.forEach(m => scene.remove(m)); }
   };
 }
+
+// ---------------------------------------------------------- shared parts
+// What another skin's home (study.mjs) builds with, so the rooms agree:
+// the cards, their backs and the info sheet's text; the phone; the set's
+// finishes and helpers.
+export const tableKit = {
+  CARD, TIERS, cardHTML, cardShown, inkBacks, demoHand, phoneHTML, fmtLeft, esc, tierOf, initials, hash,
+  canvasTex, finished, polishedOf, fineSet, glassy, contactShadow, roundRect, lying, retile
+};
