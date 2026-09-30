@@ -783,18 +783,20 @@ function chipTray(set) {
   capGeo.rotateY(Math.PI / 2); capGeo.translate(-0.2, 0, 0);
   const screwHead = new THREE.SphereGeometry(0.17, 20, 8, 0, Math.PI * 2, 0, Math.PI / 2.4);
   screwHead.rotateZ(-Math.PI / 2);
-  const slotGeo = new THREE.BoxGeometry(0.05, 0.3, 0.045);
+  // (the dome's base sits on the cap's face; the slot cuts into it along
+  // its whole length, standing a hair proud only at the crown)
+  const slotGeo = new THREE.BoxGeometry(0.06, 0.22, 0.045);
   const screws = [], slots = [], rs = seeded(97);
   [-1, 1].forEach(sx => {
     const e = new THREE.Mesh(capGeo, capMat); e.position.set(sx * (W / 2 + 0.2), 0.4 + (TR.h + 0.5) / 2 - 0.1, 0);
     if (sx < 0) e.rotation.y = Math.PI;
     e.castShadow = true; e.receiveShadow = true; g.add(e);
     [-1, 1].forEach(sz => {
-      const x = sx * (W / 2 + 0.45), y = 0.4 + TR.h * 0.52, z = sz * TR.len * 0.3, turn = rs() * Math.PI;
+      const x = sx * (W / 2 + 0.276), y = 0.4 + TR.h * 0.52, z = sz * TR.len * 0.3, turn = rs() * Math.PI;
       const m = new THREE.Matrix4().compose(V(x, y, z), new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), sx < 0 ? Math.PI : 0), V(1, 1, 1));
       screws.push([screwHead, m]);
       const q = new THREE.Quaternion().setFromAxisAngle(V(1, 0, 0), turn);
-      slots.push([slotGeo, new THREE.Matrix4().compose(V(x + sx * 0.16, y, z), q, V(1, 1, 1))]);
+      slots.push([slotGeo, new THREE.Matrix4().compose(V(x + sx * 0.15, y, z), q, V(1, 1, 1))]);
     });
   });
   g.add(new THREE.Mesh(merged(screws), capMat));
