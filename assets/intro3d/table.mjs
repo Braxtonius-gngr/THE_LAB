@@ -348,11 +348,35 @@ function buildCardTable(set) {
     const c = new THREE.Mesh(new THREE.CylinderGeometry(r0, r1, h, 48), collar); c.position.set(0, y, b * 0.55); g.add(c);
   });
   // The padded rail round the arc: stitched leather over a walnut edge.
+  // (full-grain calf over the padding, as a saddler covers a rail: a fine,
+  // shallow grain, a pebble under a millimetre, under a soft semi-gloss -
+  // the shot's padded map at the rail's scale read as cork pinched in, and
+  // a deeper grain in the lamp as suede)
   const cushionMat = set.cushion.clone();
-  cushionMat.normalMap = retile(set.tex.cushionN, 1, 1);
-  cushionMat.envMapIntensity = 0.35; cushionMat.roughness = 0.52;
+  cushionMat.normalMap = null;
+  cushionMat.envMapIntensity = 0.25; cushionMat.roughness = 0.52;
   const ellipse = [];
   for (let j = 0; j < 40; j++) { const t = (j / 40) * 2 * Math.PI; ellipse.push([5.6 + 5.8 * Math.cos(t), 3.1 + 4.3 * Math.sin(t)]); }
+  // (the crest burnished where forearms rest on it, as a saddler's rail
+  // wears: the leather there rubbed smooth and a little glossy, the sides
+  // left dull - a roughness map across the section, u round it by length)
+  {
+    const len = [0];
+    for (let j = 1; j <= ellipse.length; j++) { const p0 = ellipse[j - 1], p1 = ellipse[j % ellipse.length]; len.push(len[j - 1] + Math.hypot(p1[0] - p0[0], p1[1] - p0[1])); }
+    const deg = u => { const at = u * len[ellipse.length]; let j = 0; while (j < ellipse.length - 1 && len[j + 1] < at) j++; return (j + (at - len[j]) / (len[j + 1] - len[j])) / ellipse.length * 360; };
+    const rub = canvasTex(256, 4, (c, W, H) => {
+      for (let x = 0; x < W; x++) {
+        const d = deg((x + 0.5) / W), k = Math.exp(-Math.pow((d - 84) / 26, 2));
+        const v = Math.round(255 * (1.08 - 0.26 * k) / 1.1);
+        c.fillStyle = `rgb(${v},${v},${v})`; c.fillRect(x, 0, 1, H);
+      }
+    });
+    rub.colorSpace = THREE.NoColorSpace; rub.wrapT = THREE.RepeatWrapping;
+    cushionMat.roughnessMap = rub; cushionMat.roughness = 0.46 * 1.1;
+    // (the grain: u round the section, about 32 cm; v along, 14.45 cm a
+    // tile - so 1.6 cm a pebble tile either way)
+    finished(cushionMat, 'pebble', 32 / 1.6, 14.45 / 1.6, 0.07);
+  }
   const railGeo = sweep(rim, ellipse, 14.45, true);
   const rail = new THREE.Mesh(railGeo, cushionMat);
   rail.castShadow = true; rail.receiveShadow = true; g.add(rail);
@@ -467,6 +491,20 @@ function buildCardTable(set) {
     }
   };
   const print = canvasTex(2048, 1024, paintPrint(0)), printKey = canvasTex(2048, 1024, paintPrint(0.11));
+  // The gold is hot-foil stamped into the cloth, as a bookbinder tools gold
+  // into a cloth binding: a heated die presses the foil down into the nap,
+  // so it is let into the felt rather than printed on it, and it takes the
+  // weave. Across the room: gold lettering and a fine gold arc. At arm's
+  // length: the letters sit a hair below the cloth round them, a soft wall
+  // of pressed nap at their edges; the lamp does not lie on them as one
+  // flat sheen (that read as a lit sign) but breaks up across the weave.
+  // Pinched in: the weave in the foil, thread by thread, each crossing its
+  // own small highlight, and the foil a little rougher here and smoother
+  // there, as foil on cloth is.
+  // (the weave, as the foil takes it: a plain weave, a thread about half a
+  // millimetre, eight threads a tile - see weaveTex)
+  const weave = weaveTex();
+  const foilRough = retile(finish('clay').rough, 1, 1);
   // the wordmark, by the dealer: 36 x 9 cm at 57 px/cm
   const WM = { w: 36, h: 9, z: b - 23 };
   const paintMark = kl => (c, W, H) => {
@@ -491,12 +529,22 @@ function buildCardTable(set) {
   [print, printKey, mark, markKey].forEach(t => { t.colorSpace = THREE.NoColorSpace; t.anisotropy = 16; });
   // (gold foil pressed into the felt, not ink: it catches the lamp)
   const inkMat = new THREE.MeshStandardMaterial({ color: 0xc9a75a, alphaMap: print, transparent: true, depthWrite: false, metalness: 0.8, roughness: 0.38, envMapIntensity: 0.9, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  // (the arc and its diamonds: the weave at its own scale over the 168 x 84
+  // cm plane - its own repeat, apart from the artwork's - and the foil's
+  // roughness wandering at a centimetre and a half)
+  inkMat.normalMap = weave.clone(); inkMat.normalMap.repeat.set(168 / 0.45, 84 / 0.45); inkMat.normalMap.needsUpdate = true;
+  inkMat.normalScale = new THREE.Vector2(0.7, 0.7);
+  inkMat.roughnessMap = foilRough.clone(); inkMat.roughnessMap.repeat.set(168 / 1.5, 84 / 1.5); inkMat.roughnessMap.needsUpdate = true;
   const ink = new THREE.Mesh(new THREE.PlaneGeometry(168, 84), inkMat);
   ink.rotation.x = -Math.PI / 2; ink.rotation.z = Math.PI; ink.position.set(0, 0.006, 38); ink.receiveShadow = true; ink.renderOrder = 0.5; g.add(ink);
   const markMat = inkMat.clone(); markMat.alphaMap = mark;
-  // (pressed into the felt: a normal map from the lettering's own edges, so
-  // the foil's raised strokes catch the lamp)
-  markMat.normalMap = embossTex(mark.image, 3.2); markMat.normalScale = new THREE.Vector2(1, 1);
+  // (the die's impression: the letters pressed a hair into the cloth, their
+  // edges a soft wall, and inside them the weave the foil took - one height
+  // field, drawn at the lettering's own resolution, a fifth of a millimetre
+  // a pixel)
+  markMat.normalMap = embossTex(stampTex(mark.image), 2.4, 0); markMat.normalScale = new THREE.Vector2(1, 1);
+  markMat.roughnessMap = foilRough.clone(); markMat.roughnessMap.repeat.set(WM.w / 1.5, WM.h / 1.5); markMat.roughnessMap.needsUpdate = true;
+  markMat.roughness = 0.44;
   const markMesh = new THREE.Mesh(new THREE.PlaneGeometry(WM.w, WM.h), markMat);
   markMesh.rotation.x = -Math.PI / 2; markMesh.rotation.z = Math.PI; markMesh.position.set(0, 0.008, WM.z); markMesh.receiveShadow = true; markMesh.renderOrder = 0.5; g.add(markMesh);
   // The keylines: the print's own shapes, fattened, in a dark umber ink
@@ -530,6 +578,52 @@ function buildCardTable(set) {
   bar.position.set(0, -4, b + 6); bar.castShadow = true; bar.receiveShadow = true; g.add(bar);
   g.add(chipTray(set));
   return { group: g, rim, focus: [0, 0, 30], felt: feltMat, trim: trimMats };
+}
+
+// A plain weave as a normal map: eight threads a tile each way, over and
+// under in turn, each round across its width (a tile is set to 4.5 mm where
+// it is used: a thread a little over half a millimetre).
+let WEAVE = null;
+function weaveTex() {
+  if (WEAVE) return WEAVE;
+  const N = 64, P = 8, h = new Float32Array(N * N), rnd = seeded(71);
+  const jit = Float32Array.from({ length: P * P }, () => rnd() * 0.25);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const u = x / P, v = y / P, iu = Math.floor(u), iv = Math.floor(v), fu = u - iu, fv = v - iv;
+    // (where the weft crosses over, the thread across is seen; else the warp)
+    const over = (iu + iv) % 2 === 0;
+    h[y * N + x] = (over ? Math.sqrt(Math.sin(Math.PI * fv)) : Math.sqrt(Math.sin(Math.PI * fu))) * (0.75 + jit[(iv % P) * P + (iu % P)]);
+  }
+  const at = (x, y) => h[((y + N) % N) * N + (x + N) % N];
+  return (WEAVE = dataTex(N, d => {
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const dx = (at(x + 1, y) - at(x - 1, y)) * 1.6, dy = (at(x, y + 1) - at(x, y - 1)) * 1.6, l = Math.hypot(dx, dy, 1), i = (y * N + x) * 4;
+      d[i] = (-dx / l * 0.5 + 0.5) * 255; d[i + 1] = (dy / l * 0.5 + 0.5) * 255; d[i + 2] = (1 / l * 0.5 + 0.5) * 255; d[i + 3] = 255;
+    }
+  }));
+}
+// The stamp's height field from white-on-black lettering (a canvas the
+// lettering's size): the cloth round the letters at its own height, the
+// letters pressed into it (their edges softened over a pixel or so, as the
+// nap gives at the die's edge), and inside them the weave pressed into the
+// foil, three pixels a thread.
+function stampTex(src) {
+  const W = src.width, H = src.height;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d');
+  x.filter = 'blur(1.1px)'; x.drawImage(src, 0, 0); x.filter = 'none';
+  const img = x.getImageData(0, 0, W, H), d = img.data, rnd = seeded(97);
+  const jit = Float32Array.from({ length: 4096 }, () => rnd());
+  for (let py = 0; py < H; py++) for (let px = 0; px < W; px++) {
+    const i = (py * W + px) * 4, m = d[i + 1] / 255;
+    const u = px / 3.1, v = py / 3.1, iu = Math.floor(u), iv = Math.floor(v);
+    const over = (iu + iv) % 2 === 0;
+    const w = (over ? Math.sin(Math.PI * (v - iv)) : Math.sin(Math.PI * (u - iu))) * (0.8 + 0.4 * jit[((iv & 63) << 6) | (iu & 63)]);
+    const hgt = 0.62 - 0.2 * m + m * 0.085 * w;
+    d[i] = d[i + 1] = d[i + 2] = Math.round(Math.max(0, Math.min(1, hgt)) * 255); d[i + 3] = 255;
+  }
+  x.putImageData(img, 0, 0);
+  return c;
 }
 
 // The house's walnut on a part whose UVs run `lu` cm along the grain (u)
@@ -922,43 +1016,67 @@ function buildShoe(set) {
   seal.rotation.set(Math.PI / 2, Math.PI / 2, 0); seal.position.set(0, 3.5, Z1 + 0.1); g.add(seal);
   return g;
 }
-// The discard rack: a walnut plinth with a brass line round it and a felt
-// pad on top; smoked acrylic walls, low at the front, edged in brass; the
-// played cards stacked in it, a few lying loose, and the house's brass
-// medallion on them as a weight.
+// The discard rack, the shoe's pair from the same Macau salon set: a walnut
+// plinth with a polished brass line round it and a black suede pad on top;
+// smoked acrylic walls, low at the front, their edges polished and bound in
+// polished brass rod; the played cards stacked in it, a few lying loose,
+// and the house's brass medallion on them as a weight.
+//   Across the room: a dark block by the dealer's hand, a red stack in it
+//   and a gold coin, its brass edges fine lines of light.
+//   At arm's length: the acrylic clear where you look through it and bright
+//   along its edges; the rods a mirror, one sharp highlight each - not the
+//   broad glow of brushed brass, which read as lit tubes; the suede dull,
+//   a soft sheen at a low angle.
+//   Pinched in: the suede's nap; the stack's gilt edges, card by card; the
+//   medallion's engraving cut into the metal; the walnut's pores.
+//   Light: acrylic mirrors the room at its edges and passes it face on;
+//   polished brass shows what is beside it; suede soaks the lamp up.
+//   Contact: it stands on the felt in a soft shadow of its own, darkest
+//   under its edge; the stack and the loose cards lie on the pad; the
+//   medallion casts onto the cards.
+//   Motion: none.
 function buildDiscard(set) {
   const g = new THREE.Group();
-  const smoke = new THREE.MeshPhysicalMaterial({ color: 0x3a302a, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.32, clearcoat: 1, clearcoatRoughness: 0.04, depthWrite: false, side: THREE.DoubleSide });
+  // (the shoe's acrylic: see buildShoe)
+  const smoke = glassy(new THREE.MeshPhysicalMaterial({ color: 0x2e2620, roughness: 0.04, metalness: 0, transparent: true, opacity: 0.26, clearcoat: 1, clearcoatRoughness: 0.02, depthWrite: false, side: THREE.DoubleSide }), 0.72, 1.1);
+  // (polished, but a satin polish rather than the shoe's mirror: they are
+  // thin and run under the lamp end to end, and a mirror line that long
+  // flared into a lit tube)
+  const polish = polishedOf(set.brass, 0.22); polish.envMapIntensity = 0.8;
   const X = 4.3, Z = 5.6, Y0 = 1.0;
   // (the walnut's grain at its own scale: the slab's UVs are in cm)
   // (UVs in cm: the grain along x, as the plank was cut; before, the board
   // was squeezed to 18 cm both ways and its figure read as a granite fleck)
   const wood = walnutOf(set, 1, 1);
   const plinth = slab(roundRect(2 * X + 1.2, 2 * Z + 1.0, 0.8), Y0, wood, 0.18); g.add(plinth);
-  g.add(tube(outline(2 * X + 1.24, 2 * Z + 1.04, 0.82, 0.55), 0.06, set.brass, true));
-  const pad = new THREE.Mesh(new THREE.ShapeGeometry(roundRect(2 * X - 0.4, 2 * Z - 0.4, 0.4), 8), new THREE.MeshStandardMaterial({ color: 0x0b0a0c, roughness: 0.95 }));
-  pad.rotation.x = -Math.PI / 2; pad.position.y = Y0 + 0.01; g.add(pad);
+  g.add(contactShadow(2 * X + 1.2, 2 * Z + 1.0, 0.8, 1.3));
+  g.add(tube(outline(2 * X + 1.24, 2 * Z + 1.04, 0.82, 0.55), 0.06, polish, true));
+  // (suede: a black nap, dull face on, with a low sheen at a grazing angle;
+  // its UVs in cm, the nap at a millimetre and a half)
+  const suede = finished(new THREE.MeshPhysicalMaterial({ color: 0x0c0b0d, roughness: 0.92, sheen: 0.35, sheenRoughness: 0.6, sheenColor: new THREE.Color(0x2a2830), envMapIntensity: 0.3 }), 'clay', 1 / 1.5, 1 / 1.5, 0.35);
+  const pad = new THREE.Mesh(new THREE.ShapeGeometry(roundRect(2 * X - 0.4, 2 * Z - 0.4, 0.4), 8), suede);
+  pad.rotation.x = -Math.PI / 2; pad.position.y = Y0 + 0.01; pad.receiveShadow = true; g.add(pad);
   const side = new THREE.Shape();
   side.moveTo(-Z, Y0); side.lineTo(Z, Y0); side.lineTo(Z, 5.6); side.lineTo(Z - 0.6, 5.6); side.lineTo(-Z, 2.4); side.closePath();
-  const sideGeo = new THREE.ExtrudeGeometry(side, { depth: 0.26, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.03, bevelSegments: 2 });
+  const sideGeo = new THREE.ExtrudeGeometry(side, { depth: 0.2, bevelEnabled: true, bevelThickness: 0.06, bevelSize: 0.06, bevelSegments: 3, curveSegments: 12 });
   sideGeo.rotateY(-Math.PI / 2);
   [X, -X + 0.26].forEach(x => { const w = new THREE.Mesh(sideGeo, smoke); w.position.x = x; g.add(w); });
   const back = new THREE.Mesh(new THREE.BoxGeometry(2 * X - 0.5, 5.6 - Y0, 0.26), smoke); back.position.set(0, (5.6 + Y0) / 2, Z - 0.13); g.add(back);
   [X - 0.1, -X + 0.1].forEach(x => {
-    g.add(rodBetween(V(x, 2.45, -Z), V(x, 5.65, Z - 0.6), 0.1, set.brass));
-    g.add(rodBetween(V(x, Y0, -Z + 0.05), V(x, 2.45, -Z + 0.05), 0.1, set.brass));
+    g.add(rodBetween(V(x, 2.45, -Z), V(x, 5.65, Z - 0.6), 0.1, polish));
+    g.add(rodBetween(V(x, Y0, -Z + 0.05), V(x, 2.45, -Z + 0.05), 0.1, polish));
   });
-  g.add(rodBetween(V(-X, 5.62, Z - 0.3), V(X, 5.62, Z - 0.3), 0.12, set.brass));
+  g.add(rodBetween(V(-X, 5.62, Z - 0.3), V(X, 5.62, Z - 0.3), 0.12, polish));
   // the stack, a few loose on top, and the weight
   const backM = new THREE.MeshStandardMaterial({ map: backTex(), roughness: 0.5 });
   const edgeM = giltEdges();
   const stack = new THREE.Mesh(new THREE.BoxGeometry(6.35, 1.1, 8.89), [edgeM, edgeM, backM, edgeM, edgeM, edgeM]);
-  stack.position.set(0, Y0 + 0.57, 0.3); g.add(stack);
+  stack.position.set(0, Y0 + 0.57, 0.3); stack.castShadow = true; stack.receiveShadow = true; g.add(stack);
   let y = Y0 + 1.12;
   for (let k = 0; k < 5; k++) {
     const c = new THREE.Mesh(new THREE.BoxGeometry(6.35, 0.04, 8.89), [edgeM, edgeM, backM, edgeM, edgeM, edgeM]);
     c.position.set(Math.sin(k * 2.3) * 0.22, y + 0.02, 0.3 + Math.cos(k * 1.7) * 0.2);
-    c.rotation.y = Math.sin(k * 1.9 + 0.4) * 0.05; c.castShadow = k === 4;
+    c.rotation.y = Math.sin(k * 1.9 + 0.4) * 0.05; c.castShadow = k === 4; c.receiveShadow = true;
     g.add(c); y += 0.045;
   }
   // (the seal cut into the metal, as the shoe's is: the light runs along the
