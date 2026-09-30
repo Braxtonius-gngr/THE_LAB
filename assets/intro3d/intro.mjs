@@ -57,12 +57,67 @@ const PENDANT = 3.5, ENV_LEVEL = 0.95, RIM = 2.0;
 // The gold filigree band: its width, its repeat along its length (the
 // texture is 8:1), and how far in from the walls it is inlaid in the felt.
 const TRIM = { w: 2.4, tile: 19.2, inset: 2.2 };
+// The house's felts, picked in Settings (almanac_felt_v1): black baize, the
+// house's own; and three lighter cloths - a camel tan, an ivory, a dove
+// grey. Each is a colour and the sheen its nap gives off at a low light;
+// `light` says how light it is, for what has to change with it (the gold
+// print's dark keyline, the shadows: see the table).
+export const FELTS = {
+  black: { name: 'Black', color: 0x070709, sheen: 0x2c2c36, light: 0 },
+  tan: { name: 'Tan', color: 0x7a5a38, sheen: 0xcaa77a, light: 0.6 },
+  ivory: { name: 'Ivory', color: 0xa99e86, sheen: 0xe9dfc8, light: 1 },
+  dove: { name: 'Dove grey', color: 0x5f6368, sheen: 0xb8bcc4, light: 0.55 }
+};
+export const feltOf = id => (FELTS[id] ? id : 'black');
+// (a felt material dressed as felt `id`)
+export function dressFelt(mat, id) {
+  const f = FELTS[feltOf(id)];
+  mat.color.setHex(f.color);
+  mat.sheenColor.setHex(f.sheen);
+  // (a light cloth's nap throws back more of the room than black's does)
+  mat.envMapIntensity = 0.15 + 0.25 * f.light;
+  mat.userData.felt = feltOf(id);
+  mat.userData.feltLight = f.light;
+  return mat;
+}
 // After the shot the camera floats on for FLOAT seconds, rising toward a
 // ceiling (eye height CEIL cm above the felt) that it eases into.
 const FLOAT = 36, CEIL = 178;
 // The room: the floor 82 cm under the felt, the lamps' height, the fog, and
 // the far tables' light pools ([x, z, radius]).
 const ROOM = { floor: -82, lamp: 172, fog: 0.0019, far: [[-340, -300, 150], [390, -430, 170], [-560, 120, 160], [620, 60, 150], [120, -720, 190], [-260, 520, 150]] };
+// The pace frames are drawn at: about 60 a second, evenly. A phone's
+// screen may offer 90, 120 or 144 frames a second, and a shot drawn on every
+// one of them asks twice the work of the GPU; the frames it can't finish in
+// time are dropped here and there, and that unevenness is the judder. Drawn
+// on every second frame of a 120 Hz screen (every one of a 60 or 90 Hz
+// one), each frame has twice the time, and they come at an even beat. The
+// screen's own interval is learnt from its frames: a low percentile of the
+// gaps between them, as frames the page skips still come.
+export function makePacer(hz = 60) {
+  const gaps = [];
+  let vsync = 1 / 60, seen = 0, drawn = 0;
+  return {
+    // true when the frame at `now` (a requestAnimationFrame time) is one to
+    // draw; false to wait for the next
+    due(now) {
+      if (seen) {
+        const g = (now - seen) / 1000;
+        if (g > 0.003 && g < 0.05) { gaps.push(g); if (gaps.length > 48) gaps.shift(); }
+        if (gaps.length >= 8) vsync = gaps.slice().sort((a, b) => a - b)[Math.floor(gaps.length * 0.2)];
+      }
+      seen = now;
+      const every = Math.max(1, Math.floor(1 / hz / vsync + 0.3));
+      if (drawn && (now - drawn) / 1000 < (every - 0.5) * vsync) return false;
+      drawn = now;
+      return true;
+    },
+    // (the next frame is drawn, whenever it comes: after a stop)
+    reset() { drawn = 0; },
+    get interval() { return vsync; }
+  };
+}
+
 // Catmull-Rom through keys [t, v1, v2, ...]: smooth velocity through every key.
 function spline(keys, t) {
   const n = keys.length;
@@ -744,7 +799,7 @@ export async function createIntro(opts) {
 }
 
 async function buildIntro(opts, undo, teardown) {
-  const o = Object.assign({ host: null, controlsHost: null, tier: 'standard', seed: 1, onReveal: null, onEnd: null, sound: true, onSoundChange: null, quality: 'auto', signal: null, motionOff: null }, opts);
+  const o = Object.assign({ host: null, controlsHost: null, tier: 'standard', seed: 1, onReveal: null, onEnd: null, sound: true, onSoundChange: null, quality: 'auto', signal: null, motionOff: null, felt: 'black' }, opts);
   const checkAbort = () => { if (o.signal && o.signal.aborted) throw new Error('intro cancelled'); };
   checkAbort();
   const host = o.host;
@@ -824,6 +879,7 @@ async function buildIntro(opts, undo, teardown) {
   felt.rotation.x = -Math.PI / 2;
   felt.position.set(0, 0, (P.TABLE.nearZ + P.TABLE.wallZ) / 2);
   felt.receiveShadow = true;
+  dressFelt(felt.material, o.felt);
   scene.add(felt);
 
   const rubber = new THREE.MeshStandardMaterial({ color: 0x08080a, roughness: 0.7, normalMap: rubberN, normalScale: new THREE.Vector2(0.9, 0.9) });
@@ -1026,9 +1082,14 @@ async function buildIntro(opts, undo, teardown) {
     const body = new THREE.Mesh(dieGeo, mat); body.castShadow = true;
     const pips = new THREE.Mesh(pipGeo, pipMat);
     g.add(body, pips);
-    const glow = new THREE.PointLight(0xff3a18, 0, 14, 2);
-    g.add(glow);
     scene.add(g);
+    // (the Vault Pull's dice glow from inside. The light hangs in the room,
+    // not in the die: a light under a hidden group isn't counted, so the
+    // dice coming out of the cup would change how many lights there are,
+    // and every material in the shot would be compiled again that frame -
+    // the hitch as the cup throws. Other tiers have no glow, and no light.)
+    const glow = plan.vault ? new THREE.PointLight(0xff3a18, 0, 14, 2) : null;
+    if (glow) scene.add(glow);
     return { g, mat, glow };
   });
 
@@ -1400,17 +1461,30 @@ async function buildIntro(opts, undo, teardown) {
     return Math.max(pixelRatio, Math.min(want, Math.sqrt(budget / (cw * ch))));
   };
   // The part of the screen in view while the page is pinched in (the
-  // visual viewport, in the canvas box's own pixels), or null.
-  const inView = (box, w, h) => {
+  // visual viewport, in the canvas box's own pixels) - with a margin, that
+  // and a share of its size more on every side, inside the screen - or
+  // null.
+  const inView = (box, w, h, margin = 0) => {
     const vv = window.visualViewport;
     if (!vv || !(vv.scale > 1.05)) return null;
     const b = box.getBoundingClientRect();
-    const x0 = Math.max(0, vv.offsetLeft - b.left), y0 = Math.max(0, vv.offsetTop - b.top);
-    const x1 = Math.min(w, vv.offsetLeft - b.left + vv.width), y1 = Math.min(h, vv.offsetTop - b.top + vv.height);
+    const mx = vv.width * margin, my = vv.height * margin;
+    let x0 = Math.max(0, vv.offsetLeft - b.left - mx), y0 = Math.max(0, vv.offsetTop - b.top - my);
+    let x1 = Math.min(w, vv.offsetLeft - b.left + vv.width + mx), y1 = Math.min(h, vv.offsetTop - b.top + vv.height + my);
+    if (margin) { x0 = Math.floor(x0); y0 = Math.floor(y0); x1 = Math.ceil(x1); y1 = Math.ceil(y1); }
     return x1 - x0 >= 1 && y1 - y0 >= 1 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0, fw: w, fh: h, zoom: vv.scale } : null;
   };
+  // A crop still good for the view: all of what is in view inside it, at a
+  // zoom within a sixth of its own.
+  const MARGIN = 0.25;
+  const serves = (c, v) => !!c && !!v && v.x >= c.x - 0.5 && v.y >= c.y - 0.5 && v.x + v.w <= c.x + c.w + 0.5 && v.y + v.h <= c.y + c.h + 0.5 && Math.abs(Math.log(v.zoom / c.zoom)) < 0.16;
   // Sizes the canvas for a moving frame (live) or for the frame that stays.
-  const size = (live = !redraw) => {
+  // Pinched in, it covers the part in view: exactly, for a frame at rest;
+  // for one drawn while the view moves (`moving` - a moving frame, or a
+  // still while the page is pinched or panned) the crop already drawn is
+  // kept while it still serves, and a new one takes a margin round the
+  // view, so a small pan or pinch shows what is already drawn, sharp.
+  const size = (live = !redraw, moving = live) => {
     const box = canvas.parentElement || host;
     const w = box.clientWidth || window.innerWidth, h = box.clientHeight || window.innerHeight;
     // (the lens follows the screen's shape, and only when that changes:
@@ -1422,9 +1496,13 @@ async function buildIntro(opts, undo, teardown) {
       camera.fov = w / h < 0.62 ? 42 : 34;
       camera.updateProjectionMatrix();
     }
-    crop = live ? null : inView(box, w, h);
+    const v = inView(box, w, h);
+    if (!moving || !serves(crop, v) || crop.fw !== w || crop.fh !== h) crop = v && moving ? inView(box, w, h, MARGIN) : v;
     const cw = crop ? crop.w : w, ch = crop ? crop.h : h;
-    const r = live ? pixelRatio : stillRatio(w, h, cw, ch, crop ? crop.zoom : 1);
+    // (a moving frame: its pixels spread over the part in view, so pinched
+    // in it is as sharp as the zoom - to the screen's own - at no more cost)
+    const r = live ? Math.min(pixelRatio * Math.sqrt((w * h) / (cw * ch)), Math.max(pixelRatio, Math.min(window.devicePixelRatio || 1, 3) * (crop ? crop.zoom : 1)))
+      : stillRatio(w, h, cw, ch, crop ? crop.zoom : 1);
     const key = [w, h, r, crop ? [crop.x, crop.y, crop.w, crop.h] : ''].join();
     if (key === sized) return false;
     sized = key;
@@ -1458,7 +1536,9 @@ async function buildIntro(opts, undo, teardown) {
     const [w, h, r0] = sized.split(',').map(Number);
     if (!w) return;
     const cw = crop ? crop.w : w, ch = crop ? crop.h : h;
-    const r = live ? Math.min(r0, pixelRatio * (crop ? crop.zoom : 1)) : r0;
+    // (drawn alone, over a frame that is not drawn again: close to the
+    // still's own resolution - unless the device is down from full speed)
+    const r = live ? Math.min(r0, Math.max(pixelRatio * Math.sqrt((w * h) / (cw * ch)), pixelRatio < LIVE_MAX ? 0 : 0.85 * r0)) : r0;
     gl.getSize(layerSize);
     if (known && gl.getPixelRatio() === r && layerSize.x === cw && layerSize.y === ch) return;
     place(gl.domElement, gl, cw, ch, r);
@@ -1478,14 +1558,19 @@ async function buildIntro(opts, undo, teardown) {
   const rest = again => { redraw = again; clearTimeout(zoomT); size(); again(); };
   // Moving again: the next frame is drawn at the moving frames' resolution.
   const move = () => { if (!redraw) return; redraw = null; clearTimeout(zoomT); refit = true; };
-  // Pinching, or moving about while pinched in: a crop drawn for where the
-  // view was would leave the rest of the canvas empty, so the whole view is
-  // back at once (at the moving frames' resolution, while the page moves),
-  // and what is in view is drawn sharp once it stops.
+  // Pinching, or moving about while pinched in. The canvas follows the view
+  // as it goes, a frame at a time: a crop that no longer covers what is in
+  // view (or drawn for a zoom a sixth away) is drawn again round where the
+  // view is now, with a margin, at the zoom's resolution - within a still's
+  // budget, so never blocky, and never a gap at the edge - and once the
+  // view stops, just what is in view, at the zoom's full resolution.
+  // Moving frames re-crop on their own next frame.
+  let zoomRaf = 0;
+  const follow = () => { zoomRaf = 0; if (redraw && size(false, true)) redraw(); };
   const onZoom = () => {
-    if (!redraw) return;
+    if (!redraw) { refit = true; return; }
     clearTimeout(zoomT);
-    if (crop) { size(true); redraw(); }
+    if (!zoomRaf) zoomRaf = requestAnimationFrame(follow);
     // (the keyboard coming up, say, changes nothing the canvas needs)
     zoomT = setTimeout(() => { if (redraw && size()) redraw(); }, 220);
   };
@@ -1493,7 +1578,7 @@ async function buildIntro(opts, undo, teardown) {
     window.visualViewport.addEventListener('resize', onZoom);
     window.visualViewport.addEventListener('scroll', onZoom);
     undo.push(() => {
-      clearTimeout(zoomT);
+      clearTimeout(zoomT); cancelAnimationFrame(zoomRaf);
       window.visualViewport.removeEventListener('resize', onZoom);
       window.visualViewport.removeEventListener('scroll', onZoom);
     });
@@ -1508,6 +1593,45 @@ async function buildIntro(opts, undo, teardown) {
   };
   if (o.quality !== 'low') makeComposer();
   size();
+
+  // (a frame's breath: the next frame, or a moment when frames aren't
+  // coming - a hidden tab)
+  const breath = () => new Promise(res => { let d = false; const go = () => { if (!d) { d = true; res(); } }; requestAnimationFrame(go); setTimeout(go, 60); });
+  // (any buffer will do to compile against: a shader drawing into one
+  // buffer is the one drawing into all of them)
+  const probe = new THREE.WebGLRenderTarget(1, 1);
+  undo.push(() => probe.dispose());
+  // The scene's shaders compiled (in parallel where the driver can) for the
+  // way it is drawn now - into the post's buffer; or to the screen and, for
+  // the glass dice, into a buffer - and its textures uploaded. `show`: parts
+  // still hidden that are compiled as they will be once shown (the lights
+  // they bring count), then hidden again; `spread`: the uploads a frame
+  // apiece, for a scene that is playing meanwhile. (The whole scene, always:
+  // a part of it compiled on its own would count its lights twice.)
+  const warm = async ({ show = [], spread = false } = {}) => {
+    const was = renderer.getRenderTarget(), hidden = show.filter(x => !x.visible);
+    hidden.forEach(x => { x.visible = true; });
+    const jobs = [];
+    // (with the post, the screen's shaders too, not waited on: should a slow
+    // device drop the post mid-shot - applyQuality - the frame that drops it
+    // compiles nothing)
+    for (const target of composer ? [probe, null] : [null, probe]) {
+      renderer.setRenderTarget(target);
+      try {
+        const job = renderer.compileAsync(scene, camera).catch(() => {});
+        if (target === probe || !composer) jobs.push(job);
+      } catch (e) { /* compiled on first draw */ }
+    }
+    renderer.setRenderTarget(was);
+    const texs = new Set();
+    scene.traverse(m => { if (m.material) [].concat(m.material).forEach(mat => Object.values(mat).forEach(v => { if (v && v.isTexture && !v.isRenderTargetTexture) texs.add(v); })); });
+    hidden.forEach(x => { x.visible = false; });
+    await Promise.all(jobs);
+    for (const t of texs) {
+      try { renderer.initTexture(t); } catch (e) { /* on first draw */ }
+      if (spread) await breath();
+    }
+  };
 
   // ---- One frame at real time t.
   const setPose = (obj, p, q) => { obj.position.set(p[0], p[1], p[2]); obj.quaternion.set(q[0], q[1], q[2], q[3]); };
@@ -1582,14 +1706,16 @@ async function buildIntro(opts, undo, teardown) {
       const s = burst > 0 ? 1 + burst * 5 : 1;
       d.g.scale.setScalar(s);
       d.mat.emissiveIntensity = glow * 0.8;
-      d.glow.intensity = glow * 3.5;
+      if (d.glow) { d.glow.position.set(pose.p[0], pose.p[1], pose.p[2]); d.glow.intensity = shown ? glow * 3.5 : 0; }
       // Seen from afar a die is a few pixels, and its glass-hard gloss and
       // the studio in it average out to a pale pink: the gloss goes as the
       // lens pulls back, leaving the resin's own red.
       const far = Math.hypot(pose.p[0] - camera.position.x, pose.p[1] - camera.position.y, pose.p[2] - camera.position.z) / s;
       const kg = 1 - smoother((far - 48) / 55);
       d.mat.envMapIntensity = 0.3 + 2.0 * kg;
-      d.mat.clearcoat = 0.7 * kg;
+      // (never quite none: a coat that reaches 0 is a different shader, and
+      // switching to it mid-shot compiles it then and there)
+      d.mat.clearcoat = Math.max(0.02, 0.7 * kg);
       d.mat.specularIntensity = 0.25 + 0.35 * kg;
       d.mat.roughness = 0.16 + 0.36 * (1 - kg);
     }
@@ -1734,17 +1860,21 @@ async function buildIntro(opts, undo, teardown) {
   // The table's moving frames, timed by its loop: the resolution the
   // shot's steps left (they may have been taken while the app was still
   // starting up under it) comes back, half a step at a time, while frames
-  // come quickly, and goes down while they come slowly - and once down, it
-  // stays down for the visit (no see-saw).
+  // come quickly, and goes down while they come slowly. Once down, it tries
+  // again only after a wait, twice as long each time it has had to come
+  // down: a slow patch (a sync, the app busy under it) costs a few seconds
+  // of a softer picture, not the visit, while a device that can't hold it
+  // tries less and less often (no see-saw).
   const paced = [];
-  let pacedDown = false;
+  let pacedWait = 0, pacedFor = 8000;
   const pace = raw => {
     paced.push(raw);
     if (paced.length < 20) return;
     const med = median(paced);
     paced.length = 0;
-    if (med > 0.036 && pixelRatio > 1) { pixelRatio = Math.max(1, pixelRatio - 0.5); pacedDown = true; refit = true; }
-    else if (med < 0.021 && !pacedDown && pixelRatio < LIVE_MAX) { pixelRatio = Math.min(LIVE_MAX, pixelRatio + 0.5); refit = true; }
+    const now = performance.now();
+    if (med > 0.036 && pixelRatio > 1) { pixelRatio = Math.max(1, pixelRatio - 0.5); pacedWait = now + pacedFor; pacedFor *= 2; refit = true; }
+    else if (med < 0.021 && now > pacedWait && pixelRatio < LIVE_MAX) { pixelRatio = Math.min(LIVE_MAX, pixelRatio + 0.5); refit = true; }
   };
   const scheduleSound = (from, to) => {
     if (!sound || !sound.on) return;
@@ -1782,11 +1912,14 @@ async function buildIntro(opts, undo, teardown) {
     if (sound && sound.bed) sound.fade(sound.ctx.currentTime, 1.2);
     cue();
   };
+  const pacer = makePacer();
   const loop = now => {
     if (!playing) return;
     // Reduced motion switched on mid-shot (in the app or the system): the
     // finished frame, at once, as when it was on from the start.
     if (o.motionOff && o.motionOff()) { still(); return; }
+    // (a frame between the ones drawn, on a fast screen: see makePacer)
+    if (!pacer.due(now)) { raf = requestAnimationFrame(loop); return; }
     const raw = last ? (now - last) / 1000 : 1 / 60;
     last = now;
     // Time runs with the clock (a slow device drops frames rather than
@@ -1815,6 +1948,25 @@ async function buildIntro(opts, undo, teardown) {
     raf = requestAnimationFrame(loop);
   };
   let revealed = false, ended = false;
+  // A lost context - the phone short of GPU memory: a screen recording, a
+  // screenshot, another app in front - comes back empty, every buffer gone.
+  // three.js makes again what it can by itself (the shaders, the textures
+  // from their images, the shadows, the post's buffers), but the studio the
+  // glossy surfaces mirror is a buffer drawn once, and would stay black: the
+  // room went dark but for the lamps' own glints on the brass. It is drawn
+  // again, then the frame on screen (the table, once it has the canvas,
+  // redraws its own through onRestore).
+  const restored = [];
+  const onRestored = () => {
+    const old = scene.environment;
+    scene.environment = studioEnvironment(renderer);
+    if (old) old.dispose();
+    if (restored.length) restored.forEach(fn => { try { fn(); } catch (e) { /* the next frame */ } });
+    else if (redraw) redraw();
+    else if (!playing) render(t);
+  };
+  canvas.addEventListener('webglcontextrestored', onRestored);
+  undo.push(() => canvas.removeEventListener('webglcontextrestored', onRestored));
   const onResize = () => { size(); render(t); };
   window.addEventListener('resize', onResize);
   let resumed = false;
@@ -1882,14 +2034,33 @@ async function buildIntro(opts, undo, teardown) {
   soundBtn.addEventListener('click', dropUnlock);
   undo.push(dropUnlock);
 
-  // Shaders compiled up front (in parallel where the driver can), so the
-  // shot does not hitch on its first frames.
-  try { await renderer.compileAsync(scene, camera); } catch (e) { /* compiled on first draw */ }
+  // Everything the shot draws is made ready before it plays, so no frame of
+  // it waits on the GPU. Each shader is compiled for the way it is drawn: a
+  // shader drawing into a buffer (the post's, or the one the glass dice see
+  // the room through) is not the one drawing to the screen, and compiling
+  // the screen's when the post draws is how the old shot still hitched. Then
+  // a frame is drawn, unseen, at each turn of the shot - the throw, the
+  // strike, the swing round, the landing, the stick or the burst or the
+  // edge, the float - so whatever only those frames bring in (the wall
+  // coming into view, the dice's glass and its buffer, the burst's plaques,
+  // the room) is compiled and uploaded now rather than the first time it
+  // shows. Nothing after this changes what a shader is: no light comes or
+  // goes, and no coat reaches none.
+  await warm();
   checkAbort();
+  {
+    const at = [Rrel + 0.04, Rwall + 0.06, W.slowHold[1], Rrest + 0.3, plan.totalReal + 1, floatEnd - 0.5];
+    if (plan.stick) at.push(R2(plan.stick.hp.T.approach[1]), R2(plan.stick.hp.T.pull[1]));
+    if (plan.vault) at.push(R2(plan.vault.boom) + 0.05, R2(plan.vault.boom) + 0.7);
+    if (plan.edge) at.push(R2(plan.edge.done) + 0.5);
+    canvas.style.visibility = 'hidden';
+    for (const tt of at) { render(Math.min(floatEnd, Math.max(0, tt))); await breath(); checkAbort(); }
+    canvas.style.visibility = '';
+  }
   render(0);
   return {
     plan: { tier, seed: o.seed, revealReal: plan.revealReal, totalReal: plan.totalReal, floatEnd, restReal: plan.restReal, wallReal: plan.wallReal, values: plan.values, call: plan.call, throwOk: plan.throwOk, why: plan.why },
-    play() { playing = true; last = 0; move(); raf = requestAnimationFrame(loop); },
+    play() { playing = true; last = 0; pacer.reset(); move(); raf = requestAnimationFrame(loop); },
     seek(time) { playing = false; cancelAnimationFrame(raf); t = Math.max(0, Math.min(floatEnd, time)); render(t); },
     // A tap mid-shot: straight to its end, and float on from there.
     skip() {
@@ -1897,7 +2068,7 @@ async function buildIntro(opts, undo, teardown) {
         t = plan.totalReal;
         sfxIndex = sfx.findIndex(ev => ev.t >= t); if (sfxIndex < 0) sfxIndex = sfx.length;
       }
-      if (!playing && t < floatEnd) { playing = true; last = 0; move(); raf = requestAnimationFrame(loop); }
+      if (!playing && t < floatEnd) { playing = true; last = 0; pacer.reset(); move(); raf = requestAnimationFrame(loop); }
       render(t);
       cue();
     },
@@ -1906,6 +2077,11 @@ async function buildIntro(opts, undo, teardown) {
     // A look at the running scene (the table builds into it while the
     // intro floats), without stopping anything.
     peek() { return { scene, renderer, camera, composer, bloom, dbg: { camEye, camAim, CAM_DT, W, plan, dicePose } }; },
+    // What is added to the scene (the table, while the intro floats) made
+    // ready before it is drawn: see warm().
+    warm,
+    // (a felt picked while the shot is up: dressed, and the frame redrawn)
+    setFelt(id) { dressFelt(felt.material, id); if (redraw) redraw(); else if (!playing) render(t); },
     // The fly-in takes the scene over: the loop stops and the set, the
     // renderer and the camera are handed on, as they are this moment.
     release() {
@@ -1928,7 +2104,15 @@ async function buildIntro(opts, undo, teardown) {
         // ended; through the part in view, when pinched in); the frame on
         // screen held (drawn again, sharp) or moving on; a moving frame's
         // time, for its resolution
-        paint, rest, move, pace, layer, lens, fit,
+        paint, rest, move, pace, layer, lens, fit, warm,
+        // (a pacer of its own for each loop that draws: see makePacer)
+        pacer: () => makePacer(),
+        // (what to draw again once a lost context is back: see onRestored)
+        onRestore: fn => { restored.push(fn); },
+        // (the felt picked in Settings, dressed onto the shot's table and
+        // onto any other felt handed it: see FELTS)
+        setFelt: id => dressFelt(felt.material, id),
+        dressFelt,
         // the intro's own world (dice, stick, dust) at a real time, and a
         // frame of it drawn through the intro's post-processing
         stage: tt => stage(tt == null ? t : tt),
