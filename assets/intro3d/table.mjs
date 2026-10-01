@@ -3872,7 +3872,9 @@ export async function prepareTable(opts) {
   return {
     dest,
     fly,
-    dispose() { made.forEach(m => scene.remove(m)); }
+    // (out of the room, and its GPU resources given back - a drift away
+    // from the table must not leave it on the card)
+    dispose() { made.forEach(m => { scene.remove(m); freeTree(m, scene.userData.set); }); }
   };
 }
 
@@ -3880,7 +3882,36 @@ export async function prepareTable(opts) {
 // What another skin's home (study.mjs) builds with, so the rooms agree:
 // the cards, their backs and the info sheet's text; the phone; the set's
 // finishes and helpers.
+// Give the GPU back everything a home built: its geometries, its materials
+// and their textures - but not the house's own (the intro set's materials
+// and textures in scene.userData.set, which the room and every other home
+// still draw with), and not a render target's texture (its owner frees it).
+// Taking an object out of the scene frees nothing on the GPU by itself.
+export function freeTree(root, set) {
+  const keepMat = new Set(), keepTex = new Set();
+  const note = v => {
+    if (!v) return;
+    if (v.isMaterial) { keepMat.add(v); Object.values(v).forEach(t => { if (t && t.isTexture) keepTex.add(t); }); }
+    else if (v.isTexture) keepTex.add(v);
+  };
+  if (set) Object.values(set).forEach(v => { if (v && !v.isMaterial && !v.isTexture && typeof v === 'object') Object.values(v).forEach(note); else note(v); });
+  const geos = new Set(), mats = new Set();
+  root.traverse(o => {
+    // (and what the objects themselves own: an instanced mesh's instance
+    // buffers, a light's shadow map)
+    if (o.isInstancedMesh) o.dispose();
+    if (o.isLight && o.shadow && o.shadow.dispose) o.shadow.dispose();
+    if (o.geometry) geos.add(o.geometry);
+    if (o.material) [].concat(o.material).forEach(m => { if (!keepMat.has(m)) mats.add(m); });
+  });
+  geos.forEach(gm => gm.dispose());
+  mats.forEach(m => {
+    Object.values(m).forEach(t => { if (t && t.isTexture && !t.isRenderTargetTexture && !keepTex.has(t)) t.dispose(); });
+    m.dispose();
+  });
+}
+
 export const tableKit = {
   CARD, TIERS, cardHTML, cardShown, inkBacks, demoHand, phoneHTML, fmtLeft, esc, tierOf, initials, hash,
-  canvasTex, finished, polishedOf, fineSet, glassy, contactShadow, roundRect, lying, retile
+  canvasTex, finished, polishedOf, fineSet, glassy, contactShadow, roundRect, lying, retile, freeTree
 };
