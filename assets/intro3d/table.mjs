@@ -3897,6 +3897,10 @@ export function freeTree(root, set) {
   if (set) Object.values(set).forEach(v => { if (v && !v.isMaterial && !v.isTexture && typeof v === 'object') Object.values(v).forEach(note); else note(v); });
   const geos = new Set(), mats = new Set();
   root.traverse(o => {
+    // (and what the objects themselves own: an instanced mesh's instance
+    // buffers, a light's shadow map)
+    if (o.isInstancedMesh) o.dispose();
+    if (o.isLight && o.shadow && o.shadow.dispose) o.shadow.dispose();
     if (o.geometry) geos.add(o.geometry);
     if (o.material) [].concat(o.material).forEach(m => { if (!keepMat.has(m)) mats.add(m); });
   });
