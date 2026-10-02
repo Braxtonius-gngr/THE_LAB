@@ -3991,7 +3991,11 @@ export async function prepareTable(opts) {
       if (idle.away) { idle.away = false; idle.since = performance.now(); idle.peekAt = 0; if (!idle.sulk) idle.stage = 0; }
       if (document.documentElement.getAttribute('data-motion') === 'off') return;
       if (running || armsRaf || tNow < settleAt || gestureEnd > tNow) return;
-      if (!idle.since || focusId || phoneHeld || document.body.classList.contains('r3-sheet-open') || document.querySelector('.sheet-backdrop.open')) { idle.since = performance.now(); idle.peekAt = 0; return; }
+      // (pinched in, you are looking something over: the machine holds
+      // still, so the table stays a still - drawn at the zoom's own
+      // resolution - rather than a moving frame's)
+      const pinched = window.visualViewport && window.visualViewport.scale > 1.05;
+      if (!idle.since || pinched || focusId || phoneHeld || document.body.classList.contains('r3-sheet-open') || document.querySelector('.sheet-backdrop.open')) { idle.since = performance.now(); idle.peekAt = 0; return; }
       const ready = readyNow();
       // (one fewer ready than last time: collected - a knock of thanks)
       if (idle.ready >= 0 && ready.length < idle.ready && !idle.sulk) { idle.ready = ready.length; perform('knock', ready); return; }
