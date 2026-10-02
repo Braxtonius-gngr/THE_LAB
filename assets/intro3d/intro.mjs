@@ -42,7 +42,7 @@ const asset = f => new URL(f, HERE).href;
 // hands the shot its plan, its camera path, its sounds and its frames - see
 // the `game` seam in buildIntro(). The set, the resolution, the post, the
 // sound, the quality steps and the handover to the homes are shared.
-export const GAMES = ['dice', 'wheel'];
+export const GAMES = ['dice', 'wheel', 'plinko'];
 export function pickGame(r) { return GAMES[Math.min(GAMES.length - 1, Math.floor(r * GAMES.length))]; }
 export const TIERS = ['standard', 'hardways', 'vault', 'edge'];
 export const TIER_NAMES = { standard: 'Standard Drop', hardways: 'The Hardways', vault: 'The Vault Pull', edge: 'The Defiant Edge' };
@@ -899,6 +899,31 @@ class Sound {
         break;
       case 'bell':
         [1, 2.0, 2.98, 4.2].forEach((m, i) => this.tone(when + i * 0.012, 660 * m, 0.12 / (i + 1), 2.2 - i * 0.3, 'sine'));
+        break;
+      // (the plinko's: the chip's brass rim on a brass pin - a ring, higher
+      // and shorter the harder; its clay on a rail; its landing on the
+      // bucket's brass floor; the lever's latch)
+      case 'pin': {
+        const f = Math.min(1, (ev.speed || 60) / 200);
+        this.burst(when, 'bandpass', (3400 + 1400 * f) * k, 5, 0.08 + 0.2 * f, 0.016 / k);
+        this.tone(when, (2300 + 300 * f) * k, 0.03 + 0.05 * f, (0.07 + 0.05 * f) / k, 'sine', 2100 * k);
+        this.tone(when, 900 * k, 0.03 * f, 0.03 / k, 'triangle');
+        break;
+      }
+      case 'clay': {
+        const f = Math.min(1, (ev.speed || 40) / 200);
+        this.burst(when, 'bandpass', 1900 * k, 2.5, 0.06 + 0.14 * f, 0.02 / k);
+        break;
+      }
+      case 'cup': {
+        const f = Math.min(1, (ev.speed || 100) / 260);
+        this.burst(when, 'lowpass', 700 * k, 0.9, 0.25 + 0.3 * f, 0.06 / k);
+        this.tone(when, 420 * k, 0.1 * f, 0.1 / k, 'sine', 260 * k);
+        break;
+      }
+      case 'latch':
+        this.burst(when, 'bandpass', 1400, 1.2, 0.18, 0.03);
+        this.tone(when + 0.01, 520, 0.06, 0.05, 'triangle', 380);
         break;
       default:
     }
