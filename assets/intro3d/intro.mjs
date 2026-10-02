@@ -1621,14 +1621,24 @@ async function buildIntro(opts, undo, teardown) {
   // covers only that.
   let redraw = null, crop = null, refit = false, zoomT = 0;
   let screenW = 0, screenH = 0, sized = '';
-  // (a still's buffers are held to about a phone's own pixels at 3x; with
-  // the bloom pass on - its buffers are doubled and multisampled - to no
-  // more than a full-speed moving frame's)
+  // (a still's buffers are held to about a phone's own pixels at 3x. With
+  // the bloom pass on its buffers are doubled, so a still is drawn into
+  // them without multisampling - see postStill() - at the screen's own
+  // resolution, where the edges are as fine as the print; a moving frame
+  // has them multisampled at its own, lower resolution.)
   const STILL_PX = 4.2e6;
   const stillRatio = (w, h, cw, ch, zoom) => {
     const want = Math.min(window.devicePixelRatio || 1, 3) * zoom;
-    const budget = composer ? w * h * LIVE_MAX * LIVE_MAX : STILL_PX;
-    return Math.max(pixelRatio, Math.min(want, Math.sqrt(budget / (cw * ch))));
+    return Math.max(pixelRatio, Math.min(want, Math.sqrt(STILL_PX / (cw * ch))));
+  };
+  // The post's buffers multisampled (a moving frame) or not (a still, at
+  // its higher resolution): set before a frame is drawn, and made again
+  // by the renderer the next time it draws into them.
+  let stillPost = false;
+  const postStill = on => {
+    if (!composer || on === stillPost) return;
+    stillPost = on;
+    [composer.renderTarget1, composer.renderTarget2].forEach(t => { if (t) { t.samples = on ? 0 : 4; t.dispose(); } });
   };
   // The part of the screen in view while the page is pinched in (the
   // visual viewport, in the canvas box's own pixels) - with a margin, that
@@ -1673,11 +1683,11 @@ async function buildIntro(opts, undo, teardown) {
     // in it is as sharp as the zoom - to the screen's own - at no more cost)
     const r = live ? Math.min(pixelRatio * Math.sqrt((w * h) / (cw * ch)), Math.max(pixelRatio, Math.min(window.devicePixelRatio || 1, 3) * (crop ? crop.zoom : 1)))
       : stillRatio(w, h, cw, ch, crop ? crop.zoom : 1);
-    const key = [w, h, r, crop ? [crop.x, crop.y, crop.w, crop.h] : ''].join();
+    const key = [w, h, r, live ? 'l' : 's', crop ? [crop.x, crop.y, crop.w, crop.h] : ''].join();
     if (key === sized) return false;
     sized = key;
     place(canvas, renderer, cw, ch, r);
-    if (composer) { composer.setPixelRatio(r); composer.setSize(cw, ch); }
+    if (composer) { postStill(!live); composer.setPixelRatio(r); composer.setSize(cw, ch); }
     layers.forEach(gl => place(gl.domElement, gl, cw, ch, r));
     return true;
   };
@@ -2035,15 +2045,18 @@ async function buildIntro(opts, undo, teardown) {
   // down: a slow patch (a sync, the app busy under it) costs a few seconds
   // of a softer picture, not the visit, while a device that can't hold it
   // tries less and less often (no see-saw).
+  // (the wait never grows past half a minute: a device that was slow once
+  // under a sync or a compile is tried again, not written off)
   const paced = [];
   let pacedWait = 0, pacedFor = 8000;
+  const PACED_MAX = 32000;
   const pace = raw => {
     paced.push(raw);
     if (paced.length < 20) return;
     const med = median(paced);
     paced.length = 0;
     const now = performance.now();
-    if (med > 0.036 && pixelRatio > 1) { pixelRatio = Math.max(1, pixelRatio - 0.5); pacedWait = now + pacedFor; pacedFor *= 2; refit = true; }
+    if (med > 0.036 && pixelRatio > 1) { pixelRatio = Math.max(1, pixelRatio - 0.5); pacedWait = now + pacedFor; pacedFor = Math.min(PACED_MAX, pacedFor * 2); refit = true; }
     else if (med < 0.021 && now > pacedWait && pixelRatio < LIVE_MAX) { pixelRatio = Math.min(LIVE_MAX, pixelRatio + 0.5); refit = true; }
   };
   const scheduleSound = (from, to) => {
