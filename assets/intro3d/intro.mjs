@@ -35,6 +35,15 @@ import { finish, finished, embossTex } from './finish.mjs';
 const HERE = new URL('./', import.meta.url);
 const asset = f => new URL(f, HERE).href;
 
+// The games: the shot is one of these each launch, drawn alike (pickGame)
+// unless ?game= names one. The dice are this module's own; every other game
+// is a module of its own beside it (`./<game>.mjs`, exporting makeGame())
+// that builds its pieces into the same room, under the same lights, and
+// hands the shot its plan, its camera path, its sounds and its frames - see
+// the `game` seam in buildIntro(). The set, the resolution, the post, the
+// sound, the quality steps and the handover to the homes are shared.
+export const GAMES = ['dice', 'wheel'];
+export function pickGame(r) { return GAMES[Math.min(GAMES.length - 1, Math.floor(r * GAMES.length))]; }
 export const TIERS = ['standard', 'hardways', 'vault', 'edge'];
 export const TIER_NAMES = { standard: 'Standard Drop', hardways: 'The Hardways', vault: 'The Vault Pull', edge: 'The Defiant Edge' };
 // (as the draw below gives them: 90%, 8%, 1.9%, 0.1%)
@@ -275,7 +284,9 @@ function cupAt(t) {
 // turning), holds while the camera swings round and the light gleams across
 // them, and eases back up for the landing.
 function rampWorld(s, from, to) { return from * s + (to - from) * (Math.pow(s, 6) - 3 * Math.pow(s, 5) + 2.5 * Math.pow(s, 4)); }
-function makeWarp(wallW) {
+// (exported for the other games: the same slow motion round their own
+// moment - the wheel's clapper riding its last peg)
+export function makeWarp(wallW) {
   const a = wallW - 0.05, down = 0.26, hold = 0.95, up = 0.6, rate = 0.12;
   const world = t => {
     const x = t - a;
@@ -848,10 +859,13 @@ class Sound {
       case 'hum':
         this.tone(when, ev.f, 0.06 + 0.1 * ev.level, ev.dur, 'sawtooth');
         break;
-      case 'boom':
-        this.tone(when, 70, 0.9, 1.2, 'sine', 32);
-        this.burst(when, 'lowpass', 900, 0.8, 1, 0.7);
+      case 'boom': {
+        // (soft: the wheel's, under its bell)
+        const g = ev.soft ? 0.3 : 1;
+        this.tone(when, 70, 0.9 * g, 1.2, 'sine', 32);
+        this.burst(when, 'lowpass', 900, 0.8, 1 * g, 0.7);
         break;
+      }
       case 'chime':
         [1, 2.76, 5.4].forEach((m, i) => this.tone(when + i * 0.03, 880 * m, 0.08 / (i + 1), 1.4, 'sine'));
         break;
@@ -861,6 +875,30 @@ class Sound {
         break;
       case 'scrape':
         this.burst(when, 'bandpass', 1400, 1.2, 0.09, ev.dur, 0.8);
+        break;
+      // (the wheel's: the clapper's leather over a brass peg - a slap and
+      // the pin's ring, quicker and lighter the faster the wheel; the
+      // wind-up's creak; the pull; the settle's wooden knock; the bell)
+      case 'tick': {
+        const f = Math.min(1, (ev.speed || 1) / 9);
+        this.burst(when, 'bandpass', (1500 + 900 * f) * k, 2.4, (0.12 + 0.16 * f), 0.014 / k);
+        this.tone(when, (640 + 120 * f) * k, 0.05 + 0.05 * (1 - f), 0.05 / k, 'triangle', 420 * k);
+        break;
+      }
+      case 'creak':
+        this.burst(when, 'bandpass', 420, 3, 0.12, 0.4, 0.5);
+        this.tone(when + 0.05, 180, 0.03, 0.35, 'sawtooth', 140);
+        break;
+      case 'pull':
+        this.burst(when, 'bandpass', 700, 0.8, 0.2, 0.42, 0.7);
+        this.burst(when + 0.06, 'lowpass', 300, 0.8, 0.3, 0.3);
+        break;
+      case 'knock':
+        this.burst(when, 'lowpass', 520, 0.9, 0.5, 0.07);
+        this.tone(when, 210, 0.18, 0.14, 'sine', 120);
+        break;
+      case 'bell':
+        [1, 2.0, 2.98, 4.2].forEach((m, i) => this.tone(when + i * 0.012, 660 * m, 0.12 / (i + 1), 2.2 - i * 0.3, 'sine'));
         break;
       default:
     }
@@ -891,11 +929,17 @@ export async function createIntro(opts) {
 }
 
 async function buildIntro(opts, undo, teardown) {
-  const o = Object.assign({ host: null, controlsHost: null, tier: 'standard', seed: 1, onReveal: null, onEnd: null, sound: true, onSoundChange: null, quality: 'auto', signal: null, motionOff: null, felt: 'black', trim: 'gold' }, opts);
+  const o = Object.assign({ host: null, controlsHost: null, tier: 'standard', seed: 1, game: 'dice', onReveal: null, onEnd: null, sound: true, onSoundChange: null, quality: 'auto', signal: null, motionOff: null, felt: 'black', trim: 'gold' }, opts);
   const checkAbort = () => { if (o.signal && o.signal.aborted) throw new Error('intro cancelled'); };
   checkAbort();
   const host = o.host;
   const tier = TIERS.includes(o.tier) ? o.tier : 'standard';
+  // The game (see GAMES): the dice are built here; another game's module is
+  // fetched now, alongside the set's textures, and asked for its pieces once
+  // the room and its lights stand (`game`, below).
+  const gameId = GAMES.includes(o.game) ? o.game : 'dice';
+  const gameLoad = gameId === 'dice' ? null : import(`./${gameId}.mjs`);
+  let game = null;
 
   // Rare assets start loading now, while the throw is worked out; nothing
   // waits on them for long, and nothing is fetched for a tier not drawn.
@@ -912,7 +956,7 @@ async function buildIntro(opts, undo, teardown) {
     // (the lettering is an <img>: it is shown over the shot, not in it)
     rare.platinum = null;
   }
-  if (tier === 'vault') {
+  if (tier === 'vault' && !gameLoad) {
     rareLoads.push(tex('rare/plaque-25k.jpg', true).then(t => { rare.p25 = t; }).catch(() => {}));
     rareLoads.push(tex('rare/plaque-100k.jpg', true).then(t => { rare.p100 = t; }).catch(() => {}));
     rareLoads.push(fetch(asset('rare/ceramic-clack.wav')).then(r => (r.ok ? r.arrayBuffer() : null)).then(b => { rare.clackBytes = b; }).catch(() => {}));
@@ -955,9 +999,10 @@ async function buildIntro(opts, undo, teardown) {
   [goldC, goldA, goldN].forEach(t => { t.wrapT = THREE.ClampToEdgeWrapping; t.anisotropy = 8; });
   feltN.anisotropy = 8;
   checkAbort();
-  const plan = await makePlanAsync(tier, o.seed, o.signal);
+  // (another game's plan comes with its pieces, once the room stands)
+  let plan = gameLoad ? null : await makePlanAsync(tier, o.seed, o.signal);
   checkAbort();
-  const W = plan.warp;
+  let W = plan ? plan.warp : null;
 
   // ---- The set.
   const scene = new THREE.Scene();
@@ -1123,6 +1168,28 @@ async function buildIntro(opts, undo, teardown) {
   scene.add(rim, rim.target);
   const edgeSpot = new THREE.SpotLight(0xfff0dc, 0, 0, 0.1, 0.5, 0);
   scene.add(edgeSpot, edgeSpot.target);
+  const lights = { pendant, rim, lensLight, edgeSpot };
+
+  // ---- The game, when it is not the dice: its pieces built into the room
+  // now (every light it will use with them, so nothing is compiled
+  // mid-shot), its plan worked out, and from here the shot asks it for the
+  // camera, the sounds and each frame. (The lens follows the screen's
+  // shape: a tall phone sees little from side to side, so the game frames
+  // for this screen's aspect.)
+  const aspect = (host.clientWidth || window.innerWidth) / (host.clientHeight || window.innerHeight);
+  if (gameLoad) {
+    const mod = await gameLoad;
+    checkAbort();
+    game = await mod.makeGame({
+      THREE, scene, set: scene.userData.set, lights, tier, seed: o.seed, aspect, host, signal: o.signal,
+      room: { floor: ROOM.floor, lamp: ROOM.lamp, FLOAT, CEIL, PENDANT, ENV_LEVEL, RIM }, asset,
+      helpers: { makeWarp, spline, smoother, easeOut, lerp, mix3, clamp01, canvasTexture, radial, finished, embossTex, scaleUV, boxUV }
+    });
+    checkAbort();
+    plan = game.plan;
+    W = plan.warp;
+    undo.push(() => { if (game && game.dispose) game.dispose(); });
+  }
 
   // ---- The cup, held to a backgammon cup from a saddlery: pebble-grain
   // calfskin over a rigid form, its top edge rolled and burnished under a
@@ -1138,8 +1205,10 @@ async function buildIntro(opts, undo, teardown) {
   //   dice rattle inside (the shake: see CUP_KEYS).
   //   Motion: the shake's wind-up, throw and settle are the cup's keys.
   // (Before, a coarse leather map at 5 cm a tile read as crinkled vinyl.)
-  const cup = new THREE.Group();
-  {
+  // (the cup, the dice, the stick and the vault are the dice game's: another
+  // game has built its own pieces above)
+  const cup = game ? null : new THREE.Group();
+  if (cup) {
     const H = CUP.h, rt = CUP.rTop, rb = CUP.rBot;
     const outer = [];
     for (let k = 0; k <= 12; k++) { const y = -H / 2 + (H * k) / 12; outer.push(new THREE.Vector2(rb + (rt - rb) * (k / 12), y)); }
@@ -1188,14 +1257,14 @@ async function buildIntro(opts, undo, teardown) {
     }
     const plate = new THREE.Mesh(new THREE.CylinderGeometry(rAt(by + bh / 2), rAt(by - bh / 2), bh, 24, 1, true, -30 * DEG - th / 2, th), badgeMat);
     plate.position.y = by; cup.add(plate);
+    scene.add(cup);
   }
-  scene.add(cup);
 
   // ---- The dice.
-  const dieGeo = dieGeometry(), pipGeo = pipGeometry();
+  const dieGeo = game ? null : dieGeometry(), pipGeo = game ? null : pipGeometry();
   // (both sides: the pips of the far faces show through the resin)
-  const pipMat = new THREE.MeshStandardMaterial({ color: 0xdcd8ce, roughness: 0.42, vertexColors: true, side: THREE.DoubleSide });
-  const dice = [0, 1].map(() => {
+  const pipMat = game ? null : new THREE.MeshStandardMaterial({ color: 0xdcd8ce, roughness: 0.42, vertexColors: true, side: THREE.DoubleSide });
+  const dice = game ? [] : [0, 1].map(() => {
     const mat = new THREE.MeshPhysicalMaterial({
       // deep red resin: dark through the middle, bright red where it is
       // thin (the rounded edges), glass-hard highlights on the clear coat
@@ -1239,7 +1308,7 @@ async function buildIntro(opts, undo, teardown) {
   // (Before, the hook was the shaft's walnut on a thin tube and read as a
   // bent metal rod.)
   let stick = null;
-  if (plan.stick) {
+  if (!game && plan.stick) {
     const hp = plan.stick.hp;
     const g = new THREE.Group();
     const curve = new THREE.CatmullRomCurve3(hp.curve.map(([a, b]) => new THREE.Vector3(a, 0, b)));
@@ -1295,7 +1364,7 @@ async function buildIntro(opts, undo, teardown) {
 
   // ---- The Vault Pull's pieces.
   let vault = null;
-  if (plan.vault) {
+  if (!game && plan.vault) {
     await Promise.all(rareLoads);
     checkAbort();
     const faceMat = t => new THREE.MeshPhysicalMaterial({ map: t || null, color: t ? 0xcfc9bc : 0xcfc6b4, roughness: 0.3, clearcoat: 0.7, clearcoatRoughness: 0.12, envMapIntensity: 0.6 });
@@ -1334,8 +1403,9 @@ async function buildIntro(opts, undo, teardown) {
   // ---- Particles: dust in the light, felt dust at the landings, and the
   // burst's sparks and embers. One additive point cloud, rewritten per frame.
   const spriteTex = canvasTexture(64, radial([[0, 'rgba(255,255,255,1)'], [0.35, 'rgba(255,245,230,0.6)'], [1, 'rgba(255,240,220,0)']]));
-  const DUST = 190, PUFF = 16, SPARK = plan.vault ? 180 : 0;
-  const puffs = plan.run.events.filter(e => e.kind === 'felt' && e.speed > 70).slice(0, 10);
+  // (the dust is the room's; the puffs and the sparks are the dice's)
+  const DUST = 190, PUFF = 16, SPARK = !game && plan.vault ? 180 : 0;
+  const puffs = game ? [] : plan.run.events.filter(e => e.kind === 'felt' && e.speed > 70).slice(0, 10);
   const NP = DUST + puffs.length * PUFF + SPARK;
   const pPos = new Float32Array(NP * 3), pCol = new Float32Array(NP * 3);
   const pGeo = new THREE.BufferGeometry();
@@ -1353,13 +1423,22 @@ async function buildIntro(opts, undo, teardown) {
   // distance, lift of the aim) around an aim point that hands off from the
   // cup to the dice, to the wall strike, and back to the dice.
   const camera = new THREE.PerspectiveCamera(36, 1, 0.5, 3000);
-  const Rrel = W.real(P.RELEASE.t), Rwall = plan.wallReal, Rrest = plan.restReal;
+  // (the shot's turns, in real seconds: the dice's release, wall strike and
+  // rest; another game names its own - plan.wallReal is its slow moment)
+  const Rrel = game ? 0 : W.real(P.RELEASE.t), Rwall = plan.wallReal, Rrest = plan.restReal;
+  const R2 = w => W.real(w);
+  const floatEnd = plan.totalReal + FLOAT;
+  const CAM_DT = 1 / 120, camN = Math.ceil((floatEnd + 2) / CAM_DT) + 2;
+  const camEye = new Float32Array(camN * 3), camAim = new Float32Array(camN * 3);
+  // (another game lays its own path - its moves, its float up under the
+  // ceiling - into the same arrays: see cameraAt)
+  if (game) game.camera({ eye: camEye, aim: camAim, dt: CAM_DT, n: camN, floatEnd });
+  else {
   const endPos = plan.rest;
   // Framing the dice at rest: the camera turns (up to 18 degrees either
   // way) so the gap between them runs up the screen rather than across it
   // - a phone is tall and narrow - and stands back only as far as that
   // needs, for this screen's shape.
-  const aspect = (host.clientWidth || window.innerWidth) / (host.clientHeight || window.innerHeight);
   const tanV = Math.tan(((aspect < 0.62 ? 42 : 34) * DEG) / 2), tanH = tanV * aspect;
   const gap = [endPos[1].p[0] - endPos[0].p[0], endPos[1].p[2] - endPos[0].p[2]];
   const needFor = az => {
@@ -1380,7 +1459,6 @@ async function buildIntro(opts, undo, teardown) {
     [Rwall - 0.08, -22, 14, 36 - 0.8 * 5, 0],
     [W.slowHold[1], -58, 10, 36 - 0.8 * 9, 0]
   ];
-  const R2 = w => W.real(w);
   // (keys must run forward in time; a quick settle can come before the
   // slow motion has fully eased off, so each is kept after the last)
   const pushKey = k => { const prev = keys[keys.length - 1]; k[0] = Math.max(k[0], prev[0] + 0.3); keys.push(k); };
@@ -1437,9 +1515,6 @@ async function buildIntro(opts, undo, teardown) {
     if (stickAnchor) { const T = plan.stick.hp.T; aim = mix3(aim, stickAnchor, smoother((w - T.pull[0]) / (T.pull[1] - T.pull[0] + 1.2))); }
     return aim;
   };
-  const floatEnd = plan.totalReal + FLOAT;
-  const CAM_DT = 1 / 120, camN = Math.ceil((floatEnd + 2) / CAM_DT) + 2;
-  const camEye = new Float32Array(camN * 3), camAim = new Float32Array(camN * 3);
   {
     let aim = null;
     for (let k = 0; k < camN; k++) {
@@ -1552,9 +1627,12 @@ async function buildIntro(opts, undo, teardown) {
       if (e[1] > CEIL - 20) e[1] = CEIL - 20 * Math.exp(-(e[1] - (CEIL - 20)) / 20);
     }
   }
+  }
 
   // ---- Timeline of sounds (real seconds).
   const sfx = [];
+  if (game) sfx.push(...game.sfx);
+  else {
   for (let t = 0.3; t < 1.0; t += 1 / 9.2) sfx.push({ t, kind: 'rattle' }, { t: t + 0.03, kind: 'rattle' });
   sfx.push({ t: Rrel - 0.05, kind: 'whoosh' });
   const pushEvents = run => run.events.forEach(e => {
@@ -1574,7 +1652,11 @@ async function buildIntro(opts, undo, teardown) {
     pushEvents(plan.vault.run);
   }
   if (plan.edge) sfx.push({ t: R2(plan.silence[1]), kind: 'drop' });
+  }
   sfx.sort((a, b) => a.t - b.t);
+  // (the room's sound cut dead, real seconds - the Defiant Edge's silence,
+  // or a game's own - and whether the bed plays at all before it)
+  const silenceAt = game ? (game.silence || null) : plan.edge ? R2(plan.silence[0]) : null;
 
   // ---- Sound.
   let sound = null;
@@ -1589,20 +1671,23 @@ async function buildIntro(opts, undo, teardown) {
   // ---- Overlays: the call, the tier's name.
   const call = document.createElement('div');
   call.className = `r3-call r3-call-${tier}`;
-  if (tier === 'hardways') {
+  if (tier === 'hardways' && !game) {
     const img = new Image();
     img.alt = plan.call[0];
     img.onerror = () => { call.textContent = plan.call[0]; call.classList.add('r3-call-text'); };
     img.src = asset(plan.values[0] === 1 ? 'rare/hardways-snake-eyes.png' : 'rare/hardways-boxcars.png');
     call.appendChild(img);
   } else if (plan.call) {
+    // (a game's hardways call is lettered, not pictured: the platinum text)
+    if (tier === 'hardways') call.classList.add('r3-call-text');
     call.innerHTML = `<span></span>${plan.call[1] ? '<small></small>' : ''}`;
     call.firstChild.textContent = plan.call[0];
     if (plan.call[1]) call.lastChild.textContent = plan.call[1];
   }
   const badgeEl = document.createElement('div');
   badgeEl.className = `r3-tier r3-tier-${tier}`;
-  badgeEl.innerHTML = tier === 'standard' ? '' : `<span>${TIER_NAMES[tier]}</span><small>${TIER_ODDS[tier]}</small>`;
+  const tierNames = game && game.tierNames ? game.tierNames : TIER_NAMES;
+  badgeEl.innerHTML = tier === 'standard' ? '' : `<span>${tierNames[tier]}</span><small>${TIER_ODDS[tier]}</small>`;
   const flashEl = document.createElement('div');
   flashEl.className = 'r3-flash';
   host.append(canvas, flashEl, call, badgeEl);
@@ -1817,7 +1902,7 @@ async function buildIntro(opts, undo, teardown) {
   const setPose = (obj, p, q) => { obj.position.set(p[0], p[1], p[2]); obj.quaternion.set(q[0], q[1], q[2], q[3]); };
   const project = p => { const v = new THREE.Vector3(p[0], p[1], p[2]).project(camera); return [(v.x * 0.5 + 0.5) * host.clientWidth, (-v.y * 0.5 + 0.5) * host.clientHeight, v.z]; };
   // The light behind the lens: brightest through the slow motion.
-  const gleamAt = t => smoother((t - (Rwall - 0.2)) / 0.35) * (1 - smoother((t - W.slowHold[1]) / 0.7));
+  const gleamAt = game ? (t => game.gleamAt(t)) : (t => smoother((t - (Rwall - 0.2)) / 0.35) * (1 - smoother((t - W.slowHold[1]) / 0.7)));
   // (it sits up and off to the lens's left, not on its axis: a light on the
   // axis comes straight back off any face square to the lens, a white flash)
   const aimLens = (eye, aim, gleam) => {
@@ -1834,7 +1919,8 @@ async function buildIntro(opts, undo, teardown) {
     const eye = [0, 1, 2].map(j => lerp(camEye[k0 * 3 + j], camEye[(k0 + 1) * 3 + j], u));
     const aim = [0, 1, 2].map(j => lerp(camAim[k0 * 3 + j], camAim[(k0 + 1) * 3 + j], u));
     let shake = [0, 0, 0];
-    if (plan.vault) {
+    if (game) { if (game.shakeAt) shake = game.shakeAt(t, w); }
+    else if (plan.vault) {
       const x = w - plan.vault.boom;
       if (x > 0 && x < 0.8) { const a = 0.9 * Math.exp(-x / 0.14); shake = [a * Math.sin(x * 73), a * Math.sin(x * 61 + 1), a * Math.sin(x * 57 + 2)]; }
     }
@@ -1852,13 +1938,15 @@ async function buildIntro(opts, undo, teardown) {
     const w = W.world(t);
     const rate = W.rateAt(t);
     const gleam = gleamAt(t);
+    // Another game's pieces, lights and call, at this frame (its burst is
+    // the bloom's, as the Vault Pull's is).
+    const gst = game ? game.stage(t, { w, rate, gleam }) : null;
     // Cup.
-    const cp = cupAt(Math.min(w, 5));
-    setPose(cup, cp.p, cp.q);
-    cup.visible = w < P.RELEASE.t + 1.2;
+    const cp = game ? null : cupAt(Math.min(w, 5));
+    if (cup) { setPose(cup, cp.p, cp.q); cup.visible = w < P.RELEASE.t + 1.2; }
     // Dice.
-    const burst = plan.vault ? w - plan.vault.boom : -1;
-    for (let i = 0; i < 2; i++) {
+    const burst = game ? (gst && gst.burst != null ? gst.burst : -1) : plan.vault ? w - plan.vault.boom : -1;
+    for (let i = 0; i < dice.length; i++) {
       const d = dice[i];
       let pose = dicePose(plan, i, w);
       let glow = 0;
@@ -1932,9 +2020,10 @@ async function buildIntro(opts, undo, teardown) {
     }
     // The rim light is for the strike: once the dice have come to rest it
     // eases down, or a face square to it would flash white into the lens.
-    if (!plan.edge) rim.intensity = RIM * (1 - 0.8 * smoother((w - (plan.restW - 0.45)) / 0.5));
+    // (another game sets the house lights itself, in its stage())
+    if (!game && !plan.edge) rim.intensity = RIM * (1 - 0.8 * smoother((w - (plan.restW - 0.45)) / 0.5));
     // Edge: the room goes dark round the pinned die as the lens closes in.
-    if (plan.edge) {
+    if (!game && plan.edge) {
       const e = dicePose(plan, plan.edge.die, w).p;
       const k = smoother((w - plan.edge.done) / 0.5);
       edgeSpot.position.set(e[0] - 6, e[1] + 60, e[2] + 8);
@@ -1951,7 +2040,7 @@ async function buildIntro(opts, undo, teardown) {
     for (const m of dust) {
       const p = [m.p[0] + m.v[0] * t + 1.2 * Math.sin(t * 0.5 + m.ph), m.p[1] + m.v[1] * t + 0.8 * Math.sin(t * 0.37 + m.ph * 2), m.p[2] + m.v[2] * t];
       const off = Math.hypot(p[0] - pendant.target.position.x * 0.9, p[2] - pendant.target.position.z * 0.9);
-      const lit = Math.exp(-(off * off) / (2 * 26 * 26)) * (plan.edge ? 1 - 0.8 * smoother((w - plan.edge.done) / 0.5) : 1);
+      const lit = Math.exp(-(off * off) / (2 * 26 * 26)) * (game ? (gst && gst.dust != null ? gst.dust : 1) : plan.edge ? 1 - 0.8 * smoother((w - plan.edge.done) / 0.5) : 1);
       const tw = 0.4 + 0.6 * Math.pow(0.5 + 0.5 * Math.sin(t * 2.3 + m.ph * 3), 4);
       const b = m.a * lit * tw * 0.55;
       put(p, [b, b * 0.96, b * 0.9]);
@@ -1988,13 +2077,16 @@ async function buildIntro(opts, undo, teardown) {
       const on = smoother((w - cw) / 0.45) * (1 - smoother((w - plan.revealW + 0.3) / 0.5));
       call.style.opacity = on.toFixed(3);
       if (on > 0) {
-        // Over the higher of the two dice on screen, clear of both.
-        const s = [0, 1].map(i => { const d = dicePose(plan, i, w).p; return project([d[0], d[1] + 2.5, d[2]]); }).sort((a, b) => a[1] - b[1])[0];
+        // Over the higher of the two dice on screen, clear of both (or over
+        // where the game says its call belongs).
+        const s = game ? project(game.callAt(w)) : [0, 1].map(i => { const d = dicePose(plan, i, w).p; return project([d[0], d[1] + 2.5, d[2]]); }).sort((a, b) => a[1] - b[1])[0];
         const grow = 1.12 - 0.12 * smoother((w - cw) / 0.8);
         // (kept whole on screen, whatever the dice's spread)
         const half = (call.offsetWidth * grow) / 2 + 12, W0 = host.clientWidth;
         const cx = half * 2 < W0 ? Math.min(Math.max(s[0], half), W0 - half) : W0 / 2;
-        const cy = Math.max(s[1] - 56, call.offsetHeight + 16);
+        // (kept on screen top and bottom: a game's close-up can carry its
+        // anchor off the bottom of a wide screen)
+        const cy = Math.min(Math.max(s[1] - 56, call.offsetHeight + 16), host.clientHeight - call.offsetHeight / 2 - 16);
         call.style.transform = `translate(${cx.toFixed(1)}px,${cy.toFixed(1)}px) translate(-50%,-50%) scale(${grow.toFixed(3)})`;
         call.style.setProperty('--shine', `${(-60 + 220 * clamp01((w - cw - 0.1) / 1.2)).toFixed(1)}%`);
       }
@@ -2005,7 +2097,7 @@ async function buildIntro(opts, undo, teardown) {
   // The scene as it stands, through the post when there is one.
   const paint = () => { fit(); lens(() => { if (composer) composer.render(); else renderer.render(scene, camera); }); };
   const draw = st => {
-    if (composer) bloom.strength = 0.3 + 0.22 * st.gleam + (plan.vault ? 1.4 * Math.max(0, 1 - Math.max(0, st.burst) / 0.6) * (st.burst > 0 ? 1 : 0) : 0);
+    if (composer) bloom.strength = 0.3 + 0.22 * st.gleam + (plan.vault || (game && st.burst > 0) ? 1.4 * Math.max(0, 1 - Math.max(0, st.burst) / 0.6) * (st.burst > 0 ? 1 : 0) : 0);
     paint();
   };
   // One frame at real time t.
@@ -2035,6 +2127,7 @@ async function buildIntro(opts, undo, teardown) {
       scene.traverse(m => { if (m.material) [].concat(m.material).forEach(x => { x.needsUpdate = true; }); });
     }
     if (q <= 0) dice.forEach(d => { d.mat.transmission = 0; d.mat.color.set(0x9a1224); d.mat.clearcoat = 1; d.mat.needsUpdate = true; });
+    if (game && game.quality) game.quality(q);
     size();
   };
   // The table's moving frames, timed by its loop: the resolution the
@@ -2062,14 +2155,14 @@ async function buildIntro(opts, undo, teardown) {
   const scheduleSound = (from, to) => {
     if (!sound || !sound.on) return;
     const now = sound.ctx.currentTime;
-    if (!sound.bed && !plan.edge) sound.ambience(now);
-    if (plan.edge && !sound.bed && t < R2(plan.silence[0])) sound.ambience(now);
+    if (!sound.bed && silenceAt == null) sound.ambience(now);
+    if (silenceAt != null && !sound.bed && t < silenceAt) sound.ambience(now);
     while (sfxIndex < sfx.length && sfx[sfxIndex].t < to) {
       const ev = sfx[sfxIndex++];
       if (ev.t < from - 0.05) continue;
       sound.play(ev, now + Math.max(0, ev.t - from), ev.rate || 1);
     }
-    if (plan.edge && !silenced && to >= R2(plan.silence[0])) { silenced = true; sound.cut(now + Math.max(0, R2(plan.silence[0]) - from)); }
+    if (silenceAt != null && !silenced && to >= silenceAt) { silenced = true; sound.cut(now + Math.max(0, silenceAt - from)); }
   };
   // Fires the landing's cues once each, whichever way the shot gets there.
   const cue = () => {
@@ -2232,19 +2325,22 @@ async function buildIntro(opts, undo, teardown) {
   await warm();
   checkAbort();
   {
-    const at = [Rrel + 0.04, Rwall + 0.06, W.slowHold[1], Rrest + 0.3, plan.totalReal + 1, floatEnd - 0.5];
-    if (plan.stick) at.push(R2(plan.stick.hp.T.approach[1]), R2(plan.stick.hp.T.pull[1]));
-    if (plan.vault) at.push(R2(plan.vault.boom) + 0.05, R2(plan.vault.boom) + 0.7);
-    if (plan.edge) at.push(R2(plan.edge.done) + 0.5);
+    const at = game ? game.warmAt.concat([plan.totalReal + 1, floatEnd - 0.5]) : [Rrel + 0.04, Rwall + 0.06, W.slowHold[1], Rrest + 0.3, plan.totalReal + 1, floatEnd - 0.5];
+    if (!game && plan.stick) at.push(R2(plan.stick.hp.T.approach[1]), R2(plan.stick.hp.T.pull[1]));
+    if (!game && plan.vault) at.push(R2(plan.vault.boom) + 0.05, R2(plan.vault.boom) + 0.7);
+    if (!game && plan.edge) at.push(R2(plan.edge.done) + 0.5);
     canvas.style.visibility = 'hidden';
     for (const tt of at) { render(Math.min(floatEnd, Math.max(0, tt))); await breath(); checkAbort(); }
     canvas.style.visibility = '';
   }
   render(0);
   return {
-    plan: { tier, seed: o.seed, revealReal: plan.revealReal, totalReal: plan.totalReal, floatEnd, restReal: plan.restReal, wallReal: plan.wallReal, values: plan.values, call: plan.call, throwOk: plan.throwOk, why: plan.why },
+    plan: { game: gameId, tier, seed: o.seed, revealReal: plan.revealReal, totalReal: plan.totalReal, floatEnd, restReal: plan.restReal, wallReal: plan.wallReal, values: plan.values, call: plan.call, throwOk: plan.throwOk, why: plan.why, moments: game ? game.moments : null },
     play() { playing = true; last = 0; pacer.reset(); move(); raf = requestAnimationFrame(loop); },
     seek(time) { playing = false; cancelAnimationFrame(raf); t = Math.max(0, Math.min(floatEnd, time)); render(t); },
+    // (lab: that frame drawn as a still - at the screen's own resolution,
+    // as a frame that stays is)
+    still(time) { this.seek(time); rest(() => render(t)); },
     // A tap mid-shot: straight to its end, and float on from there.
     skip() {
       if (t < plan.totalReal) {
@@ -2259,7 +2355,7 @@ async function buildIntro(opts, undo, teardown) {
     finish: still,
     // A look at the running scene (the table builds into it while the
     // intro floats), without stopping anything.
-    peek() { return { scene, renderer, camera, composer, bloom, dbg: { camEye, camAim, CAM_DT, W, plan, dicePose } }; },
+    peek() { return { scene, renderer, camera, composer, bloom, game, dbg: { camEye, camAim, CAM_DT, W, plan, dicePose } }; },
     // What is added to the scene (the table, while the intro floats) made
     // ready before it is drawn: see warm().
     warm,
@@ -2307,8 +2403,9 @@ async function buildIntro(opts, undo, teardown) {
         // frame of it drawn through the intro's post-processing
         stage: tt => stage(tt == null ? t : tt),
         draw,
-        lights: { pendant, rim, lensLight, edgeSpot },
+        lights,
         dice: dice.map(d => d.g),
+        game: gameId,
         overlays: [call, badgeEl, flashEl],
         dispose: teardown
       };
