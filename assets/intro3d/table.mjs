@@ -4013,6 +4013,19 @@ export async function prepareTable(opts) {
     // starts over)
     css.domElement.addEventListener('pointerdown', giveWay);
     css.domElement.addEventListener('keydown', giveWay);
+    // (a tap on the felt, or Enter, before the deal is done: straight to the
+    // dealt table - the fly and the deal are the show, and a second open in
+    // a day may not want it - the clock jumped to the settled frame)
+    const skipAhead = e => {
+      if (disposed || fo.manual || fo.reduced || tNow >= settleAt - 0.05) return;
+      if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+      if (e.type === 'pointerdown' && e.target.closest && e.target.closest('.r3t-card, .r3t-phone, .r3t-info, button, a')) return;
+      tNow = settleAt;
+      wake();
+      update(tNow);
+    };
+    world.canvas.addEventListener('pointerdown', skipAhead);
+    document.addEventListener('keydown', skipAhead);
     // (a card under the pointer, or pressed, once the deal is done and no
     // card is up: see hover)
     const hoverable = e => { const card = e.target.closest && e.target.closest('.r3t-card'); return card && tNow >= settleAt && !focusId ? card.dataset.id : null; };
@@ -4203,6 +4216,8 @@ export async function prepareTable(opts) {
         disposed = true; running = false; cancelAnimationFrame(raf); cancelAnimationFrame(armsRaf);
         clearInterval(clock); clearInterval(idleClock);
         window.removeEventListener('resize', onResize);
+        document.removeEventListener('keydown', skipAhead);
+        world.canvas.removeEventListener('pointerdown', skipAhead);
         if (handScene.environment) handScene.environment.dispose();
         handGL.dispose();
         css.domElement.remove();
