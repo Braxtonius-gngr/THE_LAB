@@ -859,10 +859,13 @@ class Sound {
       case 'hum':
         this.tone(when, ev.f, 0.06 + 0.1 * ev.level, ev.dur, 'sawtooth');
         break;
-      case 'boom':
-        this.tone(when, 70, 0.9, 1.2, 'sine', 32);
-        this.burst(when, 'lowpass', 900, 0.8, 1, 0.7);
+      case 'boom': {
+        // (soft: the wheel's, under its bell)
+        const g = ev.soft ? 0.3 : 1;
+        this.tone(when, 70, 0.9 * g, 1.2, 'sine', 32);
+        this.burst(when, 'lowpass', 900, 0.8, 1 * g, 0.7);
         break;
+      }
       case 'chime':
         [1, 2.76, 5.4].forEach((m, i) => this.tone(when + i * 0.03, 880 * m, 0.08 / (i + 1), 1.4, 'sine'));
         break;
@@ -872,6 +875,30 @@ class Sound {
         break;
       case 'scrape':
         this.burst(when, 'bandpass', 1400, 1.2, 0.09, ev.dur, 0.8);
+        break;
+      // (the wheel's: the clapper's leather over a brass peg - a slap and
+      // the pin's ring, quicker and lighter the faster the wheel; the
+      // wind-up's creak; the pull; the settle's wooden knock; the bell)
+      case 'tick': {
+        const f = Math.min(1, (ev.speed || 1) / 9);
+        this.burst(when, 'bandpass', (1500 + 900 * f) * k, 2.4, (0.12 + 0.16 * f), 0.014 / k);
+        this.tone(when, (640 + 120 * f) * k, 0.05 + 0.05 * (1 - f), 0.05 / k, 'triangle', 420 * k);
+        break;
+      }
+      case 'creak':
+        this.burst(when, 'bandpass', 420, 3, 0.12, 0.4, 0.5);
+        this.tone(when + 0.05, 180, 0.03, 0.35, 'sawtooth', 140);
+        break;
+      case 'pull':
+        this.burst(when, 'bandpass', 700, 0.8, 0.2, 0.42, 0.7);
+        this.burst(when + 0.06, 'lowpass', 300, 0.8, 0.3, 0.3);
+        break;
+      case 'knock':
+        this.burst(when, 'lowpass', 520, 0.9, 0.5, 0.07);
+        this.tone(when, 210, 0.18, 0.14, 'sine', 120);
+        break;
+      case 'bell':
+        [1, 2.0, 2.98, 4.2].forEach((m, i) => this.tone(when + i * 0.012, 660 * m, 0.12 / (i + 1), 2.2 - i * 0.3, 'sine'));
         break;
       default:
     }
@@ -2309,6 +2336,9 @@ async function buildIntro(opts, undo, teardown) {
     plan: { game: gameId, tier, seed: o.seed, revealReal: plan.revealReal, totalReal: plan.totalReal, floatEnd, restReal: plan.restReal, wallReal: plan.wallReal, values: plan.values, call: plan.call, throwOk: plan.throwOk, why: plan.why, moments: game ? game.moments : null },
     play() { playing = true; last = 0; pacer.reset(); move(); raf = requestAnimationFrame(loop); },
     seek(time) { playing = false; cancelAnimationFrame(raf); t = Math.max(0, Math.min(floatEnd, time)); render(t); },
+    // (lab: that frame drawn as a still - at the screen's own resolution,
+    // as a frame that stays is)
+    still(time) { this.seek(time); rest(() => render(t)); },
     // A tap mid-shot: straight to its end, and float on from there.
     skip() {
       if (t < plan.totalReal) {
