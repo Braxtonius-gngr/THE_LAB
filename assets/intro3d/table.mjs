@@ -4152,7 +4152,7 @@ export async function prepareTable(opts) {
       // pitched, laid, turned - in the table's clock)
       get timing() { return deal.cards.map(c => ({ pull: c.pull, toss: c.toss ? [c.toss.t0, c.toss.t1] : null, pitch: c.pitch ? [c.pitch.t0, c.lay] : null, lay: c.lay, turn: c.turn, turned: turnEnd(c) })); },
       // (lab and tests: the farthest either arm reaches over the whole deal,
-      // shoulder to wrist - it must stay under ARM.upper + ARM.fore)
+      // J2 (the pitch drum) to wrist - it must stay under ARM.upper + ARM.fore)
       // (after the first swing out of the upright, which is at full length
       // by design)
       // (where: reach(true) says when, and which arm)
