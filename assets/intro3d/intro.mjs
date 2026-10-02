@@ -30,10 +30,20 @@
 import * as THREE from '../vendor/three/three.module.js';
 import { EffectComposer, RenderPass, UnrealBloomPass, OutputPass } from '../vendor/three/three.addons.js';
 import * as P from './physics.mjs';
+import { finish, finished, embossTex } from './finish.mjs';
 
 const HERE = new URL('./', import.meta.url);
 const asset = f => new URL(f, HERE).href;
 
+// The games: the shot is one of these each launch, drawn alike (pickGame)
+// unless ?game= names one. The dice are this module's own; every other game
+// is a module of its own beside it (`./<game>.mjs`, exporting makeGame())
+// that builds its pieces into the same room, under the same lights, and
+// hands the shot its plan, its camera path, its sounds and its frames - see
+// the `game` seam in buildIntro(). The set, the resolution, the post, the
+// sound, the quality steps and the handover to the homes are shared.
+export const GAMES = ['dice', 'wheel', 'plinko'];
+export function pickGame(r) { return GAMES[Math.min(GAMES.length - 1, Math.floor(r * GAMES.length))]; }
 export const TIERS = ['standard', 'hardways', 'vault', 'edge'];
 export const TIER_NAMES = { standard: 'Standard Drop', hardways: 'The Hardways', vault: 'The Vault Pull', edge: 'The Defiant Edge' };
 // (as the draw below gives them: 90%, 8%, 1.9%, 0.1%)
@@ -57,12 +67,156 @@ const PENDANT = 3.5, ENV_LEVEL = 0.95, RIM = 2.0;
 // The gold filigree band: its width, its repeat along its length (the
 // texture is 8:1), and how far in from the walls it is inlaid in the felt.
 const TRIM = { w: 2.4, tile: 19.2, inset: 2.2 };
+// The house's felts, picked in Settings (almanac_felt_v1): black baize, the
+// house's own; and three lighter cloths - a camel tan, an ivory, a dove
+// grey. Each is a colour and the sheen its nap gives off at a low light;
+// `light` says how light it is, for what has to change with it (the gold
+// print's dark keyline, the shadows: see the table).
+export const FELTS = {
+  black: { name: 'Black', color: 0x070709, sheen: 0x2c2c36, light: 0 },
+  tan: { name: 'Tan', color: 0x7a5a38, sheen: 0xcaa77a, light: 0.6 },
+  ivory: { name: 'Ivory', color: 0xa99e86, sheen: 0xe9dfc8, light: 1 },
+  dove: { name: 'Dove grey', color: 0x5f6368, sheen: 0xb8bcc4, light: 0.55 },
+  // (2026-09-30: a pastel lilac and a cream among the light cloths; a
+  // chocolate, a mahogany and a crimson among the dark ones - dyed baize,
+  // each with the warmer or cooler sheen its dye gives the nap)
+  lilac: { name: 'Pastel purple', color: 0x7e6f96, sheen: 0xd6c8ea, light: 0.6 },
+  cream: { name: 'Cream', color: 0xae9b6e, sheen: 0xf0e2bc, light: 0.9 },
+  chocolate: { name: 'Chocolate', color: 0x28170e, sheen: 0x6a4630, light: 0.1 },
+  mahogany: { name: 'Mahogany', color: 0x40150e, sheen: 0x9c4a34, light: 0.14 },
+  crimson: { name: 'Crimson', color: 0x5c0913, sheen: 0xc2394a, light: 0.2 }
+};
+export const feltOf = id => (FELTS[id] ? id : 'black');
+// (a felt material dressed as felt `id`)
+export function dressFelt(mat, id) {
+  const f = FELTS[feltOf(id)];
+  mat.color.setHex(f.color);
+  mat.sheenColor.setHex(f.sheen);
+  // (a light cloth's nap throws back more of the room than black's does)
+  mat.envMapIntensity = 0.15 + 0.25 * f.light;
+  mat.userData.felt = feltOf(id);
+  mat.userData.feltLight = f.light;
+  return mat;
+}
+// The trim round the felt - the filigree band inlaid in it and the fine
+// metal lines either side of it (on the card table, the line let into the
+// walnut edge too) - picked in Settings (almanac_trim_v1). Gold is the
+// house's own. The others are each a real inlay:
+//   onyx     - polished black onyx: a stone, not a metal, so it holds no
+//              colour of its own and shows only what it mirrors - the lamp
+//              runs along it as a hard white line, the relief a glitter;
+//   silver   - sterling, freshly polished: a cool white mirror, a touch
+//              brighter than the gold, the relief's hollows gone grey;
+//   crimson  - a red enamel fired over silver and polished flat, so the
+//              colour pools deep in the relief's hollows and runs thin
+//              and bright over its crests, under a glass-hard shine;
+//   burgundy - bronze patinated a deep wine red and waxed: a warm dark
+//              metal with a soft sheen, redder where it is recessed.
+// `color` multiplies the band's relief (a grey of the gold band's own
+// artwork, so its hollows stay darker than its crests); the lines have no
+// artwork, so `line` is their own colour.
+export const TRIMS = {
+  gold: { name: 'Gold' },
+  onyx: { name: 'Shiny onyx', color: 0x17161a, line: 0x0b0b0d, metalness: 0.0, roughness: 0.07, env: 2.2 },
+  silver: { name: 'Luminous silver', color: 0xffffff, line: 0xf0f3f7, metalness: 1, roughness: 0.14, env: 2.1 },
+  crimson: { name: 'Pooled crimson', color: 0xd21a34, line: 0x9c0f22, metalness: 0.45, roughness: 0.1, env: 1.35 },
+  burgundy: { name: 'Bronzed burgundy', color: 0xd06a5a, line: 0xa4463c, metalness: 1, roughness: 0.3, env: 1.45 }
+};
+export const trimOf = id => (TRIMS[id] ? id : 'gold');
+// (the gold band's artwork in grey: its relief as light and dark, for a
+// trim that is not gold to be coloured over; one per image)
+const greyOf = new WeakMap();
+function greyTrim(tex) {
+  if (!tex || !tex.image) return null;
+  if (greyOf.has(tex)) return greyOf.get(tex);
+  const img = tex.image, c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  const g = c.getContext('2d');
+  g.drawImage(img, 0, 0);
+  const d = g.getImageData(0, 0, c.width, c.height), a = d.data;
+  let mx = 0;
+  for (let i = 0; i < a.length; i += 4) mx = Math.max(mx, 0.2126 * a[i] + 0.7152 * a[i + 1] + 0.0722 * a[i + 2]);
+  for (let i = 0; i < a.length; i += 4) { const v = Math.min(255, (0.2126 * a[i] + 0.7152 * a[i + 1] + 0.0722 * a[i + 2]) * 255 / (mx || 255)); a[i] = a[i + 1] = a[i + 2] = v; }
+  g.putImageData(d, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = tex.colorSpace; t.wrapS = tex.wrapS; t.wrapT = tex.wrapT; t.anisotropy = tex.anisotropy;
+  t.repeat.copy(tex.repeat); t.offset.copy(tex.offset);
+  greyOf.set(tex, t);
+  return t;
+}
+// (materials dressed as trim `id`: `band` the filigree's, `line` the plain
+// metal lines'. Each keeps what it was made as - the gold - to go back to,
+// here rather than in its userData, which a clone copies as JSON.)
+const trimBase = new WeakMap();
+// (a material as it was made, before any trim: for a copy of it to be
+// dressed on its own)
+export function trimBaseOf(m) {
+  const b = trimBase.get(m), c = m.clone();
+  if (b) { Object.assign(c, { map: b.map, metalness: b.metalness, roughness: b.roughness, envMapIntensity: b.env, roughnessMap: b.roughnessMap }); c.color.setHex(b.color); }
+  delete c.userData.trim;
+  return c;
+}
+export function dressTrim({ band = [], line = [] }, id) {
+  const tr = TRIMS[trimOf(id)];
+  const keep = m => {
+    if (!trimBase.has(m)) trimBase.set(m, { map: m.map, color: m.color.getHex(), metalness: m.metalness, roughness: m.roughness, env: m.envMapIntensity, roughnessMap: m.roughnessMap });
+    return trimBase.get(m);
+  };
+  band.forEach(m => {
+    const b = keep(m);
+    if (!tr.color) Object.assign(m, { map: b.map, metalness: b.metalness, roughness: b.roughness, envMapIntensity: b.env, roughnessMap: b.roughnessMap });
+    else Object.assign(m, { map: greyTrim(b.map) || b.map, metalness: tr.metalness, roughness: tr.roughness, envMapIntensity: tr.env, roughnessMap: tr.roughness < 0.15 ? null : b.roughnessMap });
+    m.color.setHex(tr.color || b.color);
+    m.userData.trim = trimOf(id);
+    m.needsUpdate = true;
+  });
+  line.forEach(m => {
+    const b = keep(m);
+    if (!tr.line) Object.assign(m, { metalness: b.metalness, roughness: b.roughness, envMapIntensity: b.env, roughnessMap: b.roughnessMap });
+    else Object.assign(m, { metalness: tr.metalness, roughness: tr.roughness, envMapIntensity: tr.env, roughnessMap: tr.roughness < 0.15 ? null : b.roughnessMap });
+    m.color.setHex(tr.line || b.color);
+    m.userData.trim = trimOf(id);
+    m.needsUpdate = true;
+  });
+}
 // After the shot the camera floats on for FLOAT seconds, rising toward a
 // ceiling (eye height CEIL cm above the felt) that it eases into.
 const FLOAT = 36, CEIL = 178;
 // The room: the floor 82 cm under the felt, the lamps' height, the fog, and
 // the far tables' light pools ([x, z, radius]).
 const ROOM = { floor: -82, lamp: 172, fog: 0.0019, far: [[-340, -300, 150], [390, -430, 170], [-560, 120, 160], [620, 60, 150], [120, -720, 190], [-260, 520, 150]] };
+// The pace frames are drawn at: about 60 a second, evenly. A phone's
+// screen may offer 90, 120 or 144 frames a second, and a shot drawn on every
+// one of them asks twice the work of the GPU; the frames it can't finish in
+// time are dropped here and there, and that unevenness is the judder. Drawn
+// on every second frame of a 120 Hz screen (every one of a 60 or 90 Hz
+// one), each frame has twice the time, and they come at an even beat. The
+// screen's own interval is learnt from its frames: a low percentile of the
+// gaps between them, as frames the page skips still come.
+export function makePacer(hz = 60) {
+  const gaps = [];
+  let vsync = 1 / 60, seen = 0, drawn = 0;
+  return {
+    // true when the frame at `now` (a requestAnimationFrame time) is one to
+    // draw; false to wait for the next
+    due(now) {
+      if (seen) {
+        const g = (now - seen) / 1000;
+        if (g > 0.003 && g < 0.05) { gaps.push(g); if (gaps.length > 48) gaps.shift(); }
+        if (gaps.length >= 8) vsync = gaps.slice().sort((a, b) => a - b)[Math.floor(gaps.length * 0.2)];
+      }
+      seen = now;
+      const every = Math.max(1, Math.floor(1 / hz / vsync + 0.3));
+      if (drawn && (now - drawn) / 1000 < (every - 0.5) * vsync) return false;
+      drawn = now;
+      return true;
+    },
+    // (the next frame is drawn, whenever it comes: after a stop)
+    reset() { drawn = 0; },
+    get interval() { return vsync; }
+  };
+}
+
 // Catmull-Rom through keys [t, v1, v2, ...]: smooth velocity through every key.
 function spline(keys, t) {
   const n = keys.length;
@@ -130,7 +284,9 @@ function cupAt(t) {
 // turning), holds while the camera swings round and the light gleams across
 // them, and eases back up for the landing.
 function rampWorld(s, from, to) { return from * s + (to - from) * (Math.pow(s, 6) - 3 * Math.pow(s, 5) + 2.5 * Math.pow(s, 4)); }
-function makeWarp(wallW) {
+// (exported for the other games: the same slow motion round their own
+// moment - the wheel's clapper riding its last peg)
+export function makeWarp(wallW) {
   const a = wallW - 0.05, down = 0.26, hold = 0.95, up = 0.6, rate = 0.12;
   const world = t => {
     const x = t - a;
@@ -593,8 +749,10 @@ const radial = stops => (g, n) => {
 
 // A studio for the reflections: a dark gunmetal room lit by long softbox
 // strips over the table and a broad panel behind the lens - what the
-// glossy dice, brass and felt sheen mirror.
-function studioEnvironment(renderer) {
+// glossy dice, brass and felt sheen mirror. (Exported: the table's dealer
+// has a canvas of its own, which needs the same room in its own context,
+// so its ceramic, gold and glass mirror what the brass beside it does.)
+export function studioEnvironment(renderer) {
   const scene = new THREE.Scene();
   scene.add(new THREE.Mesh(new THREE.BoxGeometry(20, 10, 20), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.018, 0.019, 0.022), side: THREE.BackSide })));
   const panel = (w, h, rgb, k, pos, look) => {
@@ -701,10 +859,13 @@ class Sound {
       case 'hum':
         this.tone(when, ev.f, 0.06 + 0.1 * ev.level, ev.dur, 'sawtooth');
         break;
-      case 'boom':
-        this.tone(when, 70, 0.9, 1.2, 'sine', 32);
-        this.burst(when, 'lowpass', 900, 0.8, 1, 0.7);
+      case 'boom': {
+        // (soft: the wheel's, under its bell)
+        const g = ev.soft ? 0.3 : 1;
+        this.tone(when, 70, 0.9 * g, 1.2, 'sine', 32);
+        this.burst(when, 'lowpass', 900, 0.8, 1 * g, 0.7);
         break;
+      }
       case 'chime':
         [1, 2.76, 5.4].forEach((m, i) => this.tone(when + i * 0.03, 880 * m, 0.08 / (i + 1), 1.4, 'sine'));
         break;
@@ -714,6 +875,55 @@ class Sound {
         break;
       case 'scrape':
         this.burst(when, 'bandpass', 1400, 1.2, 0.09, ev.dur, 0.8);
+        break;
+      // (the wheel's: the clapper's leather over a brass peg - a slap and
+      // the pin's ring, quicker and lighter the faster the wheel; the
+      // wind-up's creak; the pull; the settle's wooden knock; the bell)
+      case 'tick': {
+        const f = Math.min(1, (ev.speed || 1) / 9);
+        this.burst(when, 'bandpass', (1500 + 900 * f) * k, 2.4, (0.12 + 0.16 * f), 0.014 / k);
+        this.tone(when, (640 + 120 * f) * k, 0.05 + 0.05 * (1 - f), 0.05 / k, 'triangle', 420 * k);
+        break;
+      }
+      case 'creak':
+        this.burst(when, 'bandpass', 420, 3, 0.12, 0.4, 0.5);
+        this.tone(when + 0.05, 180, 0.03, 0.35, 'sawtooth', 140);
+        break;
+      case 'pull':
+        this.burst(when, 'bandpass', 700, 0.8, 0.2, 0.42, 0.7);
+        this.burst(when + 0.06, 'lowpass', 300, 0.8, 0.3, 0.3);
+        break;
+      case 'knock':
+        this.burst(when, 'lowpass', 520, 0.9, 0.5, 0.07);
+        this.tone(when, 210, 0.18, 0.14, 'sine', 120);
+        break;
+      case 'bell':
+        [1, 2.0, 2.98, 4.2].forEach((m, i) => this.tone(when + i * 0.012, 660 * m, 0.12 / (i + 1), 2.2 - i * 0.3, 'sine'));
+        break;
+      // (the plinko's: the chip's brass rim on a brass pin - a ring, higher
+      // and shorter the harder; its clay on a rail; its landing on the
+      // bucket's brass floor; the lever's latch)
+      case 'pin': {
+        const f = Math.min(1, (ev.speed || 60) / 200);
+        this.burst(when, 'bandpass', (3400 + 1400 * f) * k, 5, 0.08 + 0.2 * f, 0.016 / k);
+        this.tone(when, (2300 + 300 * f) * k, 0.03 + 0.05 * f, (0.07 + 0.05 * f) / k, 'sine', 2100 * k);
+        this.tone(when, 900 * k, 0.03 * f, 0.03 / k, 'triangle');
+        break;
+      }
+      case 'clay': {
+        const f = Math.min(1, (ev.speed || 40) / 200);
+        this.burst(when, 'bandpass', 1900 * k, 2.5, 0.06 + 0.14 * f, 0.02 / k);
+        break;
+      }
+      case 'cup': {
+        const f = Math.min(1, (ev.speed || 100) / 260);
+        this.burst(when, 'lowpass', 700 * k, 0.9, 0.25 + 0.3 * f, 0.06 / k);
+        this.tone(when, 420 * k, 0.1 * f, 0.1 / k, 'sine', 260 * k);
+        break;
+      }
+      case 'latch':
+        this.burst(when, 'bandpass', 1400, 1.2, 0.18, 0.03);
+        this.tone(when + 0.01, 520, 0.06, 0.05, 'triangle', 380);
         break;
       default:
     }
@@ -744,11 +954,17 @@ export async function createIntro(opts) {
 }
 
 async function buildIntro(opts, undo, teardown) {
-  const o = Object.assign({ host: null, controlsHost: null, tier: 'standard', seed: 1, onReveal: null, onEnd: null, sound: true, onSoundChange: null, quality: 'auto', signal: null, motionOff: null }, opts);
+  const o = Object.assign({ host: null, controlsHost: null, tier: 'standard', seed: 1, game: 'dice', onReveal: null, onEnd: null, sound: true, onSoundChange: null, quality: 'auto', signal: null, motionOff: null, felt: 'black', trim: 'gold' }, opts);
   const checkAbort = () => { if (o.signal && o.signal.aborted) throw new Error('intro cancelled'); };
   checkAbort();
   const host = o.host;
   const tier = TIERS.includes(o.tier) ? o.tier : 'standard';
+  // The game (see GAMES): the dice are built here; another game's module is
+  // fetched now, alongside the set's textures, and asked for its pieces once
+  // the room and its lights stand (`game`, below).
+  const gameId = GAMES.includes(o.game) ? o.game : 'dice';
+  const gameLoad = gameId === 'dice' ? null : import(`./${gameId}.mjs`);
+  let game = null;
 
   // Rare assets start loading now, while the throw is worked out; nothing
   // waits on them for long, and nothing is fetched for a tier not drawn.
@@ -765,7 +981,7 @@ async function buildIntro(opts, undo, teardown) {
     // (the lettering is an <img>: it is shown over the shot, not in it)
     rare.platinum = null;
   }
-  if (tier === 'vault') {
+  if (tier === 'vault' && !gameLoad) {
     rareLoads.push(tex('rare/plaque-25k.jpg', true).then(t => { rare.p25 = t; }).catch(() => {}));
     rareLoads.push(tex('rare/plaque-100k.jpg', true).then(t => { rare.p100 = t; }).catch(() => {}));
     rareLoads.push(fetch(asset('rare/ceramic-clack.wav')).then(r => (r.ok ? r.arrayBuffer() : null)).then(b => { rare.clackBytes = b; }).catch(() => {}));
@@ -808,9 +1024,10 @@ async function buildIntro(opts, undo, teardown) {
   [goldC, goldA, goldN].forEach(t => { t.wrapT = THREE.ClampToEdgeWrapping; t.anisotropy = 8; });
   feltN.anisotropy = 8;
   checkAbort();
-  const plan = await makePlanAsync(tier, o.seed, o.signal);
+  // (another game's plan comes with its pieces, once the room stands)
+  let plan = gameLoad ? null : await makePlanAsync(tier, o.seed, o.signal);
   checkAbort();
-  const W = plan.warp;
+  let W = plan ? plan.warp : null;
 
   // ---- The set.
   const scene = new THREE.Scene();
@@ -824,6 +1041,7 @@ async function buildIntro(opts, undo, teardown) {
   felt.rotation.x = -Math.PI / 2;
   felt.position.set(0, 0, (P.TABLE.nearZ + P.TABLE.wallZ) / 2);
   felt.receiveShadow = true;
+  dressFelt(felt.material, o.felt);
   scene.add(felt);
 
   const rubber = new THREE.MeshStandardMaterial({ color: 0x08080a, roughness: 0.7, normalMap: rubberN, normalScale: new THREE.Vector2(0.9, 0.9) });
@@ -947,6 +1165,9 @@ async function buildIntro(opts, undo, teardown) {
     });
   }
   // (the set's materials and textures, for the table the landing flies to)
+  // (the trim: the filigree band is the shot's trim; its rails' brass edge
+  // is the rail's, and stays brass)
+  dressTrim({ band: [gold] }, o.trim);
   scene.userData.set = { felt: felt.material, rubber, leatherWall, cushion, brass, gold, wood, carpet, WOOD_TILE, tex: { feltN, leatherN, cushionN, walnut, walnutN, goldC, goldA, goldN, badge } };
 
   // ---- Lights: a warm pendant over the table (the shadows), the light
@@ -972,18 +1193,67 @@ async function buildIntro(opts, undo, teardown) {
   scene.add(rim, rim.target);
   const edgeSpot = new THREE.SpotLight(0xfff0dc, 0, 0, 0.1, 0.5, 0);
   scene.add(edgeSpot, edgeSpot.target);
+  const lights = { pendant, rim, lensLight, edgeSpot };
 
-  // ---- The cup.
-  const cup = new THREE.Group();
-  {
+  // ---- The game, when it is not the dice: its pieces built into the room
+  // now (every light it will use with them, so nothing is compiled
+  // mid-shot), its plan worked out, and from here the shot asks it for the
+  // camera, the sounds and each frame. (The lens follows the screen's
+  // shape: a tall phone sees little from side to side, so the game frames
+  // for this screen's aspect.)
+  const aspect = (host.clientWidth || window.innerWidth) / (host.clientHeight || window.innerHeight);
+  if (gameLoad) {
+    const mod = await gameLoad;
+    checkAbort();
+    game = await mod.makeGame({
+      THREE, scene, set: scene.userData.set, lights, tier, seed: o.seed, aspect, host, signal: o.signal,
+      room: { floor: ROOM.floor, lamp: ROOM.lamp, FLOAT, CEIL, PENDANT, ENV_LEVEL, RIM }, asset,
+      helpers: { makeWarp, spline, smoother, easeOut, lerp, mix3, clamp01, canvasTexture, radial, finished, embossTex, scaleUV, boxUV }
+    });
+    checkAbort();
+    plan = game.plan;
+    W = plan.warp;
+    undo.push(() => { if (game && game.dispose) game.dispose(); });
+  }
+
+  // ---- The cup, held to a backgammon cup from a saddlery: pebble-grain
+  // calfskin over a rigid form, its top edge rolled and burnished under a
+  // brass lip, a felt lining, and an enamelled badge set on the curve.
+  //   Across the room: a dark tapered cylinder, its brass lip and bands.
+  //   At arm's length: an even, fine grain with one soft sheen running up
+  //   the side toward the lamp; the leather darker at the rim and the base,
+  //   where hands have held it (burnished), a shade warmer between.
+  //   Pinched in: each pebble of the grain round-topped and glossy, the
+  //   creases between them dull; the badge's enamel under a hard clear
+  //   gloss, its brass rim and letters standing up from it.
+  //   Contact: it stands on the felt with a tight shadow at its foot; the
+  //   dice rattle inside (the shake: see CUP_KEYS).
+  //   Motion: the shake's wind-up, throw and settle are the cup's keys.
+  // (Before, a coarse leather map at 5 cm a tile read as crinkled vinyl.)
+  // (the cup, the dice, the stick and the vault are the dice game's: another
+  // game has built its own pieces above)
+  const cup = game ? null : new THREE.Group();
+  if (cup) {
     const H = CUP.h, rt = CUP.rTop, rb = CUP.rBot;
     const outer = [];
     for (let k = 0; k <= 12; k++) { const y = -H / 2 + (H * k) / 12; outer.push(new THREE.Vector2(rb + (rt - rb) * (k / 12), y)); }
-    const leather = new THREE.MeshStandardMaterial({ color: 0x4a2819, roughness: 0.58, normalMap: leatherN, normalScale: new THREE.Vector2(0.7, 0.7) });
+    // (the burnish: a map down the cup's height, dark at rim and base)
+    const burnish = (() => {
+      const c = document.createElement('canvas'); c.width = 4; c.height = 256;
+      const g = c.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 256);
+      [[0, '#6f6f6f'], [0.1, '#d6d6d6'], [0.45, '#ffffff'], [0.82, '#dcdcdc'], [0.94, '#8a8a8a'], [1, '#5e5e5e']].forEach(([o, col]) => gr.addColorStop(o, col));
+      g.fillStyle = gr; g.fillRect(0, 0, 4, 256);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.flipY = false;
+      return t;
+    })();
+    const leather = new THREE.MeshPhysicalMaterial({ color: 0x6c3a26, map: burnish, roughness: 0.62, sheen: 0.35, sheenRoughness: 0.45, sheenColor: new THREE.Color(0x7a4a34), envMapIntensity: 0.8 });
+    // (the grain at 2.5 cm a tile: round the cup 25 cm, up it 10)
+    finished(leather, 'pebble', 10, 4, 0.9);
     const shell = new THREE.Mesh(new THREE.LatheGeometry(outer, 56), leather);
     shell.castShadow = true; cup.add(shell);
     const inner = outer.map(v => new THREE.Vector2(v.x - 0.32, v.y)).reverse();
-    const lining = new THREE.MeshStandardMaterial({ color: 0x06120c, roughness: 1, side: THREE.DoubleSide });
+    // (the lining: a deep green baize, its nap soaking up the light)
+    const lining = new THREE.MeshPhysicalMaterial({ color: 0x06120c, roughness: 1, sheen: 0.8, sheenRoughness: 0.6, sheenColor: new THREE.Color(0x1d3a2a), side: THREE.DoubleSide });
     cup.add(new THREE.Mesh(new THREE.LatheGeometry(inner, 56), lining));
     const lip = new THREE.Mesh(new THREE.TorusGeometry(rt - 0.16, 0.2, 12, 64), brass);
     lip.rotation.x = Math.PI / 2; lip.position.y = H / 2; cup.add(lip);
@@ -1001,17 +1271,25 @@ async function buildIntro(opts, undo, teardown) {
     // turned to face the lens through the shake.
     const bh = 2.5, by = 0.4, th = 1.0;
     const rAt = y => rb + (rt - rb) * ((y + H / 2) / H) + 0.09;
-    const plate = new THREE.Mesh(new THREE.CylinderGeometry(rAt(by + bh / 2), rAt(by - bh / 2), bh, 24, 1, true, -30 * DEG - th / 2, th),
-      new THREE.MeshStandardMaterial({ map: badge, transparent: true, alphaTest: 0.4, metalness: 0.55, roughness: 0.3 }));
+    // (enamel and brass: the letters and rim raised out of the badge's own
+    // artwork, the whole under a hard clear gloss as fired enamel is)
+    const badgeMat = new THREE.MeshPhysicalMaterial({ map: badge, transparent: true, alphaTest: 0.4, metalness: 0.55, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.06 });
+    if (badge.image && badge.image.width) {
+      const c = document.createElement('canvas'); c.width = badge.image.width; c.height = badge.image.height;
+      const g = c.getContext('2d'); g.drawImage(badge.image, 0, 0);
+      badgeMat.normalMap = embossTex(c, 2.6); badgeMat.normalMap.flipY = badge.flipY;
+      badgeMat.normalScale = new THREE.Vector2(0.9, 0.9);
+    }
+    const plate = new THREE.Mesh(new THREE.CylinderGeometry(rAt(by + bh / 2), rAt(by - bh / 2), bh, 24, 1, true, -30 * DEG - th / 2, th), badgeMat);
     plate.position.y = by; cup.add(plate);
+    scene.add(cup);
   }
-  scene.add(cup);
 
   // ---- The dice.
-  const dieGeo = dieGeometry(), pipGeo = pipGeometry();
+  const dieGeo = game ? null : dieGeometry(), pipGeo = game ? null : pipGeometry();
   // (both sides: the pips of the far faces show through the resin)
-  const pipMat = new THREE.MeshStandardMaterial({ color: 0xdcd8ce, roughness: 0.42, vertexColors: true, side: THREE.DoubleSide });
-  const dice = [0, 1].map(() => {
+  const pipMat = game ? null : new THREE.MeshStandardMaterial({ color: 0xdcd8ce, roughness: 0.42, vertexColors: true, side: THREE.DoubleSide });
+  const dice = game ? [] : [0, 1].map(() => {
     const mat = new THREE.MeshPhysicalMaterial({
       // deep red resin: dark through the middle, bright red where it is
       // thin (the rounded edges), glass-hard highlights on the clear coat
@@ -1026,22 +1304,62 @@ async function buildIntro(opts, undo, teardown) {
     const body = new THREE.Mesh(dieGeo, mat); body.castShadow = true;
     const pips = new THREE.Mesh(pipGeo, pipMat);
     g.add(body, pips);
-    const glow = new THREE.PointLight(0xff3a18, 0, 14, 2);
-    g.add(glow);
     scene.add(g);
+    // (the Vault Pull's dice glow from inside. The light hangs in the room,
+    // not in the die: a light under a hidden group isn't counted, so the
+    // dice coming out of the cup would change how many lights there are,
+    // and every material in the shot would be compiled again that frame -
+    // the hitch as the cup throws. Other tiers have no glow, and no light.)
+    const glow = plan.vault ? new THREE.PointLight(0xff3a18, 0, 14, 2) : null;
+    if (glow) scene.add(glow);
     return { g, mat, glow };
   });
 
-  // ---- The stick (standard, hardways).
+  // ---- The stick (standard, hardways), held to a stickman's stick from a
+  // craps-table maker: a walnut shaft, turned, tapering to the hook; the
+  // hook bent rattan, steamed round a form into its J and lacquered; a
+  // turned brass ferrule where the two are joined.
+  //   Across the room: a long dark line with a pale hook at its end.
+  //   At arm's length: the shaft's lacquer carries one long highlight down
+  //   its length; the rattan is honey-coloured, a shade darker down the
+  //   side that lay against the form as it was steamed; the ferrule turned
+  //   with two fine grooves, catching the lamp in rings.
+  //   Pinched in: the walnut's open pores and the rattan's fibres, both
+  //   running along the stick under their lacquer.
+  //   Contact: the hook's bend pushes the dice, and its shadow and theirs
+  //   meet on the felt.
+  //   Motion: the hook's path (makeHookPath) - a reach, a draw, the dice
+  //   carried and let go - is the stick's.
+  // (Before, the hook was the shaft's walnut on a thin tube and read as a
+  // bent metal rod.)
   let stick = null;
-  if (plan.stick) {
+  if (!game && plan.stick) {
     const hp = plan.stick.hp;
     const g = new THREE.Group();
     const curve = new THREE.CatmullRomCurve3(hp.curve.map(([a, b]) => new THREE.Vector3(a, 0, b)));
     // (UVs in cm, the grain along the wood: a tube's u already runs along it)
     const hookGeo = new THREE.TubeGeometry(curve, 120, HOOK.cap, 10, false);
     scaleUV(hookGeo, curve.getLength() / WOOD_TILE[0], (2 * Math.PI * HOOK.cap) / WOOD_TILE[1]);
-    const hook = new THREE.Mesh(hookGeo, wood);
+    // (rattan: its fibres are the pores' streaks at half the size)
+    const rattan = new THREE.MeshPhysicalMaterial({ color: 0x8c6438, roughness: 0.5, clearcoat: 0.7, clearcoatRoughness: 0.18, envMapIntensity: 0.8 });
+    finished(rattan, 'pores', WOOD_TILE[0], WOOD_TILE[1] / 1.5, 0.45);
+    // (browned by the steam where it lay against the form: a darker streak
+    // down one side of the cane, v = 0.5 round it)
+    // (and the cane's fibres: fine streaks along it, lighter and darker, a
+    // node now and then where a leaf grew - 6 cm of cane a tile)
+    rattan.map = (() => {
+      const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+      const x = c.getContext('2d'), gr = x.createLinearGradient(0, 0, 0, 64);
+      [[0, '#ffffff'], [0.35, '#f2eadc'], [0.5, '#b89a78'], [0.65, '#f2eadc'], [1, '#ffffff']].forEach(([o, col]) => gr.addColorStop(o, col));
+      x.fillStyle = gr; x.fillRect(0, 0, 256, 64);
+      let sd = 71; const r = () => { sd = (Math.imul(sd, 1664525) + 1013904223) >>> 0; return sd / 4294967296; };
+      for (let k = 0; k < 90; k++) { const y = r() * 64; x.fillStyle = r() < 0.5 ? `rgba(90,58,26,${(0.08 + r() * 0.14).toFixed(2)})` : `rgba(255,236,200,${(0.08 + r() * 0.12).toFixed(2)})`; x.fillRect(0, y, 256, 0.6 + r() * 1.2); }
+      x.fillStyle = 'rgba(80,50,22,0.35)'; x.fillRect(178, 0, 3, 64); x.fillStyle = 'rgba(255,240,210,0.25)'; x.fillRect(181, 0, 2, 64);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8;
+      t.repeat.set(WOOD_TILE[0] / 6, WOOD_TILE[1] / (2 * Math.PI * HOOK.cap));
+      return t;
+    })();
+    const hook = new THREE.Mesh(hookGeo, rattan);
     hook.castShadow = true; g.add(hook);
     // The shaft and its ferrule hang from a pivot at the hook, laid along
     // the pull (+z) and tipped up per frame (see shaftLean).
@@ -1051,10 +1369,17 @@ async function buildIntro(opts, undo, teardown) {
     // (a cylinder's u runs round it: swapped, so the grain runs along)
     const shaftGeo = new THREE.CylinderGeometry(0.42, 0.48, len, 14);
     { const uv = shaftGeo.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getY(i) * len) / WOOD_TILE[0], (uv.getX(i) * 2.8) / WOOD_TILE[1]); }
-    const shaft = new THREE.Mesh(shaftGeo, wood);
+    // (the shaft's walnut with its pores open under the lacquer, as the
+    // table's is: 2 cm a tile)
+    const shaftWood = wood.clone(); shaftWood.normalMap = null; shaftWood.roughnessMap = null;
+    finished(shaftWood, 'pores', WOOD_TILE[0] / 2, WOOD_TILE[1] / 2, 0.5);
+    const shaft = new THREE.Mesh(shaftGeo, shaftWood);
     shaft.rotation.x = Math.PI / 2; shaft.position.z = len / 2;
     shaft.castShadow = true; pivot.add(shaft);
-    const ferrule = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 1.8, 16), new THREE.MeshStandardMaterial({ color: 0x8c6d34, metalness: 1, roughness: 0.45 }));
+    // (turned brass: a lathe profile with a bead at each end and two fine
+    // grooves, so the lamp lies on it in rings)
+    const fp = [[0, -0.9], [0.46, -0.9], [0.53, -0.82], [0.53, -0.66], [0.5, -0.6], [0.5, -0.3], [0.46, -0.26], [0.5, -0.22], [0.5, 0.18], [0.46, 0.22], [0.5, 0.26], [0.5, 0.6], [0.53, 0.66], [0.53, 0.82], [0.46, 0.9], [0, 0.9]].map(([r, y]) => new THREE.Vector2(r, y));
+    const ferrule = new THREE.Mesh(new THREE.LatheGeometry(fp, 32), new THREE.MeshStandardMaterial({ color: 0xc19a52, metalness: 1, roughness: 0.24, envMapIntensity: 1.1 }));
     ferrule.rotation.x = Math.PI / 2; ferrule.position.z = 1.2;
     pivot.add(ferrule);
     g.add(pivot);
@@ -1064,7 +1389,7 @@ async function buildIntro(opts, undo, teardown) {
 
   // ---- The Vault Pull's pieces.
   let vault = null;
-  if (plan.vault) {
+  if (!game && plan.vault) {
     await Promise.all(rareLoads);
     checkAbort();
     const faceMat = t => new THREE.MeshPhysicalMaterial({ map: t || null, color: t ? 0xcfc9bc : 0xcfc6b4, roughness: 0.3, clearcoat: 0.7, clearcoatRoughness: 0.12, envMapIntensity: 0.6 });
@@ -1103,8 +1428,9 @@ async function buildIntro(opts, undo, teardown) {
   // ---- Particles: dust in the light, felt dust at the landings, and the
   // burst's sparks and embers. One additive point cloud, rewritten per frame.
   const spriteTex = canvasTexture(64, radial([[0, 'rgba(255,255,255,1)'], [0.35, 'rgba(255,245,230,0.6)'], [1, 'rgba(255,240,220,0)']]));
-  const DUST = 190, PUFF = 16, SPARK = plan.vault ? 180 : 0;
-  const puffs = plan.run.events.filter(e => e.kind === 'felt' && e.speed > 70).slice(0, 10);
+  // (the dust is the room's; the puffs and the sparks are the dice's)
+  const DUST = 190, PUFF = 16, SPARK = !game && plan.vault ? 180 : 0;
+  const puffs = game ? [] : plan.run.events.filter(e => e.kind === 'felt' && e.speed > 70).slice(0, 10);
   const NP = DUST + puffs.length * PUFF + SPARK;
   const pPos = new Float32Array(NP * 3), pCol = new Float32Array(NP * 3);
   const pGeo = new THREE.BufferGeometry();
@@ -1122,13 +1448,22 @@ async function buildIntro(opts, undo, teardown) {
   // distance, lift of the aim) around an aim point that hands off from the
   // cup to the dice, to the wall strike, and back to the dice.
   const camera = new THREE.PerspectiveCamera(36, 1, 0.5, 3000);
-  const Rrel = W.real(P.RELEASE.t), Rwall = plan.wallReal, Rrest = plan.restReal;
+  // (the shot's turns, in real seconds: the dice's release, wall strike and
+  // rest; another game names its own - plan.wallReal is its slow moment)
+  const Rrel = game ? 0 : W.real(P.RELEASE.t), Rwall = plan.wallReal, Rrest = plan.restReal;
+  const R2 = w => W.real(w);
+  const floatEnd = plan.totalReal + FLOAT;
+  const CAM_DT = 1 / 120, camN = Math.ceil((floatEnd + 2) / CAM_DT) + 2;
+  const camEye = new Float32Array(camN * 3), camAim = new Float32Array(camN * 3);
+  // (another game lays its own path - its moves, its float up under the
+  // ceiling - into the same arrays: see cameraAt)
+  if (game) game.camera({ eye: camEye, aim: camAim, dt: CAM_DT, n: camN, floatEnd });
+  else {
   const endPos = plan.rest;
   // Framing the dice at rest: the camera turns (up to 18 degrees either
   // way) so the gap between them runs up the screen rather than across it
   // - a phone is tall and narrow - and stands back only as far as that
   // needs, for this screen's shape.
-  const aspect = (host.clientWidth || window.innerWidth) / (host.clientHeight || window.innerHeight);
   const tanV = Math.tan(((aspect < 0.62 ? 42 : 34) * DEG) / 2), tanH = tanV * aspect;
   const gap = [endPos[1].p[0] - endPos[0].p[0], endPos[1].p[2] - endPos[0].p[2]];
   const needFor = az => {
@@ -1149,7 +1484,6 @@ async function buildIntro(opts, undo, teardown) {
     [Rwall - 0.08, -22, 14, 36 - 0.8 * 5, 0],
     [W.slowHold[1], -58, 10, 36 - 0.8 * 9, 0]
   ];
-  const R2 = w => W.real(w);
   // (keys must run forward in time; a quick settle can come before the
   // slow motion has fully eased off, so each is kept after the last)
   const pushKey = k => { const prev = keys[keys.length - 1]; k[0] = Math.max(k[0], prev[0] + 0.3); keys.push(k); };
@@ -1206,9 +1540,6 @@ async function buildIntro(opts, undo, teardown) {
     if (stickAnchor) { const T = plan.stick.hp.T; aim = mix3(aim, stickAnchor, smoother((w - T.pull[0]) / (T.pull[1] - T.pull[0] + 1.2))); }
     return aim;
   };
-  const floatEnd = plan.totalReal + FLOAT;
-  const CAM_DT = 1 / 120, camN = Math.ceil((floatEnd + 2) / CAM_DT) + 2;
-  const camEye = new Float32Array(camN * 3), camAim = new Float32Array(camN * 3);
   {
     let aim = null;
     for (let k = 0; k < camN; k++) {
@@ -1321,9 +1652,12 @@ async function buildIntro(opts, undo, teardown) {
       if (e[1] > CEIL - 20) e[1] = CEIL - 20 * Math.exp(-(e[1] - (CEIL - 20)) / 20);
     }
   }
+  }
 
   // ---- Timeline of sounds (real seconds).
   const sfx = [];
+  if (game) sfx.push(...game.sfx);
+  else {
   for (let t = 0.3; t < 1.0; t += 1 / 9.2) sfx.push({ t, kind: 'rattle' }, { t: t + 0.03, kind: 'rattle' });
   sfx.push({ t: Rrel - 0.05, kind: 'whoosh' });
   const pushEvents = run => run.events.forEach(e => {
@@ -1343,7 +1677,11 @@ async function buildIntro(opts, undo, teardown) {
     pushEvents(plan.vault.run);
   }
   if (plan.edge) sfx.push({ t: R2(plan.silence[1]), kind: 'drop' });
+  }
   sfx.sort((a, b) => a.t - b.t);
+  // (the room's sound cut dead, real seconds - the Defiant Edge's silence,
+  // or a game's own - and whether the bed plays at all before it)
+  const silenceAt = game ? (game.silence || null) : plan.edge ? R2(plan.silence[0]) : null;
 
   // ---- Sound.
   let sound = null;
@@ -1358,20 +1696,23 @@ async function buildIntro(opts, undo, teardown) {
   // ---- Overlays: the call, the tier's name.
   const call = document.createElement('div');
   call.className = `r3-call r3-call-${tier}`;
-  if (tier === 'hardways') {
+  if (tier === 'hardways' && !game) {
     const img = new Image();
     img.alt = plan.call[0];
     img.onerror = () => { call.textContent = plan.call[0]; call.classList.add('r3-call-text'); };
     img.src = asset(plan.values[0] === 1 ? 'rare/hardways-snake-eyes.png' : 'rare/hardways-boxcars.png');
     call.appendChild(img);
   } else if (plan.call) {
+    // (a game's hardways call is lettered, not pictured: the platinum text)
+    if (tier === 'hardways') call.classList.add('r3-call-text');
     call.innerHTML = `<span></span>${plan.call[1] ? '<small></small>' : ''}`;
     call.firstChild.textContent = plan.call[0];
     if (plan.call[1]) call.lastChild.textContent = plan.call[1];
   }
   const badgeEl = document.createElement('div');
   badgeEl.className = `r3-tier r3-tier-${tier}`;
-  badgeEl.innerHTML = tier === 'standard' ? '' : `<span>${TIER_NAMES[tier]}</span><small>${TIER_ODDS[tier]}</small>`;
+  const tierNames = game && game.tierNames ? game.tierNames : TIER_NAMES;
+  badgeEl.innerHTML = tier === 'standard' ? '' : `<span>${tierNames[tier]}</span><small>${TIER_ODDS[tier]}</small>`;
   const flashEl = document.createElement('div');
   flashEl.className = 'r3-flash';
   host.append(canvas, flashEl, call, badgeEl);
@@ -1390,27 +1731,50 @@ async function buildIntro(opts, undo, teardown) {
   // covers only that.
   let redraw = null, crop = null, refit = false, zoomT = 0;
   let screenW = 0, screenH = 0, sized = '';
-  // (a still's buffers are held to about a phone's own pixels at 3x; with
-  // the bloom pass on - its buffers are doubled and multisampled - to no
-  // more than a full-speed moving frame's)
+  // (a still's buffers are held to about a phone's own pixels at 3x. With
+  // the bloom pass on its buffers are doubled, so a still is drawn into
+  // them without multisampling - see postStill() - at the screen's own
+  // resolution, where the edges are as fine as the print; a moving frame
+  // has them multisampled at its own, lower resolution.)
   const STILL_PX = 4.2e6;
   const stillRatio = (w, h, cw, ch, zoom) => {
     const want = Math.min(window.devicePixelRatio || 1, 3) * zoom;
-    const budget = composer ? w * h * LIVE_MAX * LIVE_MAX : STILL_PX;
-    return Math.max(pixelRatio, Math.min(want, Math.sqrt(budget / (cw * ch))));
+    return Math.max(pixelRatio, Math.min(want, Math.sqrt(STILL_PX / (cw * ch))));
+  };
+  // The post's buffers multisampled (a moving frame) or not (a still, at
+  // its higher resolution): set before a frame is drawn, and made again
+  // by the renderer the next time it draws into them.
+  let stillPost = false;
+  const postStill = on => {
+    if (!composer || on === stillPost) return;
+    stillPost = on;
+    [composer.renderTarget1, composer.renderTarget2].forEach(t => { if (t) { t.samples = on ? 0 : 4; t.dispose(); } });
   };
   // The part of the screen in view while the page is pinched in (the
-  // visual viewport, in the canvas box's own pixels), or null.
-  const inView = (box, w, h) => {
+  // visual viewport, in the canvas box's own pixels) - with a margin, that
+  // and a share of its size more on every side, inside the screen - or
+  // null.
+  const inView = (box, w, h, margin = 0) => {
     const vv = window.visualViewport;
     if (!vv || !(vv.scale > 1.05)) return null;
     const b = box.getBoundingClientRect();
-    const x0 = Math.max(0, vv.offsetLeft - b.left), y0 = Math.max(0, vv.offsetTop - b.top);
-    const x1 = Math.min(w, vv.offsetLeft - b.left + vv.width), y1 = Math.min(h, vv.offsetTop - b.top + vv.height);
+    const mx = vv.width * margin, my = vv.height * margin;
+    let x0 = Math.max(0, vv.offsetLeft - b.left - mx), y0 = Math.max(0, vv.offsetTop - b.top - my);
+    let x1 = Math.min(w, vv.offsetLeft - b.left + vv.width + mx), y1 = Math.min(h, vv.offsetTop - b.top + vv.height + my);
+    if (margin) { x0 = Math.floor(x0); y0 = Math.floor(y0); x1 = Math.ceil(x1); y1 = Math.ceil(y1); }
     return x1 - x0 >= 1 && y1 - y0 >= 1 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0, fw: w, fh: h, zoom: vv.scale } : null;
   };
+  // A crop still good for the view: all of what is in view inside it, at a
+  // zoom within a sixth of its own.
+  const MARGIN = 0.25;
+  const serves = (c, v) => !!c && !!v && v.x >= c.x - 0.5 && v.y >= c.y - 0.5 && v.x + v.w <= c.x + c.w + 0.5 && v.y + v.h <= c.y + c.h + 0.5 && Math.abs(Math.log(v.zoom / c.zoom)) < 0.16;
   // Sizes the canvas for a moving frame (live) or for the frame that stays.
-  const size = (live = !redraw) => {
+  // Pinched in, it covers the part in view: exactly, for a frame at rest;
+  // for one drawn while the view moves (`moving` - a moving frame, or a
+  // still while the page is pinched or panned) the crop already drawn is
+  // kept while it still serves, and a new one takes a margin round the
+  // view, so a small pan or pinch shows what is already drawn, sharp.
+  const size = (live = !redraw, moving = live) => {
     const box = canvas.parentElement || host;
     const w = box.clientWidth || window.innerWidth, h = box.clientHeight || window.innerHeight;
     // (the lens follows the screen's shape, and only when that changes:
@@ -1422,18 +1786,52 @@ async function buildIntro(opts, undo, teardown) {
       camera.fov = w / h < 0.62 ? 42 : 34;
       camera.updateProjectionMatrix();
     }
-    crop = live ? null : inView(box, w, h);
+    const v = inView(box, w, h);
+    if (!moving || !serves(crop, v) || crop.fw !== w || crop.fh !== h) crop = v && moving ? inView(box, w, h, MARGIN) : v;
     const cw = crop ? crop.w : w, ch = crop ? crop.h : h;
-    const r = live ? pixelRatio : stillRatio(w, h, cw, ch, crop ? crop.zoom : 1);
-    const key = [w, h, r, crop ? [crop.x, crop.y, crop.w, crop.h] : ''].join();
+    // (a moving frame: its pixels spread over the part in view, so pinched
+    // in it is as sharp as the zoom - to the screen's own - at no more cost)
+    const r = live ? Math.min(pixelRatio * Math.sqrt((w * h) / (cw * ch)), Math.max(pixelRatio, Math.min(window.devicePixelRatio || 1, 3) * (crop ? crop.zoom : 1)))
+      : stillRatio(w, h, cw, ch, crop ? crop.zoom : 1);
+    const key = [w, h, r, live ? 'l' : 's', crop ? [crop.x, crop.y, crop.w, crop.h] : ''].join();
     if (key === sized) return false;
     sized = key;
-    const st = canvas.style;
-    if (crop) { st.left = `${crop.x}px`; st.top = `${crop.y}px`; st.width = `${crop.w}px`; st.height = `${crop.h}px`; }
-    else st.left = st.top = st.width = st.height = '';
-    renderer.setDrawingBufferSize(cw, ch, r);
-    if (composer) { composer.setPixelRatio(r); composer.setSize(cw, ch); }
+    place(canvas, renderer, cw, ch, r);
+    if (composer) { postStill(!live); composer.setPixelRatio(r); composer.setSize(cw, ch); }
+    layers.forEach(gl => place(gl.domElement, gl, cw, ch, r));
     return true;
+  };
+  // A canvas over the whole screen, or over the crop, at ratio r. (Set with
+  // !important: a layer's own stylesheet may pin it to the whole screen.)
+  const place = (el, gl, cw, ch, r) => {
+    const st = el.style;
+    if (crop) [['left', crop.x], ['top', crop.y], ['width', crop.w], ['height', crop.h]].forEach(([k, v]) => st.setProperty(k, `${v}px`, 'important'));
+    else ['left', 'top', 'width', 'height'].forEach(k => st.removeProperty(k));
+    gl.setDrawingBufferSize(cw, ch, r);
+  };
+  // Other canvases drawn over this one with the same camera (the table's
+  // dealer has one): kept the same size - the same part of the screen at the
+  // same resolution - and drawn through the same part of the lens. A layer
+  // that moves on its own over a frame that stays (the dealer's arms over
+  // the table held still) is placed again `live`, at a moving frame's
+  // resolution - no more pixels than a moving frame of the whole view, and
+  // so, pinched in, at the zoom's resolution over the part in view - and
+  // placed again without it once it stops. (Placing a canvas clears it:
+  // draw it straight after.)
+  const layers = [];
+  const layerSize = new THREE.Vector2();
+  const layer = (gl, live = false) => {
+    const known = layers.includes(gl);
+    if (!known) layers.push(gl);
+    const [w, h, r0] = sized.split(',').map(Number);
+    if (!w) return;
+    const cw = crop ? crop.w : w, ch = crop ? crop.h : h;
+    // (drawn alone, over a frame that is not drawn again: close to the
+    // still's own resolution - unless the device is down from full speed)
+    const r = live ? Math.min(r0, Math.max(pixelRatio * Math.sqrt((w * h) / (cw * ch)), pixelRatio < LIVE_MAX ? 0 : 0.85 * r0)) : r0;
+    gl.getSize(layerSize);
+    if (known && gl.getPixelRatio() === r && layerSize.x === cw && layerSize.y === ch) return;
+    place(gl.domElement, gl, cw, ch, r);
   };
   // Before a frame is drawn: the canvas sized for it, when it has moved on
   // from a still (true when it was resized).
@@ -1450,14 +1848,19 @@ async function buildIntro(opts, undo, teardown) {
   const rest = again => { redraw = again; clearTimeout(zoomT); size(); again(); };
   // Moving again: the next frame is drawn at the moving frames' resolution.
   const move = () => { if (!redraw) return; redraw = null; clearTimeout(zoomT); refit = true; };
-  // Pinching, or moving about while pinched in: a crop drawn for where the
-  // view was would leave the rest of the canvas empty, so the whole view is
-  // back at once (at the moving frames' resolution, while the page moves),
-  // and what is in view is drawn sharp once it stops.
+  // Pinching, or moving about while pinched in. The canvas follows the view
+  // as it goes, a frame at a time: a crop that no longer covers what is in
+  // view (or drawn for a zoom a sixth away) is drawn again round where the
+  // view is now, with a margin, at the zoom's resolution - within a still's
+  // budget, so never blocky, and never a gap at the edge - and once the
+  // view stops, just what is in view, at the zoom's full resolution.
+  // Moving frames re-crop on their own next frame.
+  let zoomRaf = 0;
+  const follow = () => { zoomRaf = 0; if (redraw && size(false, true)) redraw(); };
   const onZoom = () => {
-    if (!redraw) return;
+    if (!redraw) { refit = true; return; }
     clearTimeout(zoomT);
-    if (crop) { size(true); redraw(); }
+    if (!zoomRaf) zoomRaf = requestAnimationFrame(follow);
     // (the keyboard coming up, say, changes nothing the canvas needs)
     zoomT = setTimeout(() => { if (redraw && size()) redraw(); }, 220);
   };
@@ -1465,7 +1868,7 @@ async function buildIntro(opts, undo, teardown) {
     window.visualViewport.addEventListener('resize', onZoom);
     window.visualViewport.addEventListener('scroll', onZoom);
     undo.push(() => {
-      clearTimeout(zoomT);
+      clearTimeout(zoomT); cancelAnimationFrame(zoomRaf);
       window.visualViewport.removeEventListener('resize', onZoom);
       window.visualViewport.removeEventListener('scroll', onZoom);
     });
@@ -1481,11 +1884,50 @@ async function buildIntro(opts, undo, teardown) {
   if (o.quality !== 'low') makeComposer();
   size();
 
+  // (a frame's breath: the next frame, or a moment when frames aren't
+  // coming - a hidden tab)
+  const breath = () => new Promise(res => { let d = false; const go = () => { if (!d) { d = true; res(); } }; requestAnimationFrame(go); setTimeout(go, 60); });
+  // (any buffer will do to compile against: a shader drawing into one
+  // buffer is the one drawing into all of them)
+  const probe = new THREE.WebGLRenderTarget(1, 1);
+  undo.push(() => probe.dispose());
+  // The scene's shaders compiled (in parallel where the driver can) for the
+  // way it is drawn now - into the post's buffer; or to the screen and, for
+  // the glass dice, into a buffer - and its textures uploaded. `show`: parts
+  // still hidden that are compiled as they will be once shown (the lights
+  // they bring count), then hidden again; `spread`: the uploads a frame
+  // apiece, for a scene that is playing meanwhile. (The whole scene, always:
+  // a part of it compiled on its own would count its lights twice.)
+  const warm = async ({ show = [], spread = false } = {}) => {
+    const was = renderer.getRenderTarget(), hidden = show.filter(x => !x.visible);
+    hidden.forEach(x => { x.visible = true; });
+    const jobs = [];
+    // (with the post, the screen's shaders too, not waited on: should a slow
+    // device drop the post mid-shot - applyQuality - the frame that drops it
+    // compiles nothing)
+    for (const target of composer ? [probe, null] : [null, probe]) {
+      renderer.setRenderTarget(target);
+      try {
+        const job = renderer.compileAsync(scene, camera).catch(() => {});
+        if (target === probe || !composer) jobs.push(job);
+      } catch (e) { /* compiled on first draw */ }
+    }
+    renderer.setRenderTarget(was);
+    const texs = new Set();
+    scene.traverse(m => { if (m.material) [].concat(m.material).forEach(mat => Object.values(mat).forEach(v => { if (v && v.isTexture && !v.isRenderTargetTexture) texs.add(v); })); });
+    hidden.forEach(x => { x.visible = false; });
+    await Promise.all(jobs);
+    for (const t of texs) {
+      try { renderer.initTexture(t); } catch (e) { /* on first draw */ }
+      if (spread) await breath();
+    }
+  };
+
   // ---- One frame at real time t.
   const setPose = (obj, p, q) => { obj.position.set(p[0], p[1], p[2]); obj.quaternion.set(q[0], q[1], q[2], q[3]); };
   const project = p => { const v = new THREE.Vector3(p[0], p[1], p[2]).project(camera); return [(v.x * 0.5 + 0.5) * host.clientWidth, (-v.y * 0.5 + 0.5) * host.clientHeight, v.z]; };
   // The light behind the lens: brightest through the slow motion.
-  const gleamAt = t => smoother((t - (Rwall - 0.2)) / 0.35) * (1 - smoother((t - W.slowHold[1]) / 0.7));
+  const gleamAt = game ? (t => game.gleamAt(t)) : (t => smoother((t - (Rwall - 0.2)) / 0.35) * (1 - smoother((t - W.slowHold[1]) / 0.7)));
   // (it sits up and off to the lens's left, not on its axis: a light on the
   // axis comes straight back off any face square to the lens, a white flash)
   const aimLens = (eye, aim, gleam) => {
@@ -1502,7 +1944,8 @@ async function buildIntro(opts, undo, teardown) {
     const eye = [0, 1, 2].map(j => lerp(camEye[k0 * 3 + j], camEye[(k0 + 1) * 3 + j], u));
     const aim = [0, 1, 2].map(j => lerp(camAim[k0 * 3 + j], camAim[(k0 + 1) * 3 + j], u));
     let shake = [0, 0, 0];
-    if (plan.vault) {
+    if (game) { if (game.shakeAt) shake = game.shakeAt(t, w); }
+    else if (plan.vault) {
       const x = w - plan.vault.boom;
       if (x > 0 && x < 0.8) { const a = 0.9 * Math.exp(-x / 0.14); shake = [a * Math.sin(x * 73), a * Math.sin(x * 61 + 1), a * Math.sin(x * 57 + 2)]; }
     }
@@ -1520,13 +1963,15 @@ async function buildIntro(opts, undo, teardown) {
     const w = W.world(t);
     const rate = W.rateAt(t);
     const gleam = gleamAt(t);
+    // Another game's pieces, lights and call, at this frame (its burst is
+    // the bloom's, as the Vault Pull's is).
+    const gst = game ? game.stage(t, { w, rate, gleam }) : null;
     // Cup.
-    const cp = cupAt(Math.min(w, 5));
-    setPose(cup, cp.p, cp.q);
-    cup.visible = w < P.RELEASE.t + 1.2;
+    const cp = game ? null : cupAt(Math.min(w, 5));
+    if (cup) { setPose(cup, cp.p, cp.q); cup.visible = w < P.RELEASE.t + 1.2; }
     // Dice.
-    const burst = plan.vault ? w - plan.vault.boom : -1;
-    for (let i = 0; i < 2; i++) {
+    const burst = game ? (gst && gst.burst != null ? gst.burst : -1) : plan.vault ? w - plan.vault.boom : -1;
+    for (let i = 0; i < dice.length; i++) {
       const d = dice[i];
       let pose = dicePose(plan, i, w);
       let glow = 0;
@@ -1554,14 +1999,16 @@ async function buildIntro(opts, undo, teardown) {
       const s = burst > 0 ? 1 + burst * 5 : 1;
       d.g.scale.setScalar(s);
       d.mat.emissiveIntensity = glow * 0.8;
-      d.glow.intensity = glow * 3.5;
+      if (d.glow) { d.glow.position.set(pose.p[0], pose.p[1], pose.p[2]); d.glow.intensity = shown ? glow * 3.5 : 0; }
       // Seen from afar a die is a few pixels, and its glass-hard gloss and
       // the studio in it average out to a pale pink: the gloss goes as the
       // lens pulls back, leaving the resin's own red.
       const far = Math.hypot(pose.p[0] - camera.position.x, pose.p[1] - camera.position.y, pose.p[2] - camera.position.z) / s;
       const kg = 1 - smoother((far - 48) / 55);
       d.mat.envMapIntensity = 0.3 + 2.0 * kg;
-      d.mat.clearcoat = 0.7 * kg;
+      // (never quite none: a coat that reaches 0 is a different shader, and
+      // switching to it mid-shot compiles it then and there)
+      d.mat.clearcoat = Math.max(0.02, 0.7 * kg);
       d.mat.specularIntensity = 0.25 + 0.35 * kg;
       d.mat.roughness = 0.16 + 0.36 * (1 - kg);
     }
@@ -1598,9 +2045,10 @@ async function buildIntro(opts, undo, teardown) {
     }
     // The rim light is for the strike: once the dice have come to rest it
     // eases down, or a face square to it would flash white into the lens.
-    if (!plan.edge) rim.intensity = RIM * (1 - 0.8 * smoother((w - (plan.restW - 0.45)) / 0.5));
+    // (another game sets the house lights itself, in its stage())
+    if (!game && !plan.edge) rim.intensity = RIM * (1 - 0.8 * smoother((w - (plan.restW - 0.45)) / 0.5));
     // Edge: the room goes dark round the pinned die as the lens closes in.
-    if (plan.edge) {
+    if (!game && plan.edge) {
       const e = dicePose(plan, plan.edge.die, w).p;
       const k = smoother((w - plan.edge.done) / 0.5);
       edgeSpot.position.set(e[0] - 6, e[1] + 60, e[2] + 8);
@@ -1617,7 +2065,7 @@ async function buildIntro(opts, undo, teardown) {
     for (const m of dust) {
       const p = [m.p[0] + m.v[0] * t + 1.2 * Math.sin(t * 0.5 + m.ph), m.p[1] + m.v[1] * t + 0.8 * Math.sin(t * 0.37 + m.ph * 2), m.p[2] + m.v[2] * t];
       const off = Math.hypot(p[0] - pendant.target.position.x * 0.9, p[2] - pendant.target.position.z * 0.9);
-      const lit = Math.exp(-(off * off) / (2 * 26 * 26)) * (plan.edge ? 1 - 0.8 * smoother((w - plan.edge.done) / 0.5) : 1);
+      const lit = Math.exp(-(off * off) / (2 * 26 * 26)) * (game ? (gst && gst.dust != null ? gst.dust : 1) : plan.edge ? 1 - 0.8 * smoother((w - plan.edge.done) / 0.5) : 1);
       const tw = 0.4 + 0.6 * Math.pow(0.5 + 0.5 * Math.sin(t * 2.3 + m.ph * 3), 4);
       const b = m.a * lit * tw * 0.55;
       put(p, [b, b * 0.96, b * 0.9]);
@@ -1654,13 +2102,16 @@ async function buildIntro(opts, undo, teardown) {
       const on = smoother((w - cw) / 0.45) * (1 - smoother((w - plan.revealW + 0.3) / 0.5));
       call.style.opacity = on.toFixed(3);
       if (on > 0) {
-        // Over the higher of the two dice on screen, clear of both.
-        const s = [0, 1].map(i => { const d = dicePose(plan, i, w).p; return project([d[0], d[1] + 2.5, d[2]]); }).sort((a, b) => a[1] - b[1])[0];
+        // Over the higher of the two dice on screen, clear of both (or over
+        // where the game says its call belongs).
+        const s = game ? project(game.callAt(w)) : [0, 1].map(i => { const d = dicePose(plan, i, w).p; return project([d[0], d[1] + 2.5, d[2]]); }).sort((a, b) => a[1] - b[1])[0];
         const grow = 1.12 - 0.12 * smoother((w - cw) / 0.8);
         // (kept whole on screen, whatever the dice's spread)
         const half = (call.offsetWidth * grow) / 2 + 12, W0 = host.clientWidth;
         const cx = half * 2 < W0 ? Math.min(Math.max(s[0], half), W0 - half) : W0 / 2;
-        const cy = Math.max(s[1] - 56, call.offsetHeight + 16);
+        // (kept on screen top and bottom: a game's close-up can carry its
+        // anchor off the bottom of a wide screen)
+        const cy = Math.min(Math.max(s[1] - 56, call.offsetHeight + 16), host.clientHeight - call.offsetHeight / 2 - 16);
         call.style.transform = `translate(${cx.toFixed(1)}px,${cy.toFixed(1)}px) translate(-50%,-50%) scale(${grow.toFixed(3)})`;
         call.style.setProperty('--shine', `${(-60 + 220 * clamp01((w - cw - 0.1) / 1.2)).toFixed(1)}%`);
       }
@@ -1671,7 +2122,7 @@ async function buildIntro(opts, undo, teardown) {
   // The scene as it stands, through the post when there is one.
   const paint = () => { fit(); lens(() => { if (composer) composer.render(); else renderer.render(scene, camera); }); };
   const draw = st => {
-    if (composer) bloom.strength = 0.3 + 0.22 * st.gleam + (plan.vault ? 1.4 * Math.max(0, 1 - Math.max(0, st.burst) / 0.6) * (st.burst > 0 ? 1 : 0) : 0);
+    if (composer) bloom.strength = 0.3 + 0.22 * st.gleam + (plan.vault || (game && st.burst > 0) ? 1.4 * Math.max(0, 1 - Math.max(0, st.burst) / 0.6) * (st.burst > 0 ? 1 : 0) : 0);
     paint();
   };
   // One frame at real time t.
@@ -1701,34 +2152,42 @@ async function buildIntro(opts, undo, teardown) {
       scene.traverse(m => { if (m.material) [].concat(m.material).forEach(x => { x.needsUpdate = true; }); });
     }
     if (q <= 0) dice.forEach(d => { d.mat.transmission = 0; d.mat.color.set(0x9a1224); d.mat.clearcoat = 1; d.mat.needsUpdate = true; });
+    if (game && game.quality) game.quality(q);
     size();
   };
   // The table's moving frames, timed by its loop: the resolution the
   // shot's steps left (they may have been taken while the app was still
   // starting up under it) comes back, half a step at a time, while frames
-  // come quickly, and goes down while they come slowly - and once down, it
-  // stays down for the visit (no see-saw).
+  // come quickly, and goes down while they come slowly. Once down, it tries
+  // again only after a wait, twice as long each time it has had to come
+  // down: a slow patch (a sync, the app busy under it) costs a few seconds
+  // of a softer picture, not the visit, while a device that can't hold it
+  // tries less and less often (no see-saw).
+  // (the wait never grows past half a minute: a device that was slow once
+  // under a sync or a compile is tried again, not written off)
   const paced = [];
-  let pacedDown = false;
+  let pacedWait = 0, pacedFor = 8000;
+  const PACED_MAX = 32000;
   const pace = raw => {
     paced.push(raw);
     if (paced.length < 20) return;
     const med = median(paced);
     paced.length = 0;
-    if (med > 0.036 && pixelRatio > 1) { pixelRatio = Math.max(1, pixelRatio - 0.5); pacedDown = true; refit = true; }
-    else if (med < 0.021 && !pacedDown && pixelRatio < LIVE_MAX) { pixelRatio = Math.min(LIVE_MAX, pixelRatio + 0.5); refit = true; }
+    const now = performance.now();
+    if (med > 0.036 && pixelRatio > 1) { pixelRatio = Math.max(1, pixelRatio - 0.5); pacedWait = now + pacedFor; pacedFor = Math.min(PACED_MAX, pacedFor * 2); refit = true; }
+    else if (med < 0.021 && now > pacedWait && pixelRatio < LIVE_MAX) { pixelRatio = Math.min(LIVE_MAX, pixelRatio + 0.5); refit = true; }
   };
   const scheduleSound = (from, to) => {
     if (!sound || !sound.on) return;
     const now = sound.ctx.currentTime;
-    if (!sound.bed && !plan.edge) sound.ambience(now);
-    if (plan.edge && !sound.bed && t < R2(plan.silence[0])) sound.ambience(now);
+    if (!sound.bed && silenceAt == null) sound.ambience(now);
+    if (silenceAt != null && !sound.bed && t < silenceAt) sound.ambience(now);
     while (sfxIndex < sfx.length && sfx[sfxIndex].t < to) {
       const ev = sfx[sfxIndex++];
       if (ev.t < from - 0.05) continue;
       sound.play(ev, now + Math.max(0, ev.t - from), ev.rate || 1);
     }
-    if (plan.edge && !silenced && to >= R2(plan.silence[0])) { silenced = true; sound.cut(now + Math.max(0, R2(plan.silence[0]) - from)); }
+    if (silenceAt != null && !silenced && to >= silenceAt) { silenced = true; sound.cut(now + Math.max(0, silenceAt - from)); }
   };
   // Fires the landing's cues once each, whichever way the shot gets there.
   const cue = () => {
@@ -1754,11 +2213,14 @@ async function buildIntro(opts, undo, teardown) {
     if (sound && sound.bed) sound.fade(sound.ctx.currentTime, 1.2);
     cue();
   };
+  const pacer = makePacer();
   const loop = now => {
     if (!playing) return;
     // Reduced motion switched on mid-shot (in the app or the system): the
     // finished frame, at once, as when it was on from the start.
     if (o.motionOff && o.motionOff()) { still(); return; }
+    // (a frame between the ones drawn, on a fast screen: see makePacer)
+    if (!pacer.due(now)) { raf = requestAnimationFrame(loop); return; }
     const raw = last ? (now - last) / 1000 : 1 / 60;
     last = now;
     // Time runs with the clock (a slow device drops frames rather than
@@ -1787,6 +2249,25 @@ async function buildIntro(opts, undo, teardown) {
     raf = requestAnimationFrame(loop);
   };
   let revealed = false, ended = false;
+  // A lost context - the phone short of GPU memory: a screen recording, a
+  // screenshot, another app in front - comes back empty, every buffer gone.
+  // three.js makes again what it can by itself (the shaders, the textures
+  // from their images, the shadows, the post's buffers), but the studio the
+  // glossy surfaces mirror is a buffer drawn once, and would stay black: the
+  // room went dark but for the lamps' own glints on the brass. It is drawn
+  // again, then the frame on screen (the table, once it has the canvas,
+  // redraws its own through onRestore).
+  const restored = [];
+  const onRestored = () => {
+    const old = scene.environment;
+    scene.environment = studioEnvironment(renderer);
+    if (old) old.dispose();
+    if (restored.length) restored.forEach(fn => { try { fn(); } catch (e) { /* the next frame */ } });
+    else if (redraw) redraw();
+    else if (!playing) render(t);
+  };
+  canvas.addEventListener('webglcontextrestored', onRestored);
+  undo.push(() => canvas.removeEventListener('webglcontextrestored', onRestored));
   const onResize = () => { size(); render(t); };
   window.addEventListener('resize', onResize);
   let resumed = false;
@@ -1854,22 +2335,44 @@ async function buildIntro(opts, undo, teardown) {
   soundBtn.addEventListener('click', dropUnlock);
   undo.push(dropUnlock);
 
-  // Shaders compiled up front (in parallel where the driver can), so the
-  // shot does not hitch on its first frames.
-  try { await renderer.compileAsync(scene, camera); } catch (e) { /* compiled on first draw */ }
+  // Everything the shot draws is made ready before it plays, so no frame of
+  // it waits on the GPU. Each shader is compiled for the way it is drawn: a
+  // shader drawing into a buffer (the post's, or the one the glass dice see
+  // the room through) is not the one drawing to the screen, and compiling
+  // the screen's when the post draws is how the old shot still hitched. Then
+  // a frame is drawn, unseen, at each turn of the shot - the throw, the
+  // strike, the swing round, the landing, the stick or the burst or the
+  // edge, the float - so whatever only those frames bring in (the wall
+  // coming into view, the dice's glass and its buffer, the burst's plaques,
+  // the room) is compiled and uploaded now rather than the first time it
+  // shows. Nothing after this changes what a shader is: no light comes or
+  // goes, and no coat reaches none.
+  await warm();
   checkAbort();
+  {
+    const at = game ? game.warmAt.concat([plan.totalReal + 1, floatEnd - 0.5]) : [Rrel + 0.04, Rwall + 0.06, W.slowHold[1], Rrest + 0.3, plan.totalReal + 1, floatEnd - 0.5];
+    if (!game && plan.stick) at.push(R2(plan.stick.hp.T.approach[1]), R2(plan.stick.hp.T.pull[1]));
+    if (!game && plan.vault) at.push(R2(plan.vault.boom) + 0.05, R2(plan.vault.boom) + 0.7);
+    if (!game && plan.edge) at.push(R2(plan.edge.done) + 0.5);
+    canvas.style.visibility = 'hidden';
+    for (const tt of at) { render(Math.min(floatEnd, Math.max(0, tt))); await breath(); checkAbort(); }
+    canvas.style.visibility = '';
+  }
   render(0);
   return {
-    plan: { tier, seed: o.seed, revealReal: plan.revealReal, totalReal: plan.totalReal, floatEnd, restReal: plan.restReal, wallReal: plan.wallReal, values: plan.values, call: plan.call, throwOk: plan.throwOk, why: plan.why },
-    play() { playing = true; last = 0; move(); raf = requestAnimationFrame(loop); },
+    plan: { game: gameId, tier, seed: o.seed, revealReal: plan.revealReal, totalReal: plan.totalReal, floatEnd, restReal: plan.restReal, wallReal: plan.wallReal, values: plan.values, call: plan.call, throwOk: plan.throwOk, why: plan.why, moments: game ? game.moments : null },
+    play() { playing = true; last = 0; pacer.reset(); move(); raf = requestAnimationFrame(loop); },
     seek(time) { playing = false; cancelAnimationFrame(raf); t = Math.max(0, Math.min(floatEnd, time)); render(t); },
+    // (lab: that frame drawn as a still - at the screen's own resolution,
+    // as a frame that stays is)
+    still(time) { this.seek(time); rest(() => render(t)); },
     // A tap mid-shot: straight to its end, and float on from there.
     skip() {
       if (t < plan.totalReal) {
         t = plan.totalReal;
         sfxIndex = sfx.findIndex(ev => ev.t >= t); if (sfxIndex < 0) sfxIndex = sfx.length;
       }
-      if (!playing && t < floatEnd) { playing = true; last = 0; move(); raf = requestAnimationFrame(loop); }
+      if (!playing && t < floatEnd) { playing = true; last = 0; pacer.reset(); move(); raf = requestAnimationFrame(loop); }
       render(t);
       cue();
     },
@@ -1877,7 +2380,14 @@ async function buildIntro(opts, undo, teardown) {
     finish: still,
     // A look at the running scene (the table builds into it while the
     // intro floats), without stopping anything.
-    peek() { return { scene, renderer, camera, composer, bloom, dbg: { camEye, camAim, CAM_DT, W, plan, dicePose } }; },
+    peek() { return { scene, renderer, camera, composer, bloom, game, dbg: { camEye, camAim, CAM_DT, W, plan, dicePose } }; },
+    // What is added to the scene (the table, while the intro floats) made
+    // ready before it is drawn: see warm().
+    warm,
+    // (a felt picked while the shot is up: dressed, and the frame redrawn)
+    setFelt(id) { dressFelt(felt.material, id); if (redraw) redraw(); else if (!playing) render(t); },
+    // (the same for the trim: see TRIMS)
+    setTrim(id) { dressTrim({ band: [gold] }, id); if (redraw) redraw(); else if (!playing) render(t); },
     // The fly-in takes the scene over: the loop stops and the set, the
     // renderer and the camera are handed on, as they are this moment.
     release() {
@@ -1900,13 +2410,27 @@ async function buildIntro(opts, undo, teardown) {
         // ended; through the part in view, when pinched in); the frame on
         // screen held (drawn again, sharp) or moving on; a moving frame's
         // time, for its resolution
-        paint, rest, move, pace,
+        paint, rest, move, pace, layer, lens, fit, warm,
+        // (a pacer of its own for each loop that draws: see makePacer)
+        pacer: () => makePacer(),
+        // (what to draw again once a lost context is back: see onRestored)
+        onRestore: fn => { restored.push(fn); },
+        // (the felt picked in Settings, dressed onto the shot's table and
+        // onto any other felt handed it: see FELTS)
+        setFelt: id => dressFelt(felt.material, id),
+        dressFelt,
+        // (the trim picked in Settings, dressed onto the shot's band; the
+        // table dresses its own with dressTrim)
+        setTrim: id => dressTrim({ band: [gold] }, id),
+        dressTrim,
+        get trim() { return gold.userData.trim || 'gold'; },
         // the intro's own world (dice, stick, dust) at a real time, and a
         // frame of it drawn through the intro's post-processing
         stage: tt => stage(tt == null ? t : tt),
         draw,
-        lights: { pendant, rim, lensLight, edgeSpot },
+        lights,
         dice: dice.map(d => d.g),
+        game: gameId,
         overlays: [call, badgeEl, flashEl],
         dispose: teardown
       };
