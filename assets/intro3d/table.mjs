@@ -2147,6 +2147,22 @@ function nameFit(name) {
   const px = Math.max(22, Math.min(40, Math.floor(40 * 8.5 / longest), Math.floor(40 * 18 / Math.max(18, n.length))));
   return px < 40 ? ` style="font-size:${px}px"` : '';
 }
+// The four pips, drawn (a font's suit glyphs vary by platform, and some
+// turn the red two into emoji): each in a 100 x 100 box, its mass centred
+// where a printer centres it - the knock-out lettering sits at PIP_MID.
+const PIPS = {
+  '♠': 'M50 3C63 22 95 38 95 60C95 74 85 82 73 82C64 82 57 77 54 71C55 82 59 90 67 97H33C41 90 45 82 46 71C43 77 36 82 27 82C15 82 5 74 5 60C5 38 37 22 50 3Z',
+  '♥': 'M50 92C21 68 4 50 4 30C4 15 15 5 28 5C38 5 46 11 50 20C54 11 62 5 72 5C85 5 96 15 96 30C96 50 79 68 50 92Z',
+  '♦': 'M50 2Q65 27 88 50Q65 73 50 98Q35 73 12 50Q35 27 50 2Z',
+  '♣': 'M50 5a21 21 0 1 1 0 42a21 21 0 1 1 0-42ZM28 36a21 21 0 1 1 0 42a21 21 0 1 1 0-42ZM72 36a21 21 0 1 1 0 42a21 21 0 1 1 0-42ZM44 46H56L56 74C57 84 61 91 68 97H32C39 91 43 84 44 74Z'
+};
+const PIP_MID = { '♠': 55, '♥': 40, '♦': 50, '♣': 48 };
+const pipSVG = (suit, cls) => `<svg class="${cls}" viewBox="0 0 100 100" aria-hidden="true"><path d="${PIPS[suit]}"/></svg>`;
+// A card's face, as a casino deck's ace is printed: linen-finish stock
+// (cream; black for S), the rank and its pip at two corners, one great pip
+// in the middle with the house's mark knocked out of it in the stock's
+// colour (where a maker puts its own on the ace of spades), an open line
+// just inside its edge, the name under it in red, and the day's value in black.
 function cardHTML(c) {
   const tier = tierOf(c.tier);
   const suit = SUITS[hash(c.name || '') % 4];
@@ -2155,14 +2171,32 @@ function cardHTML(c) {
   const state = c.remaining > 0 ? fmtLeft(c.remaining) : 'Ready';
   const shown = cardShown(c);
   const label = `${c.name}, ${tier === 'U' ? 'unranked' : tier + ' tier'}, ${state}${ev ? ', about ' + ev.slice(2) + ' dollars a day' : ''}`;
+  const rank = tier === 'U' ? '•' : tier;
+  // The great pip is its own picture (an SVG drawn as an image): drawn
+  // inline, its inset shapes - moved by their own transforms - land out of
+  // place once the card is laid in 3D (the corner pips, untransformed, are
+  // fine). So its colours are set here, matching the stylesheet's: --stock
+  // and --ink on .r3t-front, and on .t-S.
+  const S = tier === 'S';
+  const stock = S ? '#0e0b09' : '#f3ead5';
+  const ink = red ? (S ? '#e0353d' : '#a8121d') : (S ? '#e3c27a' : '#17120e');
+  const mark = initials(c.name);
+  // (the open line: the pip again a little smaller in the stock's colour,
+  // and again smaller still in ink - a thin unprinted line just inside its
+  // edge, as an engraver's plate leaves it)
+  const inset = k => `translate(50 ${PIP_MID[suit]}) scale(${k}) translate(-50 -${PIP_MID[suit]})`;
+  const pip = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path fill="${ink}" d="${PIPS[suit]}"/><path fill="${stock}" d="${PIPS[suit]}" transform="${inset(0.9)}"/><path fill="${ink}" d="${PIPS[suit]}" transform="${inset(0.85)}"/>` +
+    `<text x="50" y="${PIP_MID[suit] + 10}" text-anchor="middle" fill="${stock}" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="29" letter-spacing="0.5"${mark.length > 2 ? ' textLength="44" lengthAdjust="spacingAndGlyphs"' : ''}>${esc(mark)}</text></svg>`;
+  const pipSrc = 'data:image/svg+xml,' + encodeURIComponent(pip);
   return `<div class="r3t-card-in">
     <div class="r3t-face r3t-front t-${tier}${red ? ' r3t-red' : ''}">
       <div class="r3t-frame"></div>
-      <span class="r3t-idx r3t-tl"><b>${tier === 'U' ? '•' : tier}</b><i>${suit}</i></span>
-      <span class="r3t-idx r3t-br"><b>${tier === 'U' ? '•' : tier}</b><i>${suit}</i></span>
-      <div class="r3t-seal"><span>${esc(initials(c.name))}</span></div>
+      <span class="r3t-idx r3t-tl"><b>${rank}</b>${pipSVG(suit, 'r3t-ipip')}</span>
+      <span class="r3t-idx r3t-br"><b>${rank}</b>${pipSVG(suit, 'r3t-ipip')}</span>
+      <img class="r3t-pip" src="${pipSrc}" alt="" draggable="false">
       <div class="r3t-name"${nameFit(c.name)}>${esc(c.name)}</div>
       <div class="r3t-meta"><span class="r3t-state">${esc(shown)}</span></div>
+      <div class="r3t-linen"></div>
       <div class="r3t-sheen"></div><div class="r3t-scan"></div><div class="r3t-shade"></div>
     </div>
     <div class="r3t-face r3t-back t-${tier}"><div class="r3t-bk-art"></div><div class="r3t-bk-foil"></div><div class="r3t-sheen"></div><div class="r3t-shade"></div></div>
