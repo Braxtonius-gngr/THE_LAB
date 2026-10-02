@@ -2084,7 +2084,9 @@ async function buildIntro(opts, undo, teardown) {
         // (kept whole on screen, whatever the dice's spread)
         const half = (call.offsetWidth * grow) / 2 + 12, W0 = host.clientWidth;
         const cx = half * 2 < W0 ? Math.min(Math.max(s[0], half), W0 - half) : W0 / 2;
-        const cy = Math.max(s[1] - 56, call.offsetHeight + 16);
+        // (kept on screen top and bottom: a game's close-up can carry its
+        // anchor off the bottom of a wide screen)
+        const cy = Math.min(Math.max(s[1] - 56, call.offsetHeight + 16), host.clientHeight - call.offsetHeight / 2 - 16);
         call.style.transform = `translate(${cx.toFixed(1)}px,${cy.toFixed(1)}px) translate(-50%,-50%) scale(${grow.toFixed(3)})`;
         call.style.setProperty('--shine', `${(-60 + 220 * clamp01((w - cw - 0.1) / 1.2)).toFixed(1)}%`);
       }
