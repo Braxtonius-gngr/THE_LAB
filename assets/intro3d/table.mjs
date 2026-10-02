@@ -52,6 +52,10 @@ const FELT = { a: 80, b: 64 };
 // A playing card (6.35 x 8.89 cm), built at CARD.px page pixels per cm and
 // scaled down, so its print is rasterised sharp.
 const CARD = { w: 6.35, h: 8.89, px: 50 };
+// How much of the room's even light (the intro's mirror of a studio) is
+// left once you are seated at a home: the home's own lamp lights it, so
+// that is what pools; the rest of the room falls back. Every home uses it.
+const ROOM_ENV = 0.4;
 // Where the dealt cards lie: three to a row, rows away from the player.
 const SLOTS = { cols: 3, gapX: 1.3, gapZ: 2.4, max: 9 };
 // The destination's layout in its seat frame: the seat camera (portrait,
@@ -206,7 +210,10 @@ function strip(path, o0, o1, y, tile) {
 // blur every browser's canvas has.)
 // `rim`: only what falls outside the card's own edge - a contact shadow is
 // a line round the card, and the card hides the rest of it anyway.
-function cardShadowTex(blur, pad, rim = false) {
+// `grow`: the shape spread by that many cm before it is blurred, so its
+// darkest is at the card's very edge, not half-way out (a card flat on the
+// cloth shuts the light out right to its edge: the line there is black).
+function cardShadowTex(blur, pad, rim = false, grow = 0) {
   const k = 24, W = Math.round((CARD.w + 2 * pad) * k), H = Math.round((CARD.h + 2 * pad) * k);
   const tex = canvasTex(W, H, (c, w, h) => {
     c.fillStyle = '#000'; c.fillRect(0, 0, w, h);
@@ -214,7 +221,7 @@ function cardShadowTex(blur, pad, rim = false) {
     c.save();
     c.shadowColor = '#fff'; c.shadowBlur = blur * k * 2; c.shadowOffsetX = w * 4;
     c.fillStyle = '#fff';
-    card(pad * k - w * 4, pad * k, CARD.w * k, CARD.h * k, 0.36 * k);
+    card((pad - grow) * k - w * 4, (pad - grow) * k, (CARD.w + 2 * grow) * k, (CARD.h + 2 * grow) * k, (0.36 + grow) * k);
     c.restore();
     if (rim) { const i = 0.03 * k; c.fillStyle = '#000'; card(pad * k + i, pad * k + i, CARD.w * k - 2 * i, CARD.h * k - 2 * i, 0.36 * k - i); }
   });
@@ -929,7 +936,12 @@ function contactShadow(w, d, r, soft, feet = [], dark = 0.55) {
     // (distance outside the rounded footprint)
     const qx = Math.abs(x) - (w / 2 - r), qz = Math.abs(z) - (d / 2 - r);
     const out = Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0) - r;
-    let a = 0.62 * (1 - sm((out + soft * 0.35) / soft));
+    // (two parts, as a real one has: the dark line where the thing meets
+    // the surface - the light cannot get under it at all - and the soft
+    // spread round it from the light it blocks overhead)
+    const core = 0.9 * (1 - sm((out + 0.05) / (0.1 * soft + 0.15)));
+    const spread = 0.55 * (1 - sm((out + soft * 0.3) / soft));
+    let a = Math.max(core, spread);
     feet.forEach(([fx, fz]) => { a = Math.max(a, 1 - sm(Math.hypot(x - fx, z - fz) / 0.75)); });
     const k = (j * N + i) * 4; px[k] = px[k + 1] = px[k + 2] = Math.round(a * 255); px[k + 3] = 255;
   }
@@ -2233,7 +2245,10 @@ export async function prepareTable(opts) {
   [-26, 26].forEach(x => { const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 200, 8), bronze); rod.position.set(x, 103, 0); lamp.add(rod); });
   lamp.position.set(0, 118, 34);
   seat.add(lamp);
-  const lampLight = new THREE.SpotLight(0xffeedd, 0, 0, 0.78, 0.85, 0);
+  // (a pendant this low over cloth throws a pool, not a wash: the cone is
+  // narrow enough that the felt falls off toward the rail and into the
+  // dark at the table's ends - where the light is, is where you look)
+  const lampLight = new THREE.SpotLight(0xffeedd, 0, 0, 0.34, 1, 0);
   lampLight.position.set(0, 112, 34);
   lampLight.target.position.set(0, 0, 30);
   lampLight.castShadow = true;
@@ -2280,7 +2295,7 @@ export async function prepareTable(opts) {
   let lampT0 = performance.now();
   const lampUp = () => {
     const k = smoother((performance.now() - lampT0) / 2200);
-    lampLight.intensity = 3.3 * k;
+    lampLight.intensity = 8.5 * k;
     lampGlow.material.color.setRGB(2.2 * k, 1.75 * k, 1.3 * k);
     return k;
   };
@@ -2547,7 +2562,7 @@ export async function prepareTable(opts) {
     // front of you. It falls on the felt and on the cards lying there, never
     // on the card that casts it (each card marks itself in the stencil).
     const keyDir = V(0, 0, 40).sub(V(-6, 112, 30)).normalize();
-    const shadowKinds = [cardShadowTex(0.14, 0.6, true), cardShadowTex(1.7, 5.2)];
+    const shadowKinds = [cardShadowTex(0.35, 1.2, true, 0.18), cardShadowTex(1.7, 5.2)];
     const maskGeo = new THREE.ShapeGeometry(roundRect(CARD.w, CARD.h, 0.36), 4), quadGeo = new THREE.PlaneGeometry(1, 1);
     const cardShade = cardObjs.map((o, i) => {
       const mask = new THREE.Mesh(maskGeo, new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide,
@@ -2579,7 +2594,7 @@ export async function prepareTable(opts) {
       // (on a light cloth the shadow is what parts a pale card from it, and
       // a lifted one from its place: deeper, the lighter the felt)
       const dk = 1 + 0.6 * (table.felt.userData.feltLight || 0);
-      const k = [0.52 * dk * (1 - smoother(h / 0.7)), 0.3 * dk * smoother(h / 0.5) * (1 - smoother((h - 10) / 22))];
+      const k = [0.95 * dk * (1 - smoother(h / 0.7)), 0.3 * dk * smoother(h / 0.5) * (1 - smoother((h - 10) / 22))];
       onFeltAt(p, _sc);
       S.quads.forEach((Q, j) => {
         Q.visible = shown && k[j] > 0.004;
@@ -2917,7 +2932,7 @@ export async function prepareTable(opts) {
       const [la, lb] = shoe.userData.lid.map(p => toSeat(shoe, p));
       const d = lb.clone().sub(la).normalize(), side = d.clone().cross(up).normalize(), n = side.clone().cross(d).normalize();
       return handPose(la.clone().addScaledVector(d, 1.6).addScaledVector(n, 0.55), d.clone().negate(), n);
-    })(), handPose(V(12.4, 0.62, 47.2), V(-0.42, -0.74, -0.52), up)];
+    })(), handPose(V(13.4, 0.62, 49.4), V(-0.42, -0.74, -0.52), up)];
     const restPose = k => REST[k];
     // A move of arm P's hand to b over dur, arcing up by lift; settle: a
     // servo's small shiver on arrival; via: on through b without a stop;
@@ -3234,6 +3249,7 @@ export async function prepareTable(opts) {
     // (it keeps a little spin when you let go); the face you see is the
     // face toward you.
     const focal = { spin: new THREE.Quaternion(), vx: 0, vy: 0, dragging: false };
+    const HELD = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.12, 0.07, -0.015, 'XYZ'));
     const camLocal = { p: V(0, 0, 0), q: new THREE.Quaternion() };
     const focalPose = out => {
       const fwd = V(0, 0, -1).applyQuaternion(camLocal.q), upv = V(0, 1, 0).applyQuaternion(camLocal.q);
@@ -3243,7 +3259,11 @@ export async function prepareTable(opts) {
       // centred in the space the sheet leaves above it)
       const d = CARD.h / (2 * half * (tall ? 0.34 : 0.46));
       out.p.copy(camLocal.p).addScaledVector(fwd, d).addScaledVector(upv, (tall ? 0.12 : 0.1) * 2 * half * d);
-      out.q.copy(camLocal.q).multiply(focal.spin);
+      // (held, not pinned to the glass: a card in a hand is tipped back a
+      // little and turned a touch - its near edge closer than its far one,
+      // so it reads as a thing in the air, not a picture of one. Your drag
+      // turns it from there.)
+      out.q.copy(camLocal.q).multiply(HELD).multiply(focal.spin);
       return out;
     };
     const focusPose = { p: V(0, 0, 0), q: new THREE.Quaternion() };
@@ -3629,6 +3649,10 @@ export async function prepareTable(opts) {
       world.stage(introT0 + tt);
       // (the house lights: down while the machine sulks)
       lightHouse(tt);
+      // (and as you sit, the room's even light settles back: the lamp is
+      // what lights this table, so its pool is what you see - the mirror
+      // of the room stays in the metal, a little of it in the cloth)
+      scene.environmentIntensity *= lerp(1, ROOM_ENV, fo.reduced ? 1 : smoother((tt - FLY * 0.45) / (FLY * 0.55)));
       // (its lights set by stage(): the lens light goes, and the rim light
       // eases down)
       const kf = fo.reduced ? 1 : clamp01(tt / 0.9);
@@ -4281,5 +4305,5 @@ export function freeTree(root, set) {
 
 export const tableKit = {
   CARD, TIERS, cardHTML, cardShown, inkBacks, demoHand, phoneHTML, fmtLeft, esc, tierOf, initials, hash,
-  canvasTex, finished, polishedOf, fineSet, glassy, contactShadow, roundRect, lying, retile, freeTree
+  canvasTex, finished, polishedOf, fineSet, glassy, contactShadow, roundRect, lying, retile, freeTree, ROOM_ENV
 };

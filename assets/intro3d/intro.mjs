@@ -73,7 +73,7 @@ const TRIM = { w: 2.4, tile: 19.2, inset: 2.2 };
 // `light` says how light it is, for what has to change with it (the gold
 // print's dark keyline, the shadows: see the table).
 export const FELTS = {
-  black: { name: 'Black', color: 0x070709, sheen: 0x2c2c36, light: 0 },
+  black: { name: 'Black', color: 0x0f0f13, sheen: 0x34343e, light: 0 },
   tan: { name: 'Tan', color: 0x7a5a38, sheen: 0xcaa77a, light: 0.6 },
   ivory: { name: 'Ivory', color: 0xa99e86, sheen: 0xe9dfc8, light: 1 },
   dove: { name: 'Dove grey', color: 0x5f6368, sheen: 0xb8bcc4, light: 0.55 },
