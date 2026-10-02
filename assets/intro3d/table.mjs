@@ -2594,7 +2594,7 @@ export async function prepareTable(opts) {
       // (on a light cloth the shadow is what parts a pale card from it, and
       // a lifted one from its place: deeper, the lighter the felt)
       const dk = 1 + 0.6 * (table.felt.userData.feltLight || 0);
-      const k = [0.95 * dk * (1 - smoother(h / 0.7)), 0.3 * dk * smoother(h / 0.5) * (1 - smoother((h - 10) / 22))];
+      const k = [0.6 * dk * (1 - smoother(h / 0.7)), 0.3 * dk * smoother(h / 0.5) * (1 - smoother((h - 10) / 22))];
       onFeltAt(p, _sc);
       S.quads.forEach((Q, j) => {
         Q.visible = shown && k[j] > 0.004;
