@@ -1814,7 +1814,9 @@ function buildDealerArm(m, armSide) {
   // what the arm's bulk would sink into the obstacles (and the felt), with
   // the elbow at Eo: the sum of the squares of every overlap (listed, for
   // the lab, when `where` is given)
+  let deepest = 0;
   const sunk = (S2o, Eo, W, obstacles, where = null) => {
+    deepest = 0;
     bulk[0].a.copy(S2o); bulk[0].b.copy(S2o);
     bulk[1].a.copy(S2o); bulk[1].b.copy(Eo);
     bulk[2].a.copy(Eo); bulk[2].b.copy(Eo);
@@ -1824,10 +1826,10 @@ function buildDealerArm(m, armSide) {
       const c = bulk[i];
       // (the felt: for all but the forearm, whose wrist end the plan sets,
       // on the felt when it means to)
-      if (i < 3) { const low = Math.min(c.a.y, c.b.y) - c.r - CLEAR.felt; if (low < 0) { s += low * low; if (where) where.push({ part: i, felt: +low.toFixed(2) }); } }
+      if (i < 3) { const low = Math.min(c.a.y, c.b.y) - c.r - CLEAR.felt; if (low < 0) { s += low * low; deepest = Math.max(deepest, -low); if (where) where.push({ part: i, felt: +low.toFixed(2) }); } }
       if (obstacles) for (let j = 0; j < obstacles.length; j++) {
         const o = obstacles[j], gap = segDist(c.a, c.b, o.a, o.b) - c.r - o.r;
-        if (gap < 0) { s += gap * gap; if (where) where.push({ part: i, against: j, gap: +gap.toFixed(2) }); }
+        if (gap < 0) { s += gap * gap; deepest = Math.max(deepest, -gap); if (where) where.push({ part: i, against: j, gap: +gap.toFixed(2) }); }
       }
     }
     return s;
@@ -1906,7 +1908,7 @@ function buildDealerArm(m, armSide) {
             steerV.copy(n0).multiplyScalar(Math.cos(psi)).addScaledVector(nb, Math.sin(psi));
             chain(S, W, steerV, E, S2, d, 3);
           }
-          worst = Math.sqrt(sunk(S2, E, W, obstacles));
+          sunk(S2, E, W, obstacles); worst = deepest;
         }
       }
       u.copy(E).sub(S2).normalize(); f.copy(W).sub(E).normalize();
@@ -2794,7 +2796,9 @@ export async function prepareTable(opts) {
       const sd = SIDES[k], S = torso.shouldersAt(y, 0, fold, _upS)[k];
       const wx = PORT.x + sd * 1.5, dx = wx - S.x;
       const wy = S.y + ARM.crank + Math.sqrt(Math.max(0, reachUp * reachUp - dx * dx));
-      return handPose(V(PORT.x + sd * 0.9, wy - WRIST.z, PORT.z), V(0, 1, 0), V(sd, 0, 0));
+      // (tagged: a move that starts from an upright starts from the upright
+      // as it stands when it does - the yoke may be folding - see planned)
+      return Object.assign(handPose(V(PORT.x + sd * 0.9, wy - WRIST.z, PORT.z), V(0, 1, 0), V(sd, 0, 0)), { upright: k });
     };
     const RISE = { open: 1.5, up: 1.15, swing: 0.5 };            // seconds before dealAt
     // A turning card's angle: pushed to 55 degrees by the hand, then over
@@ -3053,7 +3057,7 @@ export async function prepareTable(opts) {
           B.segs.push({ kind: 'push', t0: B.t, t1: B.t + DEAL.push, card: i, f0: B.fin, f1: FIN.flick, el0: B.el, el1: B.el });
           B.t += DEAL.push; B.fin = FIN.flick; B.att = [0, 0];
           B.at = handFor(turned(o, PUSH, { p: V(0, 0, 0), q: new THREE.Quaternion() }), 0, gripOf(i));
-          B.at.q.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.62, 0, 0)));
+          B.at.q.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.62 * (1 - gripOf(i)), 0, 0)));
           if (i < n - 1) toCatch();
         });
       } else if (style === 'rows' || style === 'columns') {
@@ -3474,7 +3478,7 @@ export async function prepareTable(opts) {
         hp = onCard(turned(cardObjs[sg.card], ang, { p: V(0, 0, 0), q: new THREE.Quaternion() }), 0, g);
         hp.q.multiply(_attQ.setFromEuler(_attE.set(-0.62 * ang / PUSH * (1 - g), 0, 0)));
       }
-      else { hp = along(sg, kk); free = true; }
+      else { hp = along(sg.a.upright != null ? Object.assign({}, sg, { a: upright(k, y, fold) }) : sg, kk); free = true; }
       // (a servo's shiver where a move ends on a placement)
       const prev = segAt(S, tt - 0.13);
       if (prev && prev !== sg && prev.settle && tt - prev.t1 < 0.13 && tt >= prev.t1) {
@@ -3853,7 +3857,9 @@ export async function prepareTable(opts) {
       // down into the port: the arms straight up, the torso sinks, and once
       // its shoulders are below the felt the iris closes round the hands
       sulk(t0) {
-        [0, 1].forEach(k => { const P = planFrom(k, t0); addMove(P, upright(k, ARM.up), 0.75, { lift: 2, to: FIN.rest, lean: [0, 0], elbow: 0, wrist: true }); });
+        // (up to the upright as the yoke stands, open: it folds as the lift
+        // starts, and the hands follow it up - see planned)
+        [0, 1].forEach(k => { const P = planFrom(k, t0); addMove(P, upright(k, ARM.up, 1), 0.75, { lift: 2, to: FIN.rest, lean: [0, 0], elbow: 0, wrist: true }); });
         const tS = Math.max(...[0, 1].map(k => deal.arms[k][deal.arms[k].length - 1].t1));
         lifts.push({ t0: tS, t1: tS + 1.4, y0: ARM.up, y1: SULK.y, o0: 1, o1: 1, ease: smoother });
         lifts.push({ t0: tS + 1.4, t1: tS + 1.8, y0: SULK.y, y1: SULK.y, o0: 1, o1: SULK.open, ease: smoother });
