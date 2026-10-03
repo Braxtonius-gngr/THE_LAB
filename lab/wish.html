@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <title>Wish Room (prototype)</title>
+  <style>
+    :root { --ink: #f3ead8; --muted: #b9ad98; --glass: rgba(18, 14, 22, 0.78); --line: rgba(201, 164, 90, 0.4); --accent: #b48cff; --gold: #e2b84a; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: #0d0b10; color: var(--ink); font: 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; }
+    #wishCanvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+    .top { position: fixed; top: max(14px, env(safe-area-inset-top)); left: 16px; right: 16px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; pointer-events: none; }
+    .title { font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; font-size: 13px; color: var(--gold); }
+    .title small { display: block; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--muted); font-size: 13px; margin-top: 2px; }
+    .status { pointer-events: none; background: var(--glass); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; font-size: 13px; min-height: 30px; opacity: 0; transition: opacity 0.25s; white-space: nowrap; max-width: 60vw; overflow: hidden; text-overflow: ellipsis; }
+    .status.on { opacity: 1; }
+    .dock { position: fixed; left: 16px; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); max-width: 620px; margin: 0 auto; }
+    .chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 10px; scrollbar-width: none; }
+    .chips::-webkit-scrollbar { display: none; }
+    .chip { flex: none; background: var(--glass); color: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; font: inherit; font-size: 14px; cursor: pointer; }
+    .bar { display: flex; gap: 8px; background: var(--glass); border: 1px solid var(--line); border-radius: 16px; padding: 8px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+    .bar input { flex: 1; min-width: 0; background: transparent; border: 0; color: var(--ink); font: inherit; font-size: 16px; padding: 8px 6px; outline: none; }
+    .bar input::placeholder { color: var(--muted); }
+    .btn { flex: none; border: 0; border-radius: 12px; font: inherit; font-weight: 600; padding: 0 14px; min-height: 44px; min-width: 44px; cursor: pointer; }
+    .btn.wish { background: linear-gradient(135deg, var(--accent), #ff7fb6); color: #160f1c; }
+    .btn.ghost { background: rgba(255, 255, 255, 0.08); color: var(--ink); }
+    .btn:focus-visible, .chip:focus-visible, .bar input:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+    .btn[hidden] { display: none; }
+    .btn.listening { background: #d0303a; color: #fff; }
+    .hint { text-align: center; color: var(--muted); font-size: 12px; margin-top: 8px; }
+    .nogl { position: fixed; inset: 0; display: none; place-items: center; padding: 24px; text-align: center; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <canvas id="wishCanvas" aria-label="A small 3D room with a round table where wished-for things appear"></canvas>
+
+  <div class="top">
+    <div class="title">Wish Room<small>Prototype: say what you wish for</small></div>
+    <div class="status" id="wishStatus" role="status" aria-live="polite"></div>
+  </div>
+
+  <div class="dock">
+    <div class="chips" aria-label="Try one">
+      <button class="chip" type="button" data-wish="I wish I had some donuts right now">🍩 donuts</button>
+      <button class="chip" type="button" data-wish="pizza">🍕 pizza</button>
+      <button class="chip" type="button" data-wish="birthday cake">🎂 cake</button>
+      <button class="chip" type="button" data-wish="a coffee">☕ coffee</button>
+      <button class="chip" type="button" data-wish="burger">🍔 burger</button>
+      <button class="chip" type="button" data-wish="trophy">🏆 trophy</button>
+      <button class="chip" type="button" data-wish="lucky dice">🎲 dice</button>
+      <button class="chip" type="button" data-wish="a plant">🪴 plant</button>
+      <button class="chip" type="button" data-wish="a cookie">🍪 cookie</button>
+    </div>
+    <form class="bar" id="wishForm" autocomplete="off">
+      <label for="wishInput" class="visually-hidden" style="position:absolute;left:-9999px">Your wish</label>
+      <input id="wishInput" type="text" enterkeyhint="go" placeholder="I wish I had…" maxlength="120" />
+      <button class="btn ghost" type="button" id="wishMic" aria-label="Say your wish" hidden>🎤</button>
+      <button class="btn wish" type="submit">Wish</button>
+      <button class="btn ghost" type="button" id="wishClear" aria-label="Clear the table">✕</button>
+    </form>
+    <div class="hint">Drag to look around · pinch or scroll to zoom</div>
+  </div>
+
+  <div class="nogl" id="wishNoGL">This prototype needs WebGL, which this browser has turned off.</div>
+
+  <script type="module">
+    import { grantWish, clearWishes, STAGES } from './wish.mjs';
+
+    const form = document.getElementById('wishForm');
+    const input = document.getElementById('wishInput');
+    const status = document.getElementById('wishStatus');
+    const mic = document.getElementById('wishMic');
+    let hideTimer = 0;
+
+    function showStage(i, wish, emoji) {
+      clearTimeout(hideTimer);
+      status.textContent = `${emoji} ${STAGES[i]}${i < 4 ? '…' : ''}`;
+      status.classList.add('on');
+      if (i === 4) hideTimer = setTimeout(() => status.classList.remove('on'), 1800);
+    }
+
+    function wish(text) {
+      if (!text.trim()) return;
+      grantWish(text, showStage);
+    }
+
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      wish(input.value);
+      input.value = '';
+      input.blur();
+    });
+    document.querySelectorAll('.chip').forEach(chip => chip.addEventListener('click', () => wish(chip.dataset.wish)));
+    document.getElementById('wishClear').addEventListener('click', clearWishes);
+
+    // say it out loud, where the browser can listen
+    const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (Speech) {
+      mic.hidden = false;
+      let rec = null;
+      mic.addEventListener('click', () => {
+        if (rec) { rec.stop(); return; }
+        rec = new Speech();
+        rec.lang = 'en-US';
+        rec.interimResults = false;
+        rec.onresult = e => { const said = e.results[0][0].transcript; input.value = said; wish(said); };
+        rec.onend = () => { rec = null; mic.classList.remove('listening'); };
+        mic.classList.add('listening');
+        rec.start();
+      });
+    }
+
+    // first impression: the donuts that started it all
+    setTimeout(() => wish('I wish I had some donuts right now'), 600);
+  </script>
+  <script>
+    // module scripts fail quietly without WebGL; say so instead
+    (function () {
+      var c = document.createElement('canvas');
+      if (!(c.getContext('webgl2') || c.getContext('webgl'))) document.getElementById('wishNoGL').style.display = 'grid';
+    })();
+  </script>
+</body>
+</html>
