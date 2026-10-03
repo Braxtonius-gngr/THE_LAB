@@ -42,7 +42,7 @@ const asset = f => new URL(f, HERE).href;
 // hands the shot its plan, its camera path, its sounds and its frames - see
 // the `game` seam in buildIntro(). The set, the resolution, the post, the
 // sound, the quality steps and the handover to the homes are shared.
-export const GAMES = ['dice', 'wheel', 'plinko', 'blackjack'];
+export const GAMES = ['dice', 'wheel', 'plinko', 'blackjack', 'slots'];
 export function pickGame(r) { return GAMES[Math.min(GAMES.length - 1, Math.floor(r * GAMES.length))]; }
 export const TIERS = ['standard', 'hardways', 'vault', 'edge'];
 export const TIER_NAMES = { standard: 'Standard Drop', hardways: 'The Hardways', vault: 'The Vault Pull', edge: 'The Defiant Edge' };
@@ -2125,9 +2125,10 @@ async function buildIntro(opts, undo, teardown) {
     const callOn = !!plan.call;
     if (callOn) {
       const cw = plan.callW;
-      const on = smoother((w - cw) / 0.45) * (1 - smoother((w - plan.revealW + 0.3) / 0.5));
+      // (a game may take its call out for a moment - a pan it would cross)
+      const on = smoother((w - cw) / 0.45) * (1 - smoother((w - plan.revealW + 0.3) / 0.5)) * (game && game.callAlphaAt ? game.callAlphaAt(w) : 1);
       call.style.opacity = on.toFixed(3);
-      scrimEl.style.opacity = (0.85 * on).toFixed(3);
+      scrimEl.style.opacity = (0.85 * on * (game && game.callScrimAt ? game.callScrimAt(w) : 1)).toFixed(3);
       if (on > 0) {
         // Over the higher of the two dice on screen, clear of both (or over
         // where the game says its call belongs).
@@ -2141,7 +2142,9 @@ async function buildIntro(opts, undo, teardown) {
         const cx = half * 2 < W0 ? Math.min(Math.max(s[0], half), W0 - half) : W0 / 2;
         // (kept on screen top and bottom: a game's close-up can carry its
         // anchor off the bottom of a wide screen)
-        const cy = Math.min(Math.max(s[1] - 56, call.offsetHeight + 16), host.clientHeight - call.offsetHeight / 2 - 16);
+        // (and never up under the tier's caption at the top)
+        const under = tier === 'standard' ? 0 : badgeEl.offsetTop + badgeEl.offsetHeight + 10 + (call.offsetHeight * grow) / 2;
+        const cy = Math.min(Math.max(s[1] - 56, call.offsetHeight + 16, under), host.clientHeight - call.offsetHeight / 2 - 16);
         call.style.transform = `translate(${cx.toFixed(1)}px,${cy.toFixed(1)}px) translate(-50%,-50%) scale(${grow.toFixed(3)})`;
         if (!scrimEl.hidden) {
           scrimEl.style.width = `${(call.offsetWidth * grow + 90).toFixed(0)}px`;

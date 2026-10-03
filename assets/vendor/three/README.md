@@ -2,7 +2,8 @@
 
 Used only by the landing's 3D scene: the WebGL roll intro
 (`assets/intro3d/intro.mjs`, and its other games: the wheel,
-`assets/intro3d/wheel.mjs`, and the plinko, `assets/intro3d/plinko.mjs`) and the home it flies into - the card table
+`assets/intro3d/wheel.mjs`, the plinko, `assets/intro3d/plinko.mjs`, the blackjack,
+`assets/intro3d/blackjack.mjs`, and the slots, `assets/intro3d/slots.mjs`) and the home it flies into - the card table
 (`assets/intro3d/table.mjs`), the study (`assets/intro3d/study.mjs`) or the
 arcade (`assets/intro3d/arcade.mjs`) - and by the Lounge payouts: Obsidian
 Ledger's orrery (`assets/intro3d/orrery.mjs`, also the study's centrepiece)
