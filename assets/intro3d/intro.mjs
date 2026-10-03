@@ -42,7 +42,7 @@ const asset = f => new URL(f, HERE).href;
 // hands the shot its plan, its camera path, its sounds and its frames - see
 // the `game` seam in buildIntro(). The set, the resolution, the post, the
 // sound, the quality steps and the handover to the homes are shared.
-export const GAMES = ['dice', 'wheel', 'plinko'];
+export const GAMES = ['dice', 'wheel', 'plinko', 'blackjack'];
 export function pickGame(r) { return GAMES[Math.min(GAMES.length - 1, Math.floor(r * GAMES.length))]; }
 export const TIERS = ['standard', 'hardways', 'vault', 'edge'];
 export const TIER_NAMES = { standard: 'Standard Drop', hardways: 'The Hardways', vault: 'The Vault Pull', edge: 'The Defiant Edge' };
@@ -925,6 +925,27 @@ class Sound {
         this.burst(when, 'bandpass', 1400, 1.2, 0.18, 0.03);
         this.tone(when + 0.01, 520, 0.06, 0.05, 'triangle', 380);
         break;
+      // (blackjack's: a card drawn from the shoe or sliding over the cloth -
+      // a dry hiss as long as the slide; the snap of a card off the
+      // fingers; a card landing on the felt, harder the faster; the
+      // machine's lift, a servo's rising whine)
+      case 'slide':
+        this.burst(when, 'bandpass', 2600 * k, 1.1, 0.06, (ev.dur || 0.08) / k, 1.3);
+        break;
+      case 'snap':
+        this.burst(when, 'bandpass', 3800 * k, 3.5, ev.soft ? 0.07 : 0.14, 0.012 / k);
+        this.tone(when, 1900 * k, ev.soft ? 0.02 : 0.04, 0.03 / k, 'triangle', 1500 * k);
+        break;
+      case 'pat': {
+        const f = Math.min(1, (ev.speed || 60) / 160);
+        this.burst(when, 'lowpass', 1100 * k, 0.9, 0.08 + 0.18 * f, 0.03 / k);
+        this.burst(when, 'bandpass', 3000 * k, 2.2, 0.03 + 0.05 * f, 0.012 / k);
+        break;
+      }
+      case 'servo':
+        this.tone(when, ev.f0 || 80, 0.025, ev.dur || 0.6, 'sawtooth', ev.f1 || 140);
+        this.burst(when, 'bandpass', 600, 2, 0.03, ev.dur || 0.6, 0.6);
+        break;
       default:
     }
   }
@@ -1709,14 +1730,19 @@ async function buildIntro(opts, undo, teardown) {
     call.firstChild.textContent = plan.call[0];
     if (plan.call[1]) call.lastChild.textContent = plan.call[1];
   }
+  // (a game whose call can land over pale pieces - blackjack's white
+  // machine, its cards - asks for a soft shade of the room behind it)
+  const scrimEl = document.createElement('div');
+  scrimEl.className = 'r3-call-scrim';
+  if (!(game && game.callScrim && plan.call)) scrimEl.hidden = true;
   const badgeEl = document.createElement('div');
   badgeEl.className = `r3-tier r3-tier-${tier}`;
   const tierNames = game && game.tierNames ? game.tierNames : TIER_NAMES;
   badgeEl.innerHTML = tier === 'standard' ? '' : `<span>${tierNames[tier]}</span><small>${TIER_ODDS[tier]}</small>`;
   const flashEl = document.createElement('div');
   flashEl.className = 'r3-flash';
-  host.append(canvas, flashEl, call, badgeEl);
-  undo.push(() => [flashEl, call, badgeEl].forEach(el => el.remove()));
+  host.append(canvas, flashEl, scrimEl, call, badgeEl);
+  undo.push(() => [flashEl, scrimEl, call, badgeEl].forEach(el => el.remove()));
 
   // ---- Post: bloom on the brightest glints.
   let composer = null, bloom = null;
@@ -2101,11 +2127,15 @@ async function buildIntro(opts, undo, teardown) {
       const cw = plan.callW;
       const on = smoother((w - cw) / 0.45) * (1 - smoother((w - plan.revealW + 0.3) / 0.5));
       call.style.opacity = on.toFixed(3);
+      scrimEl.style.opacity = (0.85 * on).toFixed(3);
       if (on > 0) {
         // Over the higher of the two dice on screen, clear of both (or over
         // where the game says its call belongs).
         const s = game ? project(game.callAt(w)) : [0, 1].map(i => { const d = dicePose(plan, i, w).p; return project([d[0], d[1] + 2.5, d[2]]); }).sort((a, b) => a[1] - b[1])[0];
-        const grow = 1.12 - 0.12 * smoother((w - cw) / 0.8);
+        // (a long call - THE BLACK JACK - is set smaller to fit a phone held
+        // upright, never wider than most of the screen)
+        const fitW = Math.min(1, (0.86 * host.clientWidth) / Math.max(1, call.offsetWidth));
+        const grow = fitW * (1.12 - 0.12 * smoother((w - cw) / 0.8));
         // (kept whole on screen, whatever the dice's spread)
         const half = (call.offsetWidth * grow) / 2 + 12, W0 = host.clientWidth;
         const cx = half * 2 < W0 ? Math.min(Math.max(s[0], half), W0 - half) : W0 / 2;
@@ -2113,6 +2143,11 @@ async function buildIntro(opts, undo, teardown) {
         // anchor off the bottom of a wide screen)
         const cy = Math.min(Math.max(s[1] - 56, call.offsetHeight + 16), host.clientHeight - call.offsetHeight / 2 - 16);
         call.style.transform = `translate(${cx.toFixed(1)}px,${cy.toFixed(1)}px) translate(-50%,-50%) scale(${grow.toFixed(3)})`;
+        if (!scrimEl.hidden) {
+          scrimEl.style.width = `${(call.offsetWidth * grow + 90).toFixed(0)}px`;
+          scrimEl.style.height = `${(call.offsetHeight * grow + 70).toFixed(0)}px`;
+          scrimEl.style.transform = `translate(${cx.toFixed(1)}px,${cy.toFixed(1)}px) translate(-50%,-50%)`;
+        }
         call.style.setProperty('--shine', `${(-60 + 220 * clamp01((w - cw - 0.1) / 1.2)).toFixed(1)}%`);
       }
     }
@@ -2431,7 +2466,7 @@ async function buildIntro(opts, undo, teardown) {
         lights,
         dice: dice.map(d => d.g),
         game: gameId,
-        overlays: [call, badgeEl, flashEl],
+        overlays: [call, scrimEl, badgeEl, flashEl],
         dispose: teardown
       };
     },
