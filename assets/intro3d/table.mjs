@@ -315,7 +315,11 @@ function fmtLeft(ms) {
 }
 
 // ------------------------------------------------------- the card table
-function buildCardTable(set) {
+// (opts, for the landing's blackjack table - the same salon table, dressed
+// as its own: `rail`, the rail's leather colour; `mark`, its own lettering
+// in place of the wordmark: { w, h, z } in cm, the canvas { cw, ch } and
+// `paint(kl)`, drawn as paintMark is, white on black, kl the keyline)
+function buildCardTable(set, opts = {}) {
   const g = new THREE.Group();
   const { a, b } = FELT;
   // the felt's rim: the arc on the player's side, from the player's right
@@ -360,6 +364,7 @@ function buildCardTable(set) {
   // the shot's padded map at the rail's scale read as cork pinched in, and
   // a deeper grain in the lamp as suede)
   const cushionMat = set.cushion.clone();
+  if (opts.rail != null) cushionMat.color.setHex(opts.rail);
   cushionMat.normalMap = null;
   cushionMat.envMapIntensity = 0.25; cushionMat.roughness = 0.52;
   const ellipse = [];
@@ -513,8 +518,8 @@ function buildCardTable(set) {
   const weave = weaveTex();
   const foilRough = retile(finish('clay').rough, 1, 1);
   // the wordmark, by the dealer: 36 x 9 cm at 57 px/cm
-  const WM = { w: 36, h: 9, z: b - 23 };
-  const paintMark = kl => (c, W, H) => {
+  const WM = opts.mark ? { w: opts.mark.w, h: opts.mark.h, z: opts.mark.z } : { w: 36, h: 9, z: b - 23 };
+  const paintMark = opts.mark ? opts.mark.paint : kl => (c, W, H) => {
     const s = W / WM.w;
     c.fillStyle = '#000'; c.fillRect(0, 0, W, H);
     c.fillStyle = '#fff'; c.strokeStyle = '#fff'; c.lineJoin = 'round';
@@ -532,7 +537,8 @@ function buildCardTable(set) {
     c.lineWidth = 2 * kl * s;
     [-13.6, 13.6].forEach(x => { const d = 0.32 * s; c.beginPath(); c.moveTo(x * s - d, 0.45 * s); c.lineTo(x * s, 0.45 * s - d * 0.6); c.lineTo(x * s + d, 0.45 * s); c.lineTo(x * s, 0.45 * s + d * 0.6); c.closePath(); c.fill(); if (kl) c.stroke(); });
   };
-  const mark = canvasTex(2048, 512, paintMark(0)), markKey = canvasTex(2048, 512, paintMark(0.12));
+  const [MW, MH] = opts.mark ? [opts.mark.cw, opts.mark.ch] : [2048, 512];
+  const mark = canvasTex(MW, MH, paintMark(0)), markKey = canvasTex(MW, MH, paintMark(0.12));
   [print, printKey, mark, markKey].forEach(t => { t.colorSpace = THREE.NoColorSpace; t.anisotropy = 16; });
   // (gold foil pressed into the felt, not ink: it catches the lamp)
   const inkMat = new THREE.MeshStandardMaterial({ color: 0xc9a75a, alphaMap: print, transparent: true, depthWrite: false, metalness: 0.8, roughness: 0.38, envMapIntensity: 0.9, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
@@ -687,6 +693,34 @@ function chipFace(name) {
   }
   return chipFaces[name];
 }
+// A chip's materials (see chipTray): its edge, the clay with eight inserts
+// round it, each pressed in by hand a little off the last; its faces, the
+// house coin. Made new each time (whoever builds with them frees them).
+const CHIP_SPOTS = { onyx: ['#121214', '#e8e2d2', '#b8914a'], oxblood: ['#5b1622', '#f1e7d0', '#c9a45a'], emerald: ['#1d3a2a', '#f1e7d0', '#c9a45a'], ivory: ['#e6dfcb', '#6b1320', '#b8914a'], plum: ['#3a2352', '#f1e7d0', '#c9a45a'], gold: ['#b58a2e', '#1a1208', '#f6e2a8'] };
+function chipMats(name) {
+  const [base, spot, line] = CHIP_SPOTS[name];
+  const rs = seeded(name.length * 131 + name.charCodeAt(0));
+  const side = canvasTex(2048, 64, (c, Wc, Hc) => {
+    c.fillStyle = base; c.fillRect(0, 0, Wc, Hc);
+    // (an insert is clay pressed into clay: its edges a hair soft, each
+    // placed by hand a little off the last)
+    c.filter = 'blur(0.8px)';
+    for (let k = 0; k < 8; k++) {
+      const x0 = k * Wc / 8 + Wc / 32 + (rs() - 0.5) * 6, w = Wc / 16 + (rs() - 0.5) * 4;
+      c.fillStyle = spot; c.fillRect(x0, -2, w, Hc + 4);
+      c.fillStyle = base; c.fillRect(x0 + w * 0.3, -2, w * 0.08, Hc + 4); c.fillRect(x0 + w * 0.62, -2, w * 0.08, Hc + 4);
+      c.fillStyle = line; c.fillRect(x0 + w + Wc / 64 - 2, Hc * 0.33, 5, Hc * 0.34);
+    }
+    c.filter = 'none';
+    const gr = c.createLinearGradient(0, 0, 0, Hc); gr.addColorStop(0, 'rgba(0,0,0,0.35)'); gr.addColorStop(0.2, 'rgba(0,0,0,0)'); gr.addColorStop(0.8, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,0.35)');
+    c.fillStyle = gr; c.fillRect(0, 0, Wc, Hc);
+  });
+  // (the clay's grain at 2 cm a tile: round the edge 12.3 cm, across it
+  // 0.33; on a face, 3.9 across)
+  const sideM = finished(new THREE.MeshStandardMaterial({ map: side, roughness: 0.6 }), 'clay', 6, 0.16, 0.45);
+  const faceM = finished(new THREE.MeshStandardMaterial({ map: chipFace(name), roughness: 0.5, metalness: 0.12 }), 'clay', 2, 2, 0.35);
+  return [sideM, faceM];
+}
 function chipTray(set) {
   const g = new THREE.Group();
   // (piano lacquer: rubbed out and polished, so the coat is a mirror - its
@@ -764,32 +798,12 @@ function chipTray(set) {
   const strip = new THREE.Mesh(new THREE.PlaneGeometry(W + 0.2, 0.9), stripMat);
   strip.position.set(0, 0.4 + TR.h * 0.45, -(TR.len / 2 + 0.13)); strip.rotation.y = Math.PI; g.add(strip);
   // the chips: the edge texture, eight inserts; the faces, the house coin
-  const spots = { onyx: ['#121214', '#e8e2d2', '#b8914a'], oxblood: ['#5b1622', '#f1e7d0', '#c9a45a'], emerald: ['#1d3a2a', '#f1e7d0', '#c9a45a'], ivory: ['#e6dfcb', '#6b1320', '#b8914a'], plum: ['#3a2352', '#f1e7d0', '#c9a45a'], gold: ['#b58a2e', '#1a1208', '#f6e2a8'] };
+  // (see chipMats)
   const chipGeo = new THREE.CylinderGeometry(1.95, 1.95, 0.33, 48, 1);
   chipGeo.rotateX(Math.PI / 2);           // (on edge, its axis along z)
   const R = new THREE.Object3D();
   CHIPS.forEach(name => {
-    const [base, spot, line] = spots[name];
-    const rs = seeded(name.length * 131 + name.charCodeAt(0));
-    const side = canvasTex(2048, 64, (c, Wc, Hc) => {
-      c.fillStyle = base; c.fillRect(0, 0, Wc, Hc);
-      // (an insert is clay pressed into clay: its edges a hair soft, each
-      // placed by hand a little off the last)
-      c.filter = 'blur(0.8px)';
-      for (let k = 0; k < 8; k++) {
-        const x0 = k * Wc / 8 + Wc / 32 + (rs() - 0.5) * 6, w = Wc / 16 + (rs() - 0.5) * 4;
-        c.fillStyle = spot; c.fillRect(x0, -2, w, Hc + 4);
-        c.fillStyle = base; c.fillRect(x0 + w * 0.3, -2, w * 0.08, Hc + 4); c.fillRect(x0 + w * 0.62, -2, w * 0.08, Hc + 4);
-        c.fillStyle = line; c.fillRect(x0 + w + Wc / 64 - 2, Hc * 0.33, 5, Hc * 0.34);
-      }
-      c.filter = 'none';
-      const gr = c.createLinearGradient(0, 0, 0, Hc); gr.addColorStop(0, 'rgba(0,0,0,0.35)'); gr.addColorStop(0.2, 'rgba(0,0,0,0)'); gr.addColorStop(0.8, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,0.35)');
-      c.fillStyle = gr; c.fillRect(0, 0, Wc, Hc);
-    });
-    // (the clay's grain at 2 cm a tile: round the edge 12.3 cm, across it
-    // 0.33; on a face, 3.9 across)
-    const sideM = finished(new THREE.MeshStandardMaterial({ map: side, roughness: 0.6 }), 'clay', 6, 0.16, 0.45);
-    const faceM = finished(new THREE.MeshStandardMaterial({ map: chipFace(name), roughness: 0.5, metalness: 0.12 }), 'clay', 2, 2, 0.35);
+    const [sideM, faceM] = chipMats(name);
     const troughs = COL.map((c, i) => (c === name ? i : -1)).filter(i => i >= 0);
     if (!troughs.length) return;
     const count = troughs.reduce((sum, i) => sum + FILL[COL[i]], 0);
@@ -4340,4 +4354,18 @@ export function freeTree(root, set) {
 export const tableKit = {
   CARD, TIERS, cardHTML, cardShown, inkBacks, demoHand, phoneHTML, fmtLeft, esc, tierOf, initials, hash,
   canvasTex, finished, polishedOf, fineSet, glassy, contactShadow, roundRect, lying, retile, freeTree, ROOM_ENV
+};
+
+// What the landing's blackjack game (blackjack.mjs) builds with, so its
+// table and its dealer are this house's: the salon table (dressed as its
+// own, see buildCardTable), the shoe, the discard rack, the port, the chips
+// and the machine - its materials, torso, arms and hands, how a hand is
+// posed and which way an elbow is carried - and the deck's backs and pips.
+// The machine's moves are the game's own (a hand of four cards in the shot,
+// not the table's deal).
+export const dealerKit = {
+  buildCardTable, buildShoe, buildDiscard, buildPort, chipMats, chipsReady: () => Promise.all(chipLoads),
+  dealerMaterials, buildDealerTorso, buildDealerArm, buildDealerHand, handPose, elbowWay, segDist,
+  paintCardBack, backArt, weaveTex, PIPS, lying, contactShadow, polishedOf, freeTree,
+  CARD, FELT, PORT, ARM, WRIST, SIDES, LAYOUT
 };
