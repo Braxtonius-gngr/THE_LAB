@@ -184,7 +184,7 @@ export function dressTrim({ band = [], line = [] }, id) {
 const FLOAT = 36, CEIL = 178;
 // The room: the floor 82 cm under the felt, the lamps' height, the fog, and
 // the far tables' light pools ([x, z, radius]).
-const ROOM = { floor: -82, lamp: 172, fog: 0.0019, far: [[-340, -300, 150], [390, -430, 170], [-560, 120, 160], [620, 60, 150], [120, -720, 190], [-260, 520, 150]] };
+const ROOM = { floor: -82, lamp: 172, backdropZ: -420, fog: 0.0019, far: [[-340, -300, 150], [390, -430, 170], [-560, 120, 160], [620, 60, 150], [120, -720, 190], [-260, 520, 150]] };
 // The pace frames are drawn at: about 60 a second, evenly. A phone's
 // screen may offer 90, 120 or 144 frames a second, and a shot drawn on every
 // one of them asks twice the work of the GPU; the frames it can't finish in
@@ -1154,7 +1154,7 @@ async function buildIntro(opts, undo, teardown) {
   // oxblood carpet with a worn gold art-deco lattice (200 cm repeat), lit
   // in pools under the lamps and lost to the dark between them (fog).
   const backdrop = new THREE.Mesh(new THREE.PlaneGeometry(1500, 700), new THREE.MeshBasicMaterial({ map: gunmetal, color: new THREE.Color(0.85, 0.85, 0.88) }));
-  backdrop.position.set(120, 160, -420); scene.add(backdrop);
+  backdrop.position.set(120, 160, ROOM.backdropZ); scene.add(backdrop);
   scene.fog = new THREE.FogExp2(0x050506, ROOM.fog);
   const carpet = new THREE.MeshStandardMaterial({ map: carpetC, normalMap: carpetN, normalScale: new THREE.Vector2(0.6, 0.6), roughness: 0.95, envMapIntensity: 0.1 });
   const floor = new THREE.Mesh(scaleUV(new THREE.PlaneGeometry(3000, 3000), 15, 15), carpet);
@@ -1228,7 +1228,7 @@ async function buildIntro(opts, undo, teardown) {
     checkAbort();
     game = await mod.makeGame({
       THREE, scene, set: scene.userData.set, lights, tier, seed: o.seed, aspect, host, signal: o.signal,
-      room: { floor: ROOM.floor, lamp: ROOM.lamp, FLOAT, CEIL, PENDANT, ENV_LEVEL, RIM }, asset,
+      room: { floor: ROOM.floor, lamp: ROOM.lamp, backdropZ: ROOM.backdropZ, FLOAT, CEIL, PENDANT, ENV_LEVEL, RIM }, asset,
       helpers: { makeWarp, spline, smoother, easeOut, lerp, mix3, clamp01, canvasTexture, radial, finished, embossTex, scaleUV, boxUV }
     });
     checkAbort();
