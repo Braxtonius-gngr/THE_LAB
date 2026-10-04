@@ -1716,7 +1716,10 @@ async function buildIntro(opts, undo, teardown) {
 
   // ---- Overlays: the call, the tier's name.
   const call = document.createElement('div');
-  call.className = `r3-call r3-call-${tier}`;
+  // (a game may call its hardways in the house gold, as its other lines are,
+  // rather than the dice's platinum)
+  const goldCall = tier === 'hardways' && !!(game && game.goldCall);
+  call.className = `r3-call r3-call-${goldCall ? 'gold' : tier}`;
   if (tier === 'hardways' && !game) {
     const img = new Image();
     img.alt = plan.call[0];
@@ -1725,7 +1728,7 @@ async function buildIntro(opts, undo, teardown) {
     call.appendChild(img);
   } else if (plan.call) {
     // (a game's hardways call is lettered, not pictured: the platinum text)
-    if (tier === 'hardways') call.classList.add('r3-call-text');
+    if (tier === 'hardways' && !goldCall) call.classList.add('r3-call-text');
     call.innerHTML = `<span></span>${plan.call[1] ? '<small></small>' : ''}`;
     call.firstChild.textContent = plan.call[0];
     if (plan.call[1]) call.lastChild.textContent = plan.call[1];
@@ -1736,9 +1739,14 @@ async function buildIntro(opts, undo, teardown) {
   scrimEl.className = 'r3-call-scrim';
   if (!(game && game.callScrim && plan.call)) scrimEl.hidden = true;
   const badgeEl = document.createElement('div');
-  badgeEl.className = `r3-tier r3-tier-${tier}`;
+  badgeEl.className = `r3-tier r3-tier-${goldCall ? 'gold' : tier}`;
   const tierNames = game && game.tierNames ? game.tierNames : TIER_NAMES;
-  badgeEl.innerHTML = tier === 'standard' ? '' : `<span>${tierNames[tier]}</span><small>${TIER_ODDS[tier]}</small>`;
+  // (where the call already names the tier - a game whose line is the
+  // tier, The Jackpot called "The Jackpot" - the caption gives the odds
+  // alone rather than say it twice)
+  const named = !!(plan.call && plan.call[0] && String(plan.call[0]).toLowerCase() === String(tierNames[tier]).toLowerCase());
+  if (named) badgeEl.classList.add('r3-tier-odds');
+  badgeEl.innerHTML = tier === 'standard' ? '' : named ? `<small>${TIER_ODDS[tier]}</small>` : `<span>${tierNames[tier]}</span><small>${TIER_ODDS[tier]}</small>`;
   const flashEl = document.createElement('div');
   flashEl.className = 'r3-flash';
   host.append(canvas, flashEl, scrimEl, call, badgeEl);
