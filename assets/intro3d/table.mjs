@@ -1550,6 +1550,16 @@ function buildDealerHand(m, mirror = false) {
   // on the card the pose puts them over rather than hovering above it)
   const hand = new THREE.Group(); hand.position.y = -0.7; body.add(hand);
   const bone = (r, a, b, mat) => laid(new THREE.Mesh(new THREE.CapsuleGeometry(r, Math.max(0.01, a.distanceTo(b) - 2 * r), 4, 14), mat), a, b);
+  // (a tapered segment, rounded at both ends: a finger's phalanx is wider at
+  // its root than at its tip, and a capsule is the same width all the way)
+  const tapered = (rA, rB, a, b, mat) => {
+    const L = Math.max(rA + rB + 0.01, a.distanceTo(b)), pts = [], N = 8;
+    for (let i = 0; i <= N; i++) { const f = i / N * Math.PI / 2; pts.push(new THREE.Vector2(rA * Math.sin(f), -L / 2 + rA - rA * Math.cos(f))); }
+    for (let i = 0; i <= N; i++) { const f = i / N * Math.PI / 2; pts.push(new THREE.Vector2(rB * Math.cos(f), L / 2 - rB + rB * Math.sin(f))); }
+    return laid(new THREE.Mesh(new THREE.LatheGeometry(pts, 20), mat), a, b);
+  };
+  // (a gold collar round a finger, set into it where it stands at full width)
+  const collar = (at, dir, r) => { const c = new THREE.Mesh(new THREE.TorusGeometry(r * 0.985, 0.035, 8, 24), m.gold); c.quaternion.setFromUnitVectors(V(0, 0, 1), dir.clone().normalize()); c.position.copy(at); return c; };
   const hinge = (p, r) => { const h = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.9, 14), m.graphite); h.rotation.z = Math.PI / 2; h.position.copy(p); return h; };
   // (a gold trace along the top of a segment)
   const trace = (a, b, r) => laid(new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1, 6), m.gold), a.clone().add(V(0, r * 0.95, 0)), b.clone().add(V(0, r * 0.95, 0)), true);
@@ -1563,9 +1573,12 @@ function buildDealerHand(m, mirror = false) {
     const mid = new THREE.Group(); mid.position.copy(p2).sub(p3); root.add(mid);
     const tip = new THREE.Group(); tip.position.copy(p1).sub(p2); mid.add(tip);
     const o = V(0, 0, 0);
-    root.add(bone(0.47, o, p2.clone().sub(p3), m.plain), trace(V(0, 0, -0.45), p2.clone().sub(p3).add(V(0, 0, 0.3)), 0.47));
-    mid.add(hinge(o, 0.36), bone(0.44, o, p1.clone().sub(p2), m.plain), trace(V(0, 0, -0.3), p1.clone().sub(p2).add(V(0, 0, 0.3)), 0.44));
-    tip.add(hinge(o, 0.33), bone(0.4, o, p0.clone().sub(p1), m.plain));
+    // (three tapered phalanges, a gold collar near the root of each, nothing
+    // laid along them: the joints are the rounded ends meeting)
+    const d2 = p2.clone().sub(p3), d1 = p1.clone().sub(p2), d0 = p0.clone().sub(p1);
+    root.add(tapered(0.47, 0.43, o, d2, m.plain), collar(d2.clone().multiplyScalar(0.28), d2, 0.465));
+    mid.add(tapered(0.44, 0.4, o, d1, m.plain), collar(d1.clone().multiplyScalar(0.3), d1, 0.435));
+    tip.add(tapered(0.4, 0.33, o, d0, m.plain));
     // a gold pad under the tip, a clear nail over it
     const pad = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 8), m.gold); pad.position.copy(p0).sub(p1).add(V(0, -0.22, -0.1)); tip.add(pad);
     const nail = new THREE.Mesh(new THREE.SphereGeometry(0.42, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), m.clear); nail.scale.set(0.95, 0.5, 1.5); nail.position.copy(p0).sub(p1).add(V(0, 0.12, -0.35)); tip.add(nail);
