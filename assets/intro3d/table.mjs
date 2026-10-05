@@ -1445,7 +1445,7 @@ function dealerMaterials() {
   // (the gold inlaid in the glaze: gold where the traces are - metal, and
   // brighter - and each trace a hair proud of the glaze under its clear)
   const rm = circuitTex('rm');
-  const ceramic = new THREE.MeshPhysicalMaterial({ color: 0xffffff, map: circuitTex(false), roughness: 0.34, roughnessMap: rm, metalness: 1, metalnessMap: rm,
+  const ceramic = new THREE.MeshPhysicalMaterial({ color: 0xeeeae2, map: circuitTex(false), roughness: 0.34, roughnessMap: rm, metalness: 1, metalnessMap: rm,
     clearcoat: 0.85, clearcoatRoughness: 0.12, sheen: 0.4, sheenRoughness: 0.45, sheenColor: new THREE.Color(0xfff0dc),
     emissive: 0xffc877, emissiveMap: circuitTex(true), emissiveIntensity: 0 });
   { const n = embossTex(circuitTex(true).image, 1.4); n.wrapS = n.wrapT = THREE.RepeatWrapping; ceramic.normalMap = n; ceramic.normalScale = new THREE.Vector2(0.6, 0.6); }
@@ -1462,7 +1462,7 @@ function dealerMaterials() {
   ceramic.customProgramCacheKey = () => 'dealer-ceramic-pulse';
   // (the glaze: a hard clear coat over soft white, and at its thin edges,
   // seen edge-on, the warm glow of light carried through it)
-  const plain = new THREE.MeshPhysicalMaterial({ color: 0xf4f1eb, roughness: 0.34, clearcoat: 0.85, clearcoatRoughness: 0.12, sheen: 0.4, sheenRoughness: 0.45, sheenColor: new THREE.Color(0xfff0dc) });
+  const plain = new THREE.MeshPhysicalMaterial({ color: 0xe6e2da, roughness: 0.34, clearcoat: 0.85, clearcoatRoughness: 0.12, sheen: 0.4, sheenRoughness: 0.45, sheenColor: new THREE.Color(0xfff0dc) });
   // (sapphire over each movement and over every knuckle: no colour of its
   // own, only what it mirrors, and the faint violet-to-green bloom of its
   // anti-reflective coat at an angle)
