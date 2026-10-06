@@ -1746,7 +1746,7 @@ async function buildIntro(opts, undo, teardown) {
   // alone rather than say it twice)
   const named = !!(plan.call && plan.call[0] && String(plan.call[0]).toLowerCase() === String(tierNames[tier]).toLowerCase());
   if (named) badgeEl.classList.add('r3-tier-odds');
-  badgeEl.innerHTML = tier === 'standard' ? '' : named ? `<small>${TIER_ODDS[tier]}</small>` : `<span>${tierNames[tier]}</span><small>${TIER_ODDS[tier]}</small>`;
+  badgeEl.innerHTML = tier === 'standard' ? '' : named ? `<small>Odds · ${TIER_ODDS[tier]}</small>` : `<span>${tierNames[tier]}</span><small>Odds · ${TIER_ODDS[tier]}</small>`;
   const flashEl = document.createElement('div');
   flashEl.className = 'r3-flash';
   host.append(canvas, flashEl, scrimEl, call, badgeEl);
