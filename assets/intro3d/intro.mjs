@@ -1227,7 +1227,7 @@ async function buildIntro(opts, undo, teardown) {
     const mod = await gameLoad;
     checkAbort();
     game = await mod.makeGame({
-      THREE, scene, set: scene.userData.set, lights, tier, seed: o.seed, aspect, host, signal: o.signal,
+      THREE, scene, set: scene.userData.set, lights, tier, seed: o.seed, trim: o.trim, aspect, host, signal: o.signal,
       room: { floor: ROOM.floor, lamp: ROOM.lamp, backdropZ: ROOM.backdropZ, FLOAT, CEIL, PENDANT, ENV_LEVEL, RIM }, asset,
       helpers: { makeWarp, spline, smoother, easeOut, lerp, mix3, clamp01, canvasTexture, radial, finished, embossTex, scaleUV, boxUV }
     });
@@ -1738,6 +1738,10 @@ async function buildIntro(opts, undo, teardown) {
   const scrimEl = document.createElement('div');
   scrimEl.className = 'r3-call-scrim';
   if (!(game && game.callScrim && plan.call)) scrimEl.hidden = true;
+  // (or a plate: a framed dark tile hung at the top of the screen, the call
+  // lettered on it - clear of whatever the shot has in view)
+  const plated = !!(game && game.callPlate && plan.call);
+  if (plated) scrimEl.classList.add('r3-call-plate');
   const badgeEl = document.createElement('div');
   badgeEl.className = `r3-tier r3-tier-${goldCall ? 'gold' : tier}`;
   const tierNames = game && game.tierNames ? game.tierNames : TIER_NAMES;
@@ -2136,14 +2140,14 @@ async function buildIntro(opts, undo, teardown) {
       // (a game may take its call out for a moment - a pan it would cross)
       const on = smoother((w - cw) / 0.45) * (1 - smoother((w - plan.revealW + 0.3) / 0.5)) * (game && game.callAlphaAt ? game.callAlphaAt(w) : 1);
       call.style.opacity = on.toFixed(3);
-      scrimEl.style.opacity = (0.85 * on * (game && game.callScrimAt ? game.callScrimAt(w) : 1)).toFixed(3);
+      scrimEl.style.opacity = ((plated ? 1 : 0.85) * on * (game && game.callScrimAt ? game.callScrimAt(w) : 1)).toFixed(3);
       if (on > 0) {
         // Over the higher of the two dice on screen, clear of both (or over
         // where the game says its call belongs).
         const s = game ? project(game.callAt(w)) : [0, 1].map(i => { const d = dicePose(plan, i, w).p; return project([d[0], d[1] + 2.5, d[2]]); }).sort((a, b) => a[1] - b[1])[0];
         // (a long call - THE BLACK JACK - is set smaller to fit a phone held
         // upright, never wider than most of the screen)
-        const fitW = Math.min(1, (0.86 * host.clientWidth) / Math.max(1, call.offsetWidth));
+        const fitW = Math.min(1, ((plated ? 0.78 : 0.86) * host.clientWidth) / Math.max(1, call.offsetWidth));
         const grow = fitW * (1.12 - 0.12 * smoother((w - cw) / 0.8));
         // (kept whole on screen, whatever the dice's spread)
         const half = (call.offsetWidth * grow) / 2 + 12, W0 = host.clientWidth;
@@ -2152,17 +2156,25 @@ async function buildIntro(opts, undo, teardown) {
         // anchor off the bottom of a wide screen)
         // (and never up under the tier's caption at the top)
         const under = tier === 'standard' ? 0 : badgeEl.offsetTop + badgeEl.offsetHeight + 10 + (call.offsetHeight * grow) / 2;
-        const cy = Math.min(Math.max(s[1] - 56, call.offsetHeight + 16, under), host.clientHeight - call.offsetHeight / 2 - 16);
-        call.style.transform = `translate(${cx.toFixed(1)}px,${cy.toFixed(1)}px) translate(-50%,-50%) scale(${grow.toFixed(3)})`;
+        let cy = Math.min(Math.max(s[1] - 56, call.offsetHeight + 16, under), host.clientHeight - call.offsetHeight / 2 - 16);
+        let cxx = cx;
+        if (plated) {
+          // (hung at the top, centred: under the tier's caption when there is one)
+          cxx = W0 / 2;
+          cy = (tier === 'standard' ? 16 : badgeEl.offsetTop + badgeEl.offsetHeight + 8) + (call.offsetHeight * grow + 26) / 2;
+        }
+        call.style.transform = `translate(${cxx.toFixed(1)}px,${cy.toFixed(1)}px) translate(-50%,-50%) scale(${grow.toFixed(3)})`;
         if (!scrimEl.hidden) {
-          scrimEl.style.width = `${(call.offsetWidth * grow + 90).toFixed(0)}px`;
-          scrimEl.style.height = `${(call.offsetHeight * grow + 70).toFixed(0)}px`;
-          scrimEl.style.transform = `translate(${cx.toFixed(1)}px,${cy.toFixed(1)}px) translate(-50%,-50%)`;
+          scrimEl.style.width = `${(call.offsetWidth * grow + (plated ? 48 : 90)).toFixed(0)}px`;
+          scrimEl.style.height = `${(call.offsetHeight * grow + (plated ? 26 : 70)).toFixed(0)}px`;
+          scrimEl.style.transform = `translate(${cxx.toFixed(1)}px,${cy.toFixed(1)}px) translate(-50%,-50%)`;
         }
         call.style.setProperty('--shine', `${(-60 + 220 * clamp01((w - cw - 0.1) / 1.2)).toFixed(1)}%`);
       }
     }
-    badgeEl.style.opacity = tier === 'standard' ? '0' : smoother((w - plan.callW - 0.2) / 0.6).toFixed(3);
+    // (a game may take the tier's caption away as the page's own end card
+    // comes up: it is the shot's, and not the card's)
+    badgeEl.style.opacity = tier === 'standard' ? '0' : (smoother((w - plan.callW - 0.2) / 0.6) * (game && game.badgeFades ? 1 - smoother((w - plan.revealW + 0.3) / 0.5) : 1)).toFixed(3);
     return { w, rate, gleam, burst };
   };
   // The scene as it stands, through the post when there is one.
@@ -2433,7 +2445,7 @@ async function buildIntro(opts, undo, teardown) {
     // (a felt picked while the shot is up: dressed, and the frame redrawn)
     setFelt(id) { dressFelt(felt.material, id); if (redraw) redraw(); else if (!playing) render(t); },
     // (the same for the trim: see TRIMS)
-    setTrim(id) { dressTrim({ band: [gold] }, id); if (redraw) redraw(); else if (!playing) render(t); },
+    setTrim(id) { dressTrim({ band: [gold] }, id); if (game && game.setTrim) game.setTrim(id); if (redraw) redraw(); else if (!playing) render(t); },
     // The fly-in takes the scene over: the loop stops and the set, the
     // renderer and the camera are handed on, as they are this moment.
     release() {
