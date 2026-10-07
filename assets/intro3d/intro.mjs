@@ -1227,7 +1227,7 @@ async function buildIntro(opts, undo, teardown) {
     const mod = await gameLoad;
     checkAbort();
     game = await mod.makeGame({
-      THREE, scene, set: scene.userData.set, lights, tier, seed: o.seed, aspect, host, signal: o.signal,
+      THREE, scene, set: scene.userData.set, lights, tier, seed: o.seed, trim: o.trim, aspect, host, signal: o.signal,
       room: { floor: ROOM.floor, lamp: ROOM.lamp, backdropZ: ROOM.backdropZ, FLOAT, CEIL, PENDANT, ENV_LEVEL, RIM }, asset,
       helpers: { makeWarp, spline, smoother, easeOut, lerp, mix3, clamp01, canvasTexture, radial, finished, embossTex, scaleUV, boxUV }
     });
@@ -2445,7 +2445,7 @@ async function buildIntro(opts, undo, teardown) {
     // (a felt picked while the shot is up: dressed, and the frame redrawn)
     setFelt(id) { dressFelt(felt.material, id); if (redraw) redraw(); else if (!playing) render(t); },
     // (the same for the trim: see TRIMS)
-    setTrim(id) { dressTrim({ band: [gold] }, id); if (redraw) redraw(); else if (!playing) render(t); },
+    setTrim(id) { dressTrim({ band: [gold] }, id); if (game && game.setTrim) game.setTrim(id); if (redraw) redraw(); else if (!playing) render(t); },
     // The fly-in takes the scene over: the loop stops and the set, the
     // renderer and the camera are handed on, as they are this moment.
     release() {
