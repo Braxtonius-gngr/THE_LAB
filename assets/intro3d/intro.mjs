@@ -1741,6 +1741,9 @@ async function buildIntro(opts, undo, teardown) {
   // (or a plate: a framed dark tile hung at the top of the screen, the call
   // lettered on it - clear of whatever the shot has in view)
   const plated = !!(game && game.callPlate && plan.call);
+  // (where the caption's own CSS puts its top, measured once when a plate
+  // hangs in the side margin)
+  let flankTop = null;
   if (plated) scrimEl.classList.add('r3-call-plate');
   const badgeEl = document.createElement('div');
   badgeEl.className = `r3-tier r3-tier-${goldCall ? 'gold' : tier}`;
@@ -2170,10 +2173,16 @@ async function buildIntro(opts, undo, teardown) {
           if (flank) {
             // (in the left margin, low enough to clear the dealer's side; the
             // caption stands over it, in the same column)
-            cxx = W0 * 0.2; cy = host.clientHeight * 0.66;
+            // (the stack - caption, then plate - kept whole inside the screen
+            // however short it is, under the safe-area inset the caption's
+            // own rule keeps: measured once, with the inline top let go)
+            if (flankTop === null) { badgeEl.style.top = ''; flankTop = badgeEl.offsetTop; }
+            const plateH = call.offsetHeight * grow + 26, capH = tier === 'standard' ? 0 : badgeEl.offsetHeight + 8;
+            const stackTop = Math.max(flankTop, Math.min(host.clientHeight * 0.66 - plateH / 2 - capH, host.clientHeight - 10 - capH - plateH));
+            cxx = W0 * 0.2; cy = stackTop + capH + plateH / 2;
             badgeEl.style.left = `${cxx.toFixed(1)}px`;
-            badgeEl.style.top = `${(cy - (call.offsetHeight * grow + 26) / 2 - badgeEl.offsetHeight - 8).toFixed(1)}px`;
-          } else { badgeEl.style.left = ''; badgeEl.style.top = ''; }
+            badgeEl.style.top = `${stackTop.toFixed(1)}px`;
+          } else { badgeEl.style.left = ''; badgeEl.style.top = ''; flankTop = null; }
         }
         call.style.transform = `translate(${cxx.toFixed(1)}px,${cy.toFixed(1)}px) translate(-50%,-50%) scale(${grow.toFixed(3)})`;
         if (!scrimEl.hidden) {
