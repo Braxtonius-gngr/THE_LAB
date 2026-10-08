@@ -1576,16 +1576,28 @@ function buildDealerHand(m, mirror = false) {
     // (three tapered phalanges, a gold collar near the root of each, nothing
     // laid along them: the joints are the rounded ends meeting)
     const d2 = p2.clone().sub(p3), d1 = p1.clone().sub(p2), d0 = p0.clone().sub(p1);
-    root.add(tapered(0.47, 0.43, o, d2, m.plain), collar(d2.clone().multiplyScalar(0.28), d2, 0.465));
-    mid.add(tapered(0.44, 0.4, o, d1, m.plain), collar(d1.clone().multiplyScalar(0.3), d1, 0.435));
-    tip.add(tapered(0.4, 0.33, o, d0, m.plain));
+    // (fuller at the root and drawn in toward the tip, as a finger is: the
+    // proximal phalanx thick, the last one half its width at the pad)
+    root.add(tapered(0.53, 0.45, o, d2, m.plain), collar(d2.clone().multiplyScalar(0.28), d2, 0.52));
+    mid.add(tapered(0.46, 0.38, o, d1, m.plain), collar(d1.clone().multiplyScalar(0.3), d1, 0.45));
+    tip.add(tapered(0.38, 0.29, o, d0, m.plain));
     // a gold pad under the tip, a clear nail over it
     const pad = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 8), m.gold); pad.position.copy(p0).sub(p1).add(V(0, -0.22, -0.1)); tip.add(pad);
     const nail = new THREE.Mesh(new THREE.SphereGeometry(0.42, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), m.clear); nail.scale.set(0.95, 0.5, 1.5); nail.position.copy(p0).sub(p1).add(V(0, 0.12, -0.35)); tip.add(nail);
     // (a cap over the knuckle)
-    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.56, 16, 12), m.clear); root.add(cap);
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.62, 16, 12), m.clear); root.add(cap);
+    // (and a solid ball of ceramic under it: the knuckle, a joint with mass)
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.58, 18, 12), m.plain); ball.scale.set(1, 0.92, 1.1); root.add(ball);
     fingers.push({ root, mid, tip, side });
   });
+  // the knuckles' mass: a ceramic bridge across the roots of the fingers,
+  // so they spring from one body instead of standing in a row, and between
+  // each pair the web, a flattened ellipsoid filling the gap where they
+  // part (the three of them lie along the fingers, a little forward of the
+  // knuckle, narrowing as they go)
+  { const bridge = new THREE.Mesh(new THREE.CapsuleGeometry(0.72, 5.6, 6, 18), m.plain);
+    bridge.rotation.z = Math.PI / 2; bridge.scale.set(1, 1, 0.92); bridge.position.set(0, 1.12, -6.25); hand.add(bridge);
+    [-1.55, 0, 1.55].forEach(x => { const w = new THREE.Mesh(new THREE.SphereGeometry(0.5, 14, 10), m.plain); w.scale.set(0.8, 0.62, 1.15); w.position.set(x, 1.02, -6.0); hand.add(w); }); }
   // the knuckles: one graphite bar with gold ends, the palm a ceramic plate
   // behind it
   const knuckles = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 7.0, 16), m.graphite);
