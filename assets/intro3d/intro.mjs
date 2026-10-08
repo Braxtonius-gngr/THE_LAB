@@ -2155,7 +2155,11 @@ async function buildIntro(opts, undo, teardown) {
         // across the top it would cover the dealer's hands and cards, the
         // action itself, and the shot is nothing but that action)
         const flank = plated && host.clientWidth > host.clientHeight * 1.4;
-        const fitW = Math.min(1, ((flank ? 0.26 : plated ? 0.78 : 0.86) * host.clientWidth) / Math.max(1, call.offsetWidth));
+        // (one column width, 40% of the screen, for the plate and its caption
+        // both: the call is sized so its plate - at its largest, 12% grown
+        // and padded - fits it)
+        const colW = host.clientWidth * 0.4;
+        const fitW = Math.min(1, (flank ? Math.min(0.26 * host.clientWidth, (colW - 48) / 1.12) : (plated ? 0.78 : 0.86) * host.clientWidth) / Math.max(1, call.offsetWidth));
         const grow = fitW * (1.12 - 0.12 * smoother((w - cw) / 0.8));
         // (kept whole on screen, whatever the dice's spread)
         const half = (call.offsetWidth * grow) / 2 + 12, W0 = host.clientWidth;
@@ -2182,7 +2186,11 @@ async function buildIntro(opts, undo, teardown) {
             cxx = W0 * 0.2; cy = stackTop + capH + plateH / 2;
             badgeEl.style.left = `${cxx.toFixed(1)}px`;
             badgeEl.style.top = `${stackTop.toFixed(1)}px`;
-          } else { badgeEl.style.left = ''; badgeEl.style.top = ''; flankTop = null; }
+            // (the caption, a line that does not wrap, drawn smaller where the
+            // column is narrower than it)
+            const cs = Math.min(1, colW / Math.max(1, badgeEl.offsetWidth));
+            badgeEl.style.transform = cs < 1 ? `translateX(-50%) scale(${cs.toFixed(3)})` : '';
+          } else { badgeEl.style.left = ''; badgeEl.style.top = ''; badgeEl.style.transform = ''; flankTop = null; }
         }
         call.style.transform = `translate(${cxx.toFixed(1)}px,${cy.toFixed(1)}px) translate(-50%,-50%) scale(${grow.toFixed(3)})`;
         if (!scrimEl.hidden) {
