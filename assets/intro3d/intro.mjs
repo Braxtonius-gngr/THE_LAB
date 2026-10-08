@@ -48,6 +48,8 @@ export const TIERS = ['standard', 'hardways', 'vault', 'edge'];
 export const TIER_NAMES = { standard: 'Standard Drop', hardways: 'The Hardways', vault: 'The Vault Pull', edge: 'The Defiant Edge' };
 // (as the draw below gives them: 90%, 8%, 1.9%, 0.1%)
 export const TIER_ODDS = { standard: '90%', hardways: '8%', vault: '1.9%', edge: '0.1%' };
+// Tiers a game folds into another (the draw stays one for every game).
+const TIER_FOLDS = { blackjack: { edge: 'vault' } };
 // The rarity draw, exactly as specified: [0, 0.9) standard, [0.9, 0.98)
 // hardways, [0.98, 0.999) vault, [0.999, 1) edge.
 export function pickTier(r) {
@@ -979,11 +981,14 @@ async function buildIntro(opts, undo, teardown) {
   const checkAbort = () => { if (o.signal && o.signal.aborted) throw new Error('intro cancelled'); };
   checkAbort();
   const host = o.host;
-  const tier = TIERS.includes(o.tier) ? o.tier : 'standard';
   // The game (see GAMES): the dice are built here; another game's module is
   // fetched now, alongside the set's textures, and asked for its pieces once
   // the room and its lights stand (`game`, below).
   const gameId = GAMES.includes(o.game) ? o.game : 'dice';
+  // (a game that does not play a tier folds it into another: blackjack's
+  // natural is its rare hand, so the draw's edge is the vault there)
+  const drawn = TIERS.includes(o.tier) ? o.tier : 'standard';
+  const tier = (TIER_FOLDS[gameId] || {})[drawn] || drawn;
   const gameLoad = gameId === 'dice' ? null : import(`./${gameId}.mjs`);
   let game = null;
 
@@ -1753,7 +1758,8 @@ async function buildIntro(opts, undo, teardown) {
   // alone rather than say it twice)
   const named = !!(plan.call && plan.call[0] && String(plan.call[0]).toLowerCase() === String(tierNames[tier]).toLowerCase());
   if (named) badgeEl.classList.add('r3-tier-odds');
-  badgeEl.innerHTML = tier === 'standard' ? '' : named ? `<small>Odds · ${TIER_ODDS[tier]}</small>` : `<span>${tierNames[tier]}</span><small>Odds · ${TIER_ODDS[tier]}</small>`;
+  const odds = (game && game.tierOdds && game.tierOdds[tier]) || TIER_ODDS[tier];
+  badgeEl.innerHTML = tier === 'standard' ? '' : named ? `<small>Odds · ${odds}</small>` : `<span>${tierNames[tier]}</span><small>Odds · ${odds}</small>`;
   const flashEl = document.createElement('div');
   flashEl.className = 'r3-flash';
   host.append(canvas, flashEl, scrimEl, call, badgeEl);
