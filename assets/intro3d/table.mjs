@@ -1264,38 +1264,58 @@ const CLEAR = { steps: 15, step: 10 * DEG, felt: 0.3 };
 // the wrist (J6's centre), in the hand's frame: behind the heel of the palm,
 // past the tool flange
 const WRIST = V(0, 0.6, -15.0);
-// Gold traces on ceramic. kind: false the colour (white glaze, the gold
-// inlaid in it); true the same traces alone, for the light in them; 'rm'
-// the traces as metal - roughness in green, metalness in blue - so the
-// inlay is gold, a mirror under the glaze, not paint on it.
+// Circuitry under the glaze. The traces are cut into the ceramic and filled
+// with glass, and what shows is the light a few layers down: by day a fine
+// smoked seam, a faint warm bleed either side of it; lit, a soft amber glow
+// that seems to come from inside the machine, as a pulse does. kind: false
+// the colour (white glaze, the seam in it); true the light alone (each trace
+// drawn again wider and fainter, so it is diffuse, as light is that has come
+// up through a layer); 'rm' the finish (roughness in green, metalness in
+// blue: the seam is glossy glass, not metal, in a matt-ish glaze); 'h' the
+// depth of the cut, white where it is, for the normal map.
 function circuitTex(kind) {
-  const glow = kind === true, rm = kind === 'rm';
+  const W = 512, H = 256;
   let seed = 20260928;
   const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
-  const t = canvasTex(512, 256, (c, W, H) => {
-    c.fillStyle = glow ? '#000000' : rm ? 'rgb(255,255,0)' : '#f4f1eb'; c.fillRect(0, 0, W, H);
-    c.strokeStyle = c.fillStyle = glow ? '#ffd48c' : rm ? 'rgb(255,120,255)' : '#caa25e';
-    c.lineWidth = 1.5; c.lineJoin = 'round'; c.lineCap = 'round';
-    // buses: three traces running together, then single runs breaking off
-    for (let b = 0; b < 4; b++) {
-      const y0 = 30 + b * 60 + rnd() * 20;
-      for (let k = 0; k < 3; k++) { c.beginPath(); c.moveTo(0, y0 + k * 5); c.lineTo(W, y0 + k * 5); c.stroke(); }
+  // (the layout, the same for every kind: runs of polyline, and the pads at
+  // their ends)
+  const runs = [], pads = [];
+  // buses: three traces running together, then single runs breaking off
+  for (let b = 0; b < 4; b++) {
+    const y0 = 30 + b * 60 + rnd() * 20;
+    for (let k = 0; k < 3; k++) runs.push([[0, y0 + k * 5], [W, y0 + k * 5]]);
+  }
+  for (let i = 0; i < 30; i++) {
+    let x = rnd() * W, y = rnd() * H;
+    const pts = [[x, y]]; pads.push([x, y]);
+    const legs = 2 + (rnd() * 3 | 0);
+    for (let k = 0; k < legs; k++) {
+      const L = 12 + rnd() * 40, d = rnd();
+      if (d < 0.5) x += L; else if (d < 0.75) { x += L * 0.7; y += L * 0.7; } else { x += L * 0.7; y -= L * 0.7; }
+      pts.push([x, y]);
     }
-    for (let i = 0; i < 30; i++) {
-      let x = rnd() * W, y = rnd() * H;
-      c.beginPath(); c.arc(x, y, 2.4, 0, 7); c.fill();
-      c.beginPath(); c.moveTo(x, y);
-      const legs = 2 + (rnd() * 3 | 0);
-      for (let k = 0; k < legs; k++) {
-        const L = 12 + rnd() * 40, d = rnd();
-        if (d < 0.5) x += L; else if (d < 0.75) { x += L * 0.7; y += L * 0.7; } else { x += L * 0.7; y -= L * 0.7; }
-        c.lineTo(x, y);
-      }
-      c.stroke();
-      c.beginPath(); c.arc(x, y, 2.4, 0, 7); c.stroke();
-    }
+    runs.push(pts); pads.push([x, y]);
+  }
+  const t = canvasTex(W, H, c => {
+    c.fillStyle = kind === true || kind === 'h' ? '#000000' : kind === 'rm' ? 'rgb(255,255,0)' : '#f4f1eb'; c.fillRect(0, 0, W, H);
+    c.lineJoin = 'round'; c.lineCap = 'round';
+    // (one pass over every trace and pad: a width, a colour, a pad radius)
+    const pass = (w, col, pr) => {
+      c.strokeStyle = c.fillStyle = col; c.lineWidth = w;
+      runs.forEach(r => { c.beginPath(); r.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.stroke(); });
+      pads.forEach(([x, y]) => { c.beginPath(); c.arc(x, y, pr, 0, 7); c.fill(); });
+    };
+    if (kind === true) {
+      // (the light through the layers: broad and faint, then narrower and
+      // brighter, a hot thread at the core)
+      [[15, 0.03], [10, 0.05], [6.5, 0.09]].forEach(([w, a]) => pass(w, `rgba(255,160,70,${a})`, w * 0.5));
+      pass(3.2, 'rgba(255,196,120,0.38)', 3.2);
+      pass(1.4, 'rgba(255,234,196,0.9)', 1.9);
+    } else if (kind === 'rm') pass(3.6, 'rgb(255,36,0)', 3.6);
+    else if (kind === 'h') pass(3.6, '#ffffff', 3.6);
+    else { pass(8, 'rgba(70,52,34,0.07)', 6); pass(3.0, 'rgba(24,22,22,0.86)', 3.0); }
   });
-  if (rm) t.colorSpace = THREE.NoColorSpace;
+  if (kind === 'rm' || kind === 'h') t.colorSpace = THREE.NoColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return t;
 }
@@ -1448,7 +1468,8 @@ function dealerMaterials() {
   const ceramic = new THREE.MeshPhysicalMaterial({ color: 0xeeeae2, map: circuitTex(false), roughness: 0.34, roughnessMap: rm, metalness: 1, metalnessMap: rm,
     clearcoat: 0.85, clearcoatRoughness: 0.12, sheen: 0.4, sheenRoughness: 0.45, sheenColor: new THREE.Color(0xfff0dc),
     emissive: 0xffc877, emissiveMap: circuitTex(true), emissiveIntensity: 0 });
-  { const n = embossTex(circuitTex(true).image, 1.4); n.wrapS = n.wrapT = THREE.RepeatWrapping; ceramic.normalMap = n; ceramic.normalScale = new THREE.Vector2(0.6, 0.6); }
+  // (the cut a hair below the glaze: a negative emboss)
+  { const n = embossTex(circuitTex('h').image, -1.6, 1); n.wrapS = n.wrapT = THREE.RepeatWrapping; ceramic.normalMap = n; ceramic.normalScale = new THREE.Vector2(0.28, 0.28); }
   // (the light in the traces runs in pulses along each part, from the
   // column up to the hand: pulse.value is the time)
   const pulse = { value: 0 };
@@ -1456,7 +1477,9 @@ function dealerMaterials() {
     sh.uniforms.uPulse = pulse;
     sh.fragmentShader = 'uniform float uPulse;\n' + sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
       #ifdef USE_EMISSIVEMAP
-        totalEmissiveRadiance *= 0.35 + 2.4 * pow(0.5 + 0.5 * sin(vEmissiveMapUv.y * 19.0 - uPulse * 8.0), 7.0);
+        // (a slow swell down the part, riding a faint breath of its own: the
+        // light comes up from under the glaze, it does not flash)
+        totalEmissiveRadiance *= (0.34 + 0.95 * pow(0.5 + 0.5 * sin(vEmissiveMapUv.y * 15.0 - uPulse * 4.6), 3.0)) * (0.86 + 0.14 * sin(uPulse * 1.9));
       #endif`);
   };
   ceramic.customProgramCacheKey = () => 'dealer-ceramic-pulse';
@@ -1572,9 +1595,32 @@ function buildDealerHand(m, mirror = false) {
   // tips lowest, to slide under a card's end), each segment its own pivot
   // so they curl on a grip and open and spread to let go
   const fingers = [];
-  [[2.3, 0.94, 1], [0.8, 1, 0.35], [-0.8, 0.97, -0.35], [-2.3, 0.84, -1]].forEach(([x, k, side]) => {
-    const p0 = V(x, 0.68, -0.4), p1 = p0.clone().add(V(0, 0.16, -1.7 * k)), p2 = p1.clone().add(V(0, 0.2, -2.0 * k)), p3 = V(x, 1.22, -6.4);
-    const root = new THREE.Group(); root.position.copy(p3); hand.add(root);
+  // Each digit its own, as a hand's are (index, middle, ring, little):
+  //   x, kz   where its knuckle stands - the four knuckles lie on an arc,
+  //           the middle's farthest out, the little finger's drawn back
+  //   L       its length from knuckle to tip - the middle longest, the ring
+  //           a touch shorter than the index, the little finger well short
+  //   f       its three phalanges as shares of that (proximal, middle,
+  //           distal): the little finger's middle one is the stub
+  //   r       its girth, the little finger slight
+  //   yaw     where it points at rest: the index leaning in toward the
+  //           thumb, the ring and little finger fanning off
+  //   arch    how far it already lies curled in the relaxed hand (the
+  //           cascade, index to little finger), the same arch the grip puts
+  //           in a finger - pads stay where the card is
+  //   c       where each phalanx's gold collar sits along it (0 root, 1 tip)
+  //   side    its share of a spread
+  [
+    { x: 2.4, kz: -6.5, L: 6.0, f: [0.39, 0.33, 0.28], r: 1.05, yaw: 0.03, arch: 0, side: 1, c: [0.3, 0.3] },
+    { x: 0.85, kz: -6.7, L: 6.45, f: [0.38, 0.33, 0.29], r: 1.07, yaw: 0.0, arch: 0.05, side: 0.35, c: [0.2, 0.42] },
+    { x: -0.75, kz: -6.45, L: 6.1, f: [0.385, 0.335, 0.28], r: 0.97, yaw: -0.04, arch: 0.1, side: -0.35, c: [0.38, 0.24] },
+    { x: -2.15, kz: -6.05, L: 4.95, f: [0.41, 0.3, 0.29], r: 0.8, yaw: -0.1, arch: 0.17, side: -1, c: [0.5, 0.34] }
+  ].forEach(({ x, kz, L, f, r, yaw, arch, side, c }) => {
+    const p0 = V(x, 0.68, kz + L), p1 = p0.clone().add(V(0, 0.16, -L * f[2])), p2 = p1.clone().add(V(0, 0.2, -L * f[1])), p3 = V(x, 1.22, kz);
+    // (the finger's rest direction is a turn of its own, under the pivots the
+    // grip works)
+    const base = new THREE.Group(); base.position.copy(p3); base.rotation.y = yaw; hand.add(base);
+    const root = new THREE.Group(); base.add(root);
     const mid = new THREE.Group(); mid.position.copy(p2).sub(p3); root.add(mid);
     const tip = new THREE.Group(); tip.position.copy(p1).sub(p2); mid.add(tip);
     const o = V(0, 0, 0);
@@ -1583,17 +1629,17 @@ function buildDealerHand(m, mirror = false) {
     const d2 = p2.clone().sub(p3), d1 = p1.clone().sub(p2), d0 = p0.clone().sub(p1);
     // (fuller at the root and drawn in toward the tip, as a finger is: the
     // proximal phalanx thick, the last one half its width at the pad)
-    root.add(tapered(0.53, 0.46, o, d2, m.plain), collar(d2.clone().multiplyScalar(0.3), d2, 0.52));
-    mid.add(tapered(0.46, 0.39, o, d1, m.plain), collar(d1.clone().multiplyScalar(0.3), d1, 0.45));
-    tip.add(tapered(0.39, 0.3, o, d0, m.plain, true, false));
+    root.add(tapered(0.53 * r, 0.46 * r, o, d2, m.plain), collar(d2.clone().multiplyScalar(c[0]), d2, 0.52 * r));
+    mid.add(tapered(0.46 * r, 0.39 * r, o, d1, m.plain), collar(d1.clone().multiplyScalar(c[1]), d1, 0.45 * r));
+    tip.add(tapered(0.39 * r, 0.3 * r, o, d0, m.plain, true, false));
     // a gold pad under the tip, a clear nail over it
-    const pad = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 8), m.gold); pad.position.copy(p0).sub(p1).add(V(0, -0.22, -0.1)); tip.add(pad);
-    const nail = new THREE.Mesh(new THREE.SphereGeometry(0.42, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), m.clear); nail.scale.set(0.95, 0.5, 1.5); nail.position.copy(p0).sub(p1).add(V(0, 0.12, -0.35)); tip.add(nail);
+    const pad = new THREE.Mesh(new THREE.SphereGeometry(0.24 * r, 10, 8), m.gold); pad.position.copy(p0).sub(p1).add(V(0, -0.22 * r, -0.1)); tip.add(pad);
+    const nail = new THREE.Mesh(new THREE.SphereGeometry(0.42 * r, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), m.clear); nail.scale.set(0.95, 0.5, 1.5); nail.position.copy(p0).sub(p1).add(V(0, 0.12 * r, -0.35)); tip.add(nail);
     // (a cap over the knuckle)
-    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.62, 16, 12), m.clear); root.add(cap);
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.62 * r, 16, 12), m.clear); root.add(cap);
     // (and a solid ball of ceramic under it: the knuckle, a joint with mass)
-    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.58, 18, 12), m.plain); ball.scale.set(1, 0.92, 1.1); root.add(ball);
-    fingers.push({ root, mid, tip, side });
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.58 * r, 18, 12), m.plain); ball.scale.set(1, 0.92, 1.1); root.add(ball);
+    fingers.push({ root, mid, tip, side, arch });
   });
   // the knuckles' mass: a ceramic bridge across the roots of the fingers,
   // so they spring from one body instead of standing in a row, and between
@@ -1602,7 +1648,7 @@ function buildDealerHand(m, mirror = false) {
   // knuckle, narrowing as they go)
   { const bridge = new THREE.Mesh(new THREE.CapsuleGeometry(0.72, 5.6, 6, 18), m.plain);
     bridge.rotation.z = Math.PI / 2; bridge.scale.set(1, 1, 0.92); bridge.position.set(0, 1.12, -6.25); hand.add(bridge);
-    [-1.55, 0, 1.55].forEach(x => { const w = new THREE.Mesh(new THREE.SphereGeometry(0.5, 14, 10), m.plain); w.scale.set(0.8, 0.62, 1.15); w.position.set(x, 1.02, -6.0); hand.add(w); }); }
+    [[1.62, -6.0], [0.05, -6.1], [-1.45, -5.85]].forEach(([x, z]) => { const w = new THREE.Mesh(new THREE.SphereGeometry(0.5, 14, 10), m.plain); w.scale.set(0.8, 0.62, 1.15); w.position.set(x, 1.02, z); hand.add(w); }); }
   // the knuckles: one graphite bar with gold ends, the palm a ceramic plate
   // behind it
   const knuckles = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 7.0, 16), m.graphite);
@@ -1642,15 +1688,37 @@ function buildDealerHand(m, mirror = false) {
   [-1, 1].forEach(sd => { for (let v = 0; v < 3; v++) { const s = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.16, 1.4), m.graphite); s.position.set(sd * (2.62 + v * 0.18 - 0.1), 1.35, -11.2 + v * 0.55); s.rotation.y = sd * 0.16; hand.add(s); } });
   // the thumb, off to the side, clear of the card, on a pivot of its own
   const t0 = V(3.6, 1.15, -10.4), t1 = V(4.6, 0.95, -7.4), t2 = V(4.9, 0.72, -4.7);
+  // A thumb is jointed twice: a ball at its root, seated in the hand (it
+  // swings out and in under the palm), and a hinge at its knuckle, halfway,
+  // where it bends toward the fingers. So here: a ceramic ball in a gold
+  // bezel let into the thenar pad - the bezel is the hand's, the ball the
+  // thumb's, and it turns inside it - and a graphite pin through the
+  // knuckle, gold-capped, the last phalanx hung on it.
   const thumb = new THREE.Group(); thumb.position.copy(t0); hand.add(thumb);
-  { const d1 = t1.clone().sub(t0), d2 = t2.clone().sub(t0), o = V(0, 0, 0);
-    // (two tapered phalanges on a shared joint sphere, a gold collar at
-    // the root of each, a pad under the tip and a clear nail over it: a
-    // thumb, not a rod)
-    thumb.add(tapered(0.58, 0.5, o, d1, m.plain, true, true), collar(d1.clone().multiplyScalar(0.3), d1, 0.57));
-    thumb.add(tapered(0.5, 0.36, d1, d2, m.plain, true, false), collar(d1.clone().lerp(d2, 0.3), d2.clone().sub(d1), 0.49));
-    const tp = new THREE.Mesh(new THREE.SphereGeometry(0.28, 10, 8), m.gold); tp.position.copy(d2).add(V(0, -0.24, 0.05)); thumb.add(tp);
-    const tn = new THREE.Mesh(new THREE.SphereGeometry(0.38, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), m.clear); tn.scale.set(0.95, 0.5, 1.5); tn.position.copy(d2).add(V(0, 0.14, 0.25)); thumb.add(tn); }
+  const thumbTip = new THREE.Group(); thumb.add(thumbTip);
+  { const d1 = t1.clone().sub(t0), d2 = t2.clone().sub(t1), o = V(0, 0, 0);
+    thumbTip.position.copy(d1);
+    // (fuller than a finger, and the two phalanges meeting on a shared
+    // joint sphere, a gold collar near the root of each, a pad under the tip
+    // and a clear nail over it)
+    thumb.add(tapered(0.66, 0.56, o, d1, m.plain, true, true), collar(d1.clone().multiplyScalar(0.34), d1, 0.65));
+    thumbTip.add(tapered(0.56, 0.38, o, d2, m.plain, false, false), collar(d2.clone().multiplyScalar(0.32), d2, 0.55));
+    const tp = new THREE.Mesh(new THREE.SphereGeometry(0.29, 10, 8), m.gold); tp.position.copy(d2).add(V(0, -0.25, 0.05)); thumbTip.add(tp);
+    const tn = new THREE.Mesh(new THREE.SphereGeometry(0.4, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), m.clear); tn.scale.set(0.95, 0.5, 1.5); tn.position.copy(d2).add(V(0, 0.15, 0.25)); thumbTip.add(tn);
+    // (the knuckle's pin: across the thumb, standing a little proud of it
+    // either side)
+    const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.27, 1.5, 16), m.graphite); thumbTip.add(pin);
+    [-1, 1].forEach(sd => { const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.33, 0.1, 16), m.gold); cap.position.y = sd * 0.75; thumbTip.add(cap); });
+    // (the root: a bezel round where the ball is seated, standing in the
+    // pad, and a graphite lip inside it)
+    const dir = d1.clone().normalize(), seat = t0.clone().addScaledVector(dir, 0.5);
+    const bezel = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.09, 8, 40), m.gold);
+    bezel.quaternion.setFromUnitVectors(V(0, 0, 1), dir); bezel.position.copy(seat); hand.add(bezel);
+    const lip = new THREE.Mesh(new THREE.TorusGeometry(0.84, 0.1, 8, 40), m.graphite);
+    lip.quaternion.copy(bezel.quaternion); lip.position.copy(seat).addScaledVector(dir, -0.03); hand.add(lip); }
+  // (the thumb's own pose: the knuckle's rest bend toward the fingers; the
+  // grip adds to it - see fingers() below)
+  thumbTip.rotation.y = -0.18;
   // (and the thumb's ball, the thenar pad: a swell of ceramic from the
   // palm's edge out to the thumb's root, so it grows from the hand and is
   // not a finger lying beside it)
@@ -1674,14 +1742,18 @@ function buildDealerHand(m, mirror = false) {
   // in under the palm, rolled to face the fingers, and out as they open.
   g.userData.fingers = (per, thumbCurl, thumbSpread) => {
     fingers.forEach((f, i) => {
-      const [c, sp] = per[i];
+      const [c0, sp] = per[i];
+      // (the relaxed arch of its own, added to whatever the grip asks)
+      const c = c0 + f.arch;
       const cp = Math.max(0, c), cn = Math.min(0, c);
       f.root.rotation.set(-cp * 0.4 + cn * 0.3, sp * f.side * 0.12, 0);
       f.mid.rotation.x = cp * 0.55 + cn * 0.05;
       f.tip.rotation.x = cp * 0.65;
     });
     const o = clamp01(thumbCurl / 0.9);
-    thumb.rotation.set(o * 0.05 + Math.min(0, thumbCurl) * 0.2, -0.05 - o * 0.55 + thumbSpread * 0.25, -o * 0.15);
+    thumb.rotation.set(o * 0.05 + Math.min(0, thumbCurl) * 0.2, -0.05 - o * 0.45 + thumbSpread * 0.25, -o * 0.15);
+    // (and the knuckle closes on the grip, the last phalanx swinging in)
+    thumbTip.rotation.y = -0.18 - o * 0.28 + Math.min(0, thumbCurl) * 0.1;
   };
   // the status lights: a chase while it works, dark at rest
   g.userData.leds = (on, tt) => leds.forEach((l, i) => { const k = on * (0.25 + 0.75 * Math.pow(0.5 + 0.5 * Math.sin(tt * 9 - i * 1.4), 3)); l.material.color.setRGB(1 * k + 0.08, 0.72 * k + 0.05, 0.36 * k + 0.03); });

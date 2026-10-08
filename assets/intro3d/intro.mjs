@@ -2147,7 +2147,12 @@ async function buildIntro(opts, undo, teardown) {
         const s = game ? project(game.callAt(w)) : [0, 1].map(i => { const d = dicePose(plan, i, w).p; return project([d[0], d[1] + 2.5, d[2]]); }).sort((a, b) => a[1] - b[1])[0];
         // (a long call - THE BLACK JACK - is set smaller to fit a phone held
         // upright, never wider than most of the screen)
-        const fitW = Math.min(1, ((plated ? 0.78 : 0.86) * host.clientWidth) / Math.max(1, call.offsetWidth));
+        // (a plate on a wide, short screen - a phone on its side - hangs in
+        // the left margin of the felt instead, narrower, its caption above it:
+        // across the top it would cover the dealer's hands and cards, the
+        // action itself, and the shot is nothing but that action)
+        const flank = plated && host.clientWidth > host.clientHeight * 1.4;
+        const fitW = Math.min(1, ((flank ? 0.26 : plated ? 0.78 : 0.86) * host.clientWidth) / Math.max(1, call.offsetWidth));
         const grow = fitW * (1.12 - 0.12 * smoother((w - cw) / 0.8));
         // (kept whole on screen, whatever the dice's spread)
         const half = (call.offsetWidth * grow) / 2 + 12, W0 = host.clientWidth;
@@ -2162,6 +2167,13 @@ async function buildIntro(opts, undo, teardown) {
           // (hung at the top, centred: under the tier's caption when there is one)
           cxx = W0 / 2;
           cy = (tier === 'standard' ? 16 : badgeEl.offsetTop + badgeEl.offsetHeight + 8) + (call.offsetHeight * grow + 26) / 2;
+          if (flank) {
+            // (in the left margin, low enough to clear the dealer's side; the
+            // caption stands over it, in the same column)
+            cxx = W0 * 0.2; cy = host.clientHeight * 0.66;
+            badgeEl.style.left = `${cxx.toFixed(1)}px`;
+            badgeEl.style.top = `${(cy - (call.offsetHeight * grow + 26) / 2 - badgeEl.offsetHeight - 8).toFixed(1)}px`;
+          } else { badgeEl.style.left = ''; badgeEl.style.top = ''; }
         }
         call.style.transform = `translate(${cxx.toFixed(1)}px,${cy.toFixed(1)}px) translate(-50%,-50%) scale(${grow.toFixed(3)})`;
         if (!scrimEl.hidden) {
