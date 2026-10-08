@@ -1636,6 +1636,10 @@ function buildDealerHand(m, mirror = false) {
   const thumb = new THREE.Group(); thumb.position.copy(t0); hand.add(thumb);
   thumb.add(bone(0.5, V(0, 0, 0), t1.clone().sub(t0), m.plain), bone(0.44, t1.clone().sub(t0), t2.clone().sub(t0), m.plain), hinge(t1.clone().sub(t0), 0.37));
   { const c = new THREE.Mesh(new THREE.SphereGeometry(0.62, 16, 12), m.clear); thumb.add(c); }
+  // (and the thumb's ball, the thenar pad: a swell of ceramic from the
+  // palm's edge out to the thumb's root, so it grows from the hand and is
+  // not a finger lying beside it)
+  { const pad = new THREE.Mesh(new THREE.SphereGeometry(1.0, 20, 14), m.plain); pad.scale.set(1.05, 0.78, 2.2); pad.position.set(3.45, 1.1, -9.0); pad.rotation.y = -0.18; hand.add(pad); }
   // the tool plate the arm's flange bolts to, at the heel of the palm: a
   // graphite disc on a ceramic neck, six bolt heads round a gold ring
   { const plate = new THREE.Mesh(new THREE.CylinderGeometry(1.32, 1.32, 0.55, 36), m.graphite);
