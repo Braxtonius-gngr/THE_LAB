@@ -1551,12 +1551,17 @@ function buildDealerHand(m, mirror = false) {
   const hand = new THREE.Group(); hand.position.y = -0.7; body.add(hand);
   const bone = (r, a, b, mat) => laid(new THREE.Mesh(new THREE.CapsuleGeometry(r, Math.max(0.01, a.distanceTo(b) - 2 * r), 4, 14), mat), a, b);
   // (a tapered segment, rounded at both ends: a finger's phalanx is wider at
-  // its root than at its tip, and a capsule is the same width all the way)
-  const tapered = (rA, rB, a, b, mat) => {
-    const L = Math.max(rA + rB + 0.01, a.distanceTo(b)), pts = [], N = 8;
+  // its root than at its tip, and a capsule is the same width all the way.
+  // Its rounded ends are centred ON the joints (`s`/`e`: the start/end run
+  // on past the joint by their radius), so two segments meeting at a joint
+  // share one sphere and turn on it without a waist or a gap: a finger,
+  // not a chain of pills. The last segment's end stays flush with its tip.)
+  const tapered = (rA, rB, a, b, mat, s = true, e = true) => {
+    const u = b.clone().sub(a).normalize(), A = s ? a.clone().addScaledVector(u, -rA) : a.clone(), B = e ? b.clone().addScaledVector(u, rB) : b.clone();
+    const L = Math.max(rA + rB + 0.01, A.distanceTo(B)), pts = [], N = 10;
     for (let i = 0; i <= N; i++) { const f = i / N * Math.PI / 2; pts.push(new THREE.Vector2(rA * Math.sin(f), -L / 2 + rA - rA * Math.cos(f))); }
     for (let i = 0; i <= N; i++) { const f = i / N * Math.PI / 2; pts.push(new THREE.Vector2(rB * Math.cos(f), L / 2 - rB + rB * Math.sin(f))); }
-    return laid(new THREE.Mesh(new THREE.LatheGeometry(pts, 20), mat), a, b);
+    return laid(new THREE.Mesh(new THREE.LatheGeometry(pts, 24), mat), A, B);
   };
   // (a gold collar round a finger, set into it where it stands at full width)
   const collar = (at, dir, r) => { const c = new THREE.Mesh(new THREE.TorusGeometry(r * 0.985, 0.035, 8, 24), m.gold); c.quaternion.setFromUnitVectors(V(0, 0, 1), dir.clone().normalize()); c.position.copy(at); return c; };
@@ -1578,9 +1583,9 @@ function buildDealerHand(m, mirror = false) {
     const d2 = p2.clone().sub(p3), d1 = p1.clone().sub(p2), d0 = p0.clone().sub(p1);
     // (fuller at the root and drawn in toward the tip, as a finger is: the
     // proximal phalanx thick, the last one half its width at the pad)
-    root.add(tapered(0.53, 0.45, o, d2, m.plain), collar(d2.clone().multiplyScalar(0.28), d2, 0.52));
-    mid.add(tapered(0.46, 0.38, o, d1, m.plain), collar(d1.clone().multiplyScalar(0.3), d1, 0.45));
-    tip.add(tapered(0.38, 0.29, o, d0, m.plain));
+    root.add(tapered(0.53, 0.46, o, d2, m.plain), collar(d2.clone().multiplyScalar(0.3), d2, 0.52));
+    mid.add(tapered(0.46, 0.39, o, d1, m.plain), collar(d1.clone().multiplyScalar(0.3), d1, 0.45));
+    tip.add(tapered(0.39, 0.3, o, d0, m.plain, true, false));
     // a gold pad under the tip, a clear nail over it
     const pad = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 8), m.gold); pad.position.copy(p0).sub(p1).add(V(0, -0.22, -0.1)); tip.add(pad);
     const nail = new THREE.Mesh(new THREE.SphereGeometry(0.42, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), m.clear); nail.scale.set(0.95, 0.5, 1.5); nail.position.copy(p0).sub(p1).add(V(0, 0.12, -0.35)); tip.add(nail);
@@ -1617,25 +1622,35 @@ function buildDealerHand(m, mirror = false) {
   // (its uvs are in cm: the traces laid across it at the scale they run
   // along the arm, not squeezed into stripes)
   scaleUV(palmGeo, 1 / 7, 1 / 7);
-  const palm = new THREE.Mesh(palmGeo, m.ceramic); palm.rotation.x = Math.PI / 2; palm.position.set(0, 1.3, -9.7); hand.add(palm);
-  // a clear cover over the back of the hand, the gold traces under it,
-  // held by four screws
-  const cover = new THREE.Mesh(new THREE.ShapeGeometry(palmShape, 10), m.clear);
-  cover.rotation.x = -Math.PI / 2; cover.scale.set(0.82, 0.8, 1); cover.position.set(0, 2.02, -9.7); hand.add(cover);
+  const palm = new THREE.Mesh(palmGeo, m.plain); palm.rotation.x = Math.PI / 2; palm.position.set(0, 1.3, -9.7); hand.add(palm);
+  // the back of the hand: clean glazed ceramic, one panel let into it, its
+  // edge a fine gold keyline (a gold shape under a slightly smaller ceramic
+  // one), held by four screws - no traces across it, which at arm's length
+  // read as scratches
+  const keyline = new THREE.Mesh(new THREE.ShapeGeometry(palmShape, 10), m.gold);
+  keyline.rotation.x = -Math.PI / 2; keyline.scale.set(0.84, 0.8, 1); keyline.position.set(0, 2.03, -9.7); hand.add(keyline);
+  const panel = new THREE.Mesh(new THREE.ShapeGeometry(palmShape, 10), m.plain);
+  panel.rotation.x = -Math.PI / 2; panel.scale.set(0.8, 0.76, 1); panel.position.set(0, 2.045, -9.7); hand.add(panel);
   [[-2.3, -7.6], [2.3, -7.6], [-1.7, -11.9], [1.7, -11.9]].forEach(([x, z]) => {
-    const sc = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.08, 12), m.gold); sc.position.set(x, 2.06, z); hand.add(sc);
-    const slot = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.03, 0.05), m.graphite); slot.position.set(x, 2.1, z); slot.rotation.y = x * z; hand.add(slot);
+    const sc = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.08, 12), m.gold); sc.position.set(x, 2.09, z); hand.add(sc);
+    const slot = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.03, 0.05), m.graphite); slot.position.set(x, 2.13, z); slot.rotation.y = x * z; hand.add(slot);
   });
   // a gold inlay down the back of the hand, and the status lights in it
-  const inlay = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.04, 4.2), m.gold); inlay.position.set(0, 1.98, -9.7); hand.add(inlay);
-  const leds = [-11.6, -11.0, -10.4].map(z => { const l = new THREE.Mesh(new THREE.CircleGeometry(0.17, 14), m.led.clone()); l.rotation.x = -Math.PI / 2; l.position.set(0.42, 2.04, z); hand.add(l); return l; });
+  const inlay = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.04, 4.2), m.gold); inlay.position.set(0, 2.07, -9.7); hand.add(inlay);
+  const leds = [-11.6, -11.0, -10.4].map(z => { const l = new THREE.Mesh(new THREE.CircleGeometry(0.17, 14), m.led.clone()); l.rotation.x = -Math.PI / 2; l.position.set(0.42, 2.075, z); hand.add(l); return l; });
   // vents down each side of the palm
   [-1, 1].forEach(sd => { for (let v = 0; v < 3; v++) { const s = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.16, 1.4), m.graphite); s.position.set(sd * (2.62 + v * 0.18 - 0.1), 1.35, -11.2 + v * 0.55); s.rotation.y = sd * 0.16; hand.add(s); } });
   // the thumb, off to the side, clear of the card, on a pivot of its own
   const t0 = V(3.6, 1.15, -10.4), t1 = V(4.6, 0.95, -7.4), t2 = V(4.9, 0.72, -4.7);
   const thumb = new THREE.Group(); thumb.position.copy(t0); hand.add(thumb);
-  thumb.add(bone(0.5, V(0, 0, 0), t1.clone().sub(t0), m.plain), bone(0.44, t1.clone().sub(t0), t2.clone().sub(t0), m.plain), hinge(t1.clone().sub(t0), 0.37));
-  { const c = new THREE.Mesh(new THREE.SphereGeometry(0.62, 16, 12), m.clear); thumb.add(c); }
+  { const d1 = t1.clone().sub(t0), d2 = t2.clone().sub(t0), o = V(0, 0, 0);
+    // (two tapered phalanges on a shared joint sphere, a gold collar at
+    // the root of each, a pad under the tip and a clear nail over it: a
+    // thumb, not a rod)
+    thumb.add(tapered(0.58, 0.5, o, d1, m.plain, true, true), collar(d1.clone().multiplyScalar(0.3), d1, 0.57));
+    thumb.add(tapered(0.5, 0.36, d1, d2, m.plain, true, false), collar(d1.clone().lerp(d2, 0.3), d2.clone().sub(d1), 0.49));
+    const tp = new THREE.Mesh(new THREE.SphereGeometry(0.28, 10, 8), m.gold); tp.position.copy(d2).add(V(0, -0.24, 0.05)); thumb.add(tp);
+    const tn = new THREE.Mesh(new THREE.SphereGeometry(0.38, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), m.clear); tn.scale.set(0.95, 0.5, 1.5); tn.position.copy(d2).add(V(0, 0.14, 0.25)); thumb.add(tn); }
   // (and the thumb's ball, the thenar pad: a swell of ceramic from the
   // palm's edge out to the thumb's root, so it grows from the hand and is
   // not a finger lying beside it)
