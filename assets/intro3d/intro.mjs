@@ -1741,6 +1741,9 @@ async function buildIntro(opts, undo, teardown) {
   // (or a plate: a framed dark tile hung at the top of the screen, the call
   // lettered on it - clear of whatever the shot has in view)
   const plated = !!(game && game.callPlate && plan.call);
+  // (where the caption's own CSS puts its top, measured once when a plate
+  // hangs in the side margin)
+  let flankTop = null;
   if (plated) scrimEl.classList.add('r3-call-plate');
   const badgeEl = document.createElement('div');
   badgeEl.className = `r3-tier r3-tier-${goldCall ? 'gold' : tier}`;
@@ -2147,7 +2150,16 @@ async function buildIntro(opts, undo, teardown) {
         const s = game ? project(game.callAt(w)) : [0, 1].map(i => { const d = dicePose(plan, i, w).p; return project([d[0], d[1] + 2.5, d[2]]); }).sort((a, b) => a[1] - b[1])[0];
         // (a long call - THE BLACK JACK - is set smaller to fit a phone held
         // upright, never wider than most of the screen)
-        const fitW = Math.min(1, ((plated ? 0.78 : 0.86) * host.clientWidth) / Math.max(1, call.offsetWidth));
+        // (a plate on a wide, short screen - a phone on its side - hangs in
+        // the left margin of the felt instead, narrower, its caption above it:
+        // across the top it would cover the dealer's hands and cards, the
+        // action itself, and the shot is nothing but that action)
+        const flank = plated && host.clientWidth > host.clientHeight * 1.4;
+        // (one column width, 40% of the screen, for the plate and its caption
+        // both: the call is sized so its plate - at its largest, 12% grown
+        // and padded - fits it)
+        const colW = host.clientWidth * 0.4;
+        const fitW = Math.min(1, (flank ? Math.min(0.26 * host.clientWidth, (colW - 48) / 1.12) : (plated ? 0.78 : 0.86) * host.clientWidth) / Math.max(1, call.offsetWidth));
         const grow = fitW * (1.12 - 0.12 * smoother((w - cw) / 0.8));
         // (kept whole on screen, whatever the dice's spread)
         const half = (call.offsetWidth * grow) / 2 + 12, W0 = host.clientWidth;
@@ -2162,6 +2174,23 @@ async function buildIntro(opts, undo, teardown) {
           // (hung at the top, centred: under the tier's caption when there is one)
           cxx = W0 / 2;
           cy = (tier === 'standard' ? 16 : badgeEl.offsetTop + badgeEl.offsetHeight + 8) + (call.offsetHeight * grow + 26) / 2;
+          if (flank) {
+            // (in the left margin, low enough to clear the dealer's side; the
+            // caption stands over it, in the same column)
+            // (the stack - caption, then plate - kept whole inside the screen
+            // however short it is, under the safe-area inset the caption's
+            // own rule keeps: measured once, with the inline top let go)
+            if (flankTop === null) { badgeEl.style.top = ''; flankTop = badgeEl.offsetTop; }
+            const plateH = call.offsetHeight * grow + 26, capH = tier === 'standard' ? 0 : badgeEl.offsetHeight + 8;
+            const stackTop = Math.max(flankTop, Math.min(host.clientHeight * 0.66 - plateH / 2 - capH, host.clientHeight - 10 - capH - plateH));
+            cxx = W0 * 0.2; cy = stackTop + capH + plateH / 2;
+            badgeEl.style.left = `${cxx.toFixed(1)}px`;
+            badgeEl.style.top = `${stackTop.toFixed(1)}px`;
+            // (the caption, a line that does not wrap, drawn smaller where the
+            // column is narrower than it)
+            const cs = Math.min(1, colW / Math.max(1, badgeEl.offsetWidth));
+            badgeEl.style.transform = cs < 1 ? `translateX(-50%) scale(${cs.toFixed(3)})` : '';
+          } else { badgeEl.style.left = ''; badgeEl.style.top = ''; badgeEl.style.transform = ''; flankTop = null; }
         }
         call.style.transform = `translate(${cxx.toFixed(1)}px,${cy.toFixed(1)}px) translate(-50%,-50%) scale(${grow.toFixed(3)})`;
         if (!scrimEl.hidden) {
