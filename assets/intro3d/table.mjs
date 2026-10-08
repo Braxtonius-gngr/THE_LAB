@@ -1611,10 +1611,10 @@ function buildDealerHand(m, mirror = false) {
   //   c       where each phalanx's gold collar sits along it (0 root, 1 tip)
   //   side    its share of a spread
   [
-    { x: 2.4, kz: -6.5, L: 6.0, f: [0.39, 0.33, 0.28], r: 1.05, yaw: 0.03, arch: 0, side: 1, c: [0.3, 0.3] },
-    { x: 0.85, kz: -6.7, L: 6.45, f: [0.38, 0.33, 0.29], r: 1.07, yaw: 0.0, arch: 0.05, side: 0.35, c: [0.2, 0.42] },
-    { x: -0.75, kz: -6.45, L: 6.1, f: [0.385, 0.335, 0.28], r: 0.97, yaw: -0.04, arch: 0.1, side: -0.35, c: [0.38, 0.24] },
-    { x: -2.15, kz: -6.05, L: 4.95, f: [0.41, 0.3, 0.29], r: 0.8, yaw: -0.1, arch: 0.17, side: -1, c: [0.5, 0.34] }
+    { x: 2.45, kz: -6.5, L: 6.0, f: [0.39, 0.33, 0.28], r: 1.36, yaw: 0.03, arch: 0, side: 1, c: [0.3, 0.3] },
+    { x: 0.85, kz: -6.7, L: 6.45, f: [0.38, 0.33, 0.29], r: 1.4, yaw: 0.0, arch: 0.05, side: 0.35, c: [0.2, 0.42] },
+    { x: -0.75, kz: -6.45, L: 6.1, f: [0.385, 0.335, 0.28], r: 1.28, yaw: -0.04, arch: 0.1, side: -0.35, c: [0.38, 0.24] },
+    { x: -2.25, kz: -6.05, L: 4.95, f: [0.41, 0.3, 0.29], r: 1.06, yaw: -0.1, arch: 0.17, side: -1, c: [0.5, 0.34] }
   ].forEach(({ x, kz, L, f, r, yaw, arch, side, c }) => {
     const p0 = V(x, 0.68, kz + L), p1 = p0.clone().add(V(0, 0.16, -L * f[2])), p2 = p1.clone().add(V(0, 0.2, -L * f[1])), p3 = V(x, 1.22, kz);
     // (the finger's rest direction is a turn of its own, under the pivots the
@@ -1632,9 +1632,10 @@ function buildDealerHand(m, mirror = false) {
     root.add(tapered(0.53 * r, 0.46 * r, o, d2, m.plain), collar(d2.clone().multiplyScalar(c[0]), d2, 0.52 * r));
     mid.add(tapered(0.46 * r, 0.39 * r, o, d1, m.plain), collar(d1.clone().multiplyScalar(c[1]), d1, 0.45 * r));
     tip.add(tapered(0.39 * r, 0.3 * r, o, d0, m.plain, true, false));
-    // a gold pad under the tip, a clear nail over it
-    const pad = new THREE.Mesh(new THREE.SphereGeometry(0.24 * r, 10, 8), m.gold); pad.position.copy(p0).sub(p1).add(V(0, -0.22 * r, -0.1)); tip.add(pad);
-    const nail = new THREE.Mesh(new THREE.SphereGeometry(0.42 * r, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), m.clear); nail.scale.set(0.95, 0.5, 1.5); nail.position.copy(p0).sub(p1).add(V(0, 0.12 * r, -0.35)); tip.add(nail);
+    // a gold tip where the fingerprint is - the end of the finger itself, a
+    // hair proud of the glaze - and a clear nail over it
+    tip.add(tapered(0.335 * r, 0.31 * r, d0.clone().addScaledVector(d0.clone().normalize(), -0.62 * r), d0, m.gold, false, false));
+    const nail = new THREE.Mesh(new THREE.SphereGeometry(0.42 * r, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), m.clear); nail.scale.set(0.95, 0.5, 1.15); nail.position.copy(p0).sub(p1).add(V(0, 0.14 * r, -0.5 * r)); tip.add(nail);
     // (a cap over the knuckle)
     const cap = new THREE.Mesh(new THREE.SphereGeometry(0.62 * r, 16, 12), m.clear); root.add(cap);
     // (and a solid ball of ceramic under it: the knuckle, a joint with mass)
@@ -1701,10 +1702,10 @@ function buildDealerHand(m, mirror = false) {
     // (fuller than a finger, and the two phalanges meeting on a shared
     // joint sphere, a gold collar near the root of each, a pad under the tip
     // and a clear nail over it)
-    thumb.add(tapered(0.66, 0.56, o, d1, m.plain, true, true), collar(d1.clone().multiplyScalar(0.34), d1, 0.65));
-    thumbTip.add(tapered(0.56, 0.38, o, d2, m.plain, false, false), collar(d2.clone().multiplyScalar(0.32), d2, 0.55));
-    const tp = new THREE.Mesh(new THREE.SphereGeometry(0.29, 10, 8), m.gold); tp.position.copy(d2).add(V(0, -0.25, 0.05)); thumbTip.add(tp);
-    const tn = new THREE.Mesh(new THREE.SphereGeometry(0.4, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), m.clear); tn.scale.set(0.95, 0.5, 1.5); tn.position.copy(d2).add(V(0, 0.15, 0.25)); thumbTip.add(tn);
+    thumb.add(tapered(0.82, 0.7, o, d1, m.plain, true, true), collar(d1.clone().multiplyScalar(0.34), d1, 0.81));
+    thumbTip.add(tapered(0.7, 0.4, o, d2, m.plain, false, false), collar(d2.clone().multiplyScalar(0.32), d2, 0.69));
+    thumbTip.add(tapered(0.46, 0.42, d2.clone().addScaledVector(d2.clone().normalize(), -0.7), d2, m.gold, false, false));
+    const tn = new THREE.Mesh(new THREE.SphereGeometry(0.4, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), m.clear); tn.scale.set(0.95, 0.5, 1.2); tn.position.copy(d2).add(V(0, 0.2, -0.3)); thumbTip.add(tn);
     // (the knuckle's pin: across the thumb, standing a little proud of it
     // either side)
     const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.27, 1.5, 16), m.graphite); thumbTip.add(pin);
@@ -2872,6 +2873,31 @@ export async function prepareTable(opts) {
     const up = V(0, 1, 0);
     const flyEye = V(0, 0, 0), qTable = new THREE.Quaternion(), qSeat = new THREE.Quaternion();
     let lookAt = null;
+    // The operator: the seat's camera does not sit still while the machine
+    // deals - it leans in toward the hands (dolly, drop and a narrower lens,
+    // cm and degrees at full), its aim drawn that share of the way to where
+    // they are, eased in as the deal begins and out as the last card turns,
+    // so the seat is exactly the seat once it is dealt. Where the hands are
+    // is read from the plan, a little ahead and behind (a camera that leads
+    // a hand's move is a steady one).
+    const OPERATOR = { dolly: 8, drop: 6, aim: 0.5, zoom: 6, in: 0.9, out: 1.1, lead: 0.3, lag: 0.45 };
+    const _opF = V(0, 0, 0), _opD = V(0, 0, 0), _opA = V(0, 0, 0), _opP = V(0, 0, 0);
+    const operatorAt = tt => {
+      if (fo.reduced || !cardObjs.length) return 0;
+      return smoother((tt - FLY - 0.15) / OPERATOR.in) * (1 - smoother((tt - (settleAt - OPERATOR.out)) / OPERATOR.out));
+    };
+    const operatorFocus = (tt, out) => {
+      out.set(0, 0, 0);
+      const N = 6;
+      for (let i = 0; i < N; i++) {
+        const s = tt - OPERATOR.lag + (OPERATOR.lag + OPERATOR.lead) * i / (N - 1);
+        out.addScaledVector(planned(0, s, ARM.up, 1).hp.p, 0.3 / N).addScaledVector(planned(1, s, ARM.up, 1).hp.p, 0.7 / N);
+      }
+      // (the camera's pan is half the hands' own, so the cards at the
+      // side of the row never leave the frame)
+      out.x *= 0.5; out.y = 3;
+      return seat.localToWorld(out);
+    };
     const placeCamera = tt => {
       if (lookAt) {
         camera.up.copy(up);
@@ -2896,9 +2922,21 @@ export async function prepareTable(opts) {
         camera.fov = lerp(fov0, sv.fov, smoother(u));
       } else {
         camera.up.copy(up);
-        camera.position.copy(E1);
-        camera.lookAt(A1);
-        camera.fov = sv.fov;
+        const k = operatorAt(tt);
+        if (k > 1e-3) {
+          // (the operator: while it deals, the camera leans in toward the
+          // hands at work and follows them, and settles back to the seat
+          // as the last card turns - see operatorAt)
+          operatorFocus(tt, _opF);
+          camera.position.copy(E1).addScaledVector(_opD.copy(_opF).sub(E1).normalize(), OPERATOR.dolly * k);
+          camera.position.y -= OPERATOR.drop * k;
+          camera.lookAt(_opA.copy(A1).lerp(_opF, OPERATOR.aim * k));
+          camera.fov = sv.fov - OPERATOR.zoom * k;
+        } else {
+          camera.position.copy(E1);
+          camera.lookAt(A1);
+          camera.fov = sv.fov;
+        }
       }
       camera.updateProjectionMatrix();
       camera.updateMatrixWorld();
@@ -3763,7 +3801,7 @@ export async function prepareTable(opts) {
         const per = [0, 1, 2, 3].map(i => {
           const fi = i ? fingersNow(k, tt - i * 0.028) : f;
           const live = shown ? 0.03 * Math.sin(tt * 2.6 + i * 1.3 + k) + 0.015 * Math.sin(tt * 7.1 + i * 2.1 + k * 2) : 0;
-          const c = fi[0] * (1 + 0.04 * i) + live;
+          const c = fi[0] * (1 + 0.08 * i) + live;
           return shp ? [lerp(c, shp.per[i][0], shp.w), lerp(fi[1], shp.per[i][1], shp.w)] : [c, fi[1]];
         });
         let ft = fingersNow(k, tt + 0.02);
