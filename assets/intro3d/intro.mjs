@@ -2476,7 +2476,7 @@ async function buildIntro(opts, undo, teardown) {
   // the room) is compiled and uploaded now rather than the first time it
   // shows. Nothing after this changes what a shader is: no light comes or
   // goes, and no coat reaches none.
-  await warm({ spread: true });
+  await warm();
   perfMark('compiled');
   checkAbort();
   {
