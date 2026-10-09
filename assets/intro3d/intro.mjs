@@ -36,6 +36,10 @@ const HERE = new URL('./', import.meta.url);
 const asset = f => new URL(f, HERE).href;
 // (?perf: when this module loaded, for the readout's time to first frame)
 const PERF_T0 = performance.now();
+const PERF = /[?&]perf(?=&|=|$)/.test(location.search);
+const perfMarks = [];
+// (?perf: the build's steps, each with its time since load)
+const perfMark = name => { if (PERF) perfMarks.push(`${name} ${((performance.now() - PERF_T0) / 1000).toFixed(1)}s`); };
 
 // The games: the shot is one of these each launch, drawn alike (pickGame)
 // unless ?game= names one. The dice are this module's own; every other game
@@ -979,6 +983,7 @@ export async function createIntro(opts) {
 }
 
 async function buildIntro(opts, undo, teardown) {
+  perfMark('start');
   const o = Object.assign({ host: null, controlsHost: null, tier: 'standard', seed: 1, game: 'dice', onReveal: null, onEnd: null, sound: true, onSoundChange: null, quality: 'auto', signal: null, motionOff: null, felt: 'black', trim: 'gold' }, opts);
   const checkAbort = () => { if (o.signal && o.signal.aborted) throw new Error('intro cancelled'); };
   checkAbort();
@@ -1051,9 +1056,11 @@ async function buildIntro(opts, undo, teardown) {
   // (the filigree band repeats along its length only)
   [goldC, goldA, goldN].forEach(t => { t.wrapT = THREE.ClampToEdgeWrapping; t.anisotropy = 8; });
   feltN.anisotropy = 8;
+  perfMark('textures');
   checkAbort();
   // (another game's plan comes with its pieces, once the room stands)
   let plan = gameLoad ? null : await makePlanAsync(tier, o.seed, o.signal);
+  perfMark('plan');
   checkAbort();
   let W = plan ? plan.warp : null;
 
@@ -1232,12 +1239,14 @@ async function buildIntro(opts, undo, teardown) {
   const aspect = (host.clientWidth || window.innerWidth) / (host.clientHeight || window.innerHeight);
   if (gameLoad) {
     const mod = await gameLoad;
+    perfMark('game module');
     checkAbort();
     game = await mod.makeGame({
       THREE, scene, set: scene.userData.set, lights, tier, seed: o.seed, trim: o.trim, aspect, host, signal: o.signal,
       room: { floor: ROOM.floor, lamp: ROOM.lamp, backdropZ: ROOM.backdropZ, FLOAT, CEIL, PENDANT, ENV_LEVEL, RIM }, asset,
       helpers: { makeWarp, spline, smoother, easeOut, lerp, mix3, clamp01, canvasTexture, radial, finished, embossTex, scaleUV, boxUV }
     });
+    perfMark('game built');
     checkAbort();
     plan = game.plan;
     W = plan.warp;
@@ -2227,14 +2236,13 @@ async function buildIntro(opts, undo, teardown) {
   let raf = 0, t = 0, last = 0, playing = false, sfxIndex = 0, silenced = false;
   // ?perf: a small readout of the frame times and the quality steps, for
   // recording the shot on a phone (off unless the URL asks for it).
-  const PERF = /[?&]perf(?=&|=|$)/.test(location.search);
   const perfWin = [], perfLog = [];
   let perfEl = null, perfFirst = null;
   const perfTick = (raw, at) => {
     if (perfFirst === null) perfFirst = (performance.now() - PERF_T0) / 1000;
     if (!perfEl) {
       perfEl = document.createElement('pre');
-      perfEl.style.cssText = 'position:fixed;left:4px;top:4px;z-index:99999;margin:0;padding:4px 6px;font:11px/1.3 monospace;color:#9f9;background:rgba(0,0,0,.65);pointer-events:none;white-space:pre';
+      perfEl.style.cssText = 'position:fixed;left:4px;top:4px;z-index:99999;margin:0;padding:4px 6px;font:11px/1.3 monospace;color:#9f9;background:rgba(0,0,0,.65);pointer-events:none;white-space:pre-wrap;max-width:94vw';
       document.body.appendChild(perfEl);
     }
     perfWin.push(raw); if (perfWin.length > 60) perfWin.shift();
@@ -2244,6 +2252,7 @@ async function buildIntro(opts, undo, teardown) {
     const over = perfWin.filter(x => x > 0.1).length;
     perfEl.textContent = `${o.game} ${o.tier} q${quality} t${at.toFixed(1)}s\n` +
       `first frame ${perfFirst.toFixed(1)}s after load\n` +
+      `build: ${perfMarks.join(' | ') || '-'}\n` +
       `median ${med.toFixed(1)}ms  ${(1 / avg).toFixed(0)}fps\n` +
       `worst ${(s[s.length - 1] * 1000).toFixed(0)}ms  >100ms: ${over}/${perfWin.length}\n` +
       `steps: ${perfLog.length ? perfLog.join(' ') : 'none'}`;
@@ -2467,6 +2476,7 @@ async function buildIntro(opts, undo, teardown) {
   // shows. Nothing after this changes what a shader is: no light comes or
   // goes, and no coat reaches none.
   await warm();
+  perfMark('compiled');
   checkAbort();
   {
     const at = game ? game.warmAt.concat([plan.totalReal + 1, floatEnd - 0.5]) : [Rrel + 0.04, Rwall + 0.06, W.slowHold[1], Rrest + 0.3, plan.totalReal + 1, floatEnd - 0.5];
@@ -2477,6 +2487,7 @@ async function buildIntro(opts, undo, teardown) {
     for (const tt of at) { render(Math.min(floatEnd, Math.max(0, tt))); await breath(); checkAbort(); }
     canvas.style.visibility = '';
   }
+  perfMark('warm frames');
   render(0);
   return {
     plan: { game: gameId, tier, seed: o.seed, revealReal: plan.revealReal, totalReal: plan.totalReal, floatEnd, restReal: plan.restReal, wallReal: plan.wallReal, values: plan.values, call: plan.call, throwOk: plan.throwOk, why: plan.why, moments: game ? game.moments : null },
