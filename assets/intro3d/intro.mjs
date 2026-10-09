@@ -1971,6 +1971,18 @@ async function buildIntro(opts, undo, teardown) {
       } catch (e) { /* compiled on first draw */ }
     }
     renderer.setRenderTarget(was);
+    // The quality steps change the programs a scene needs: q1 turns the
+    // shadows off (a new program per material), and a step that compiles
+    // on the main thread mid-shot is the hitch (about six seconds at q2 and
+    // q0 on the phone). So the shadows-off variant is built here too, while
+    // the loading screen is still up.
+    if (renderer.shadowMap.enabled) {
+      renderer.shadowMap.enabled = false;
+      renderer.setRenderTarget(probe);
+      try { jobs.push(renderer.compileAsync(scene, camera).catch(() => {})); } catch (e) { /* on first draw */ }
+      renderer.setRenderTarget(was);
+      renderer.shadowMap.enabled = true;
+    }
     const texs = new Set();
     scene.traverse(m => { if (m.material) [].concat(m.material).forEach(mat => Object.values(mat).forEach(v => { if (v && v.isTexture && !v.isRenderTargetTexture) texs.add(v); })); });
     hidden.forEach(x => { x.visible = false; });
