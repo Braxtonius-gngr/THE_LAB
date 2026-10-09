@@ -2223,6 +2223,27 @@ async function buildIntro(opts, undo, teardown) {
 
   // ---- Playback.
   let raf = 0, t = 0, last = 0, playing = false, sfxIndex = 0, silenced = false;
+  // ?perf: a small readout of the frame times and the quality steps, for
+  // recording the shot on a phone (off unless the URL asks for it).
+  const PERF = /[?&]perf(?=&|=|$)/.test(location.search);
+  const perfWin = [], perfLog = [];
+  let perfEl = null;
+  const perfTick = (raw, at) => {
+    if (!perfEl) {
+      perfEl = document.createElement('pre');
+      perfEl.style.cssText = 'position:fixed;left:4px;top:4px;z-index:99999;margin:0;padding:4px 6px;font:11px/1.3 monospace;color:#9f9;background:rgba(0,0,0,.65);pointer-events:none;white-space:pre';
+      document.body.appendChild(perfEl);
+    }
+    perfWin.push(raw); if (perfWin.length > 60) perfWin.shift();
+    if (perfWin.length < 10 || frames % 10 !== 0) return;
+    const s = perfWin.slice().sort((x, y) => x - y), med = s[s.length >> 1] * 1000;
+    const avg = perfWin.reduce((a, b) => a + b, 0) / perfWin.length;
+    const over = perfWin.filter(x => x > 0.1).length;
+    perfEl.textContent = `${o.game} ${o.tier} q${quality} t${at.toFixed(1)}s\n` +
+      `median ${med.toFixed(1)}ms  ${(1 / avg).toFixed(0)}fps\n` +
+      `worst ${(s[s.length - 1] * 1000).toFixed(0)}ms  >100ms: ${over}/${perfWin.length}\n` +
+      `steps: ${perfLog.length ? perfLog.join(' ') : 'none'}`;
+  };
   // Quality steps down while frames run slow (averaged over 24 frames):
   // 3 full; 2 no bloom, lower resolution; 1 no shadows, 1x resolution;
   // 0 the dice lose their glass (transmission renders the scene twice).
@@ -2324,13 +2345,14 @@ async function buildIntro(opts, undo, teardown) {
     // (the first frames are skipped: they carry texture uploads and the
     // app's own start-up)
     frames++;
+    if (PERF) perfTick(raw, t);
     // (nor the frame after the tab was hidden: that gap is the tab, not the
     // device, and must not cost quality or end the shot)
     const stall = resumed; resumed = false;
     if (frames > 12 && o.quality !== 'full' && !stall) { win.push(raw); if (win.length > 10) win.shift(); }
     if (win.length >= 10) {
       const med = median(win);
-      if (med > 0.036 && quality > 0) { applyQuality(--quality); win.length = 0; }
+      if (med > 0.036 && quality > 0) { if (PERF) perfLog.push(`q${quality - 1}@${t.toFixed(1)}s`); applyQuality(--quality); win.length = 0; }
       // Still a slideshow at the lowest setting: show the finished frame
       // instead (as with motion off) rather than stutter through the shot.
       else if (med > 0.12 && quality === 0) { still(); return; }
