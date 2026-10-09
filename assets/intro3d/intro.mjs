@@ -1975,6 +1975,7 @@ async function buildIntro(opts, undo, teardown) {
     scene.traverse(m => { if (m.material) [].concat(m.material).forEach(mat => Object.values(mat).forEach(v => { if (v && v.isTexture && !v.isRenderTargetTexture) texs.add(v); })); });
     hidden.forEach(x => { x.visible = false; });
     await Promise.all(jobs);
+    perfMark('shaders');
     for (const t of texs) {
       try { renderer.initTexture(t); } catch (e) { /* on first draw */ }
       if (spread) await breath();
