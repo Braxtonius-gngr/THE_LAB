@@ -1638,6 +1638,11 @@ function buildDealerHand(m, mirror = false) {
     const nail = new THREE.Mesh(new THREE.SphereGeometry(0.42 * r, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), m.clear); nail.scale.set(0.95, 0.5, 1.15); nail.position.copy(p0).sub(p1).add(V(0, 0.14 * r, -0.5 * r)); tip.add(nail);
     // (a cap over the knuckle)
     const cap = new THREE.Mesh(new THREE.SphereGeometry(0.62 * r, 16, 12), m.clear); root.add(cap);
+    // (a graphite pin across each joint, the knuckle's and the middle one's,
+    // so the three phalanges read as bending on pins and not as one moulded
+    // rod; the pin stands a little proud of the finger at either side)
+    const pin = (at, parent) => { const q = new THREE.Mesh(new THREE.CylinderGeometry(0.15 * r, 0.15 * r, 1.25 * r, 12), m.graphite); q.rotation.z = Math.PI / 2; q.position.copy(at); parent.add(q); };
+    pin(d2, root); pin(d1, mid);
     // (and a solid ball of ceramic under it: the knuckle, a joint with mass)
     const ball = new THREE.Mesh(new THREE.SphereGeometry(0.58 * r, 18, 12), m.plain); ball.scale.set(1, 0.92, 1.1); root.add(ball);
     fingers.push({ root, mid, tip, side, arch });
