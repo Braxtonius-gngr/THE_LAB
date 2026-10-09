@@ -34,6 +34,8 @@ import { finish, finished, embossTex } from './finish.mjs';
 
 const HERE = new URL('./', import.meta.url);
 const asset = f => new URL(f, HERE).href;
+// (?perf: when this module loaded, for the readout's time to first frame)
+const PERF_T0 = performance.now();
 
 // The games: the shot is one of these each launch, drawn alike (pickGame)
 // unless ?game= names one. The dice are this module's own; every other game
@@ -2227,8 +2229,9 @@ async function buildIntro(opts, undo, teardown) {
   // recording the shot on a phone (off unless the URL asks for it).
   const PERF = /[?&]perf(?=&|=|$)/.test(location.search);
   const perfWin = [], perfLog = [];
-  let perfEl = null;
+  let perfEl = null, perfFirst = null;
   const perfTick = (raw, at) => {
+    if (perfFirst === null) perfFirst = (performance.now() - PERF_T0) / 1000;
     if (!perfEl) {
       perfEl = document.createElement('pre');
       perfEl.style.cssText = 'position:fixed;left:4px;top:4px;z-index:99999;margin:0;padding:4px 6px;font:11px/1.3 monospace;color:#9f9;background:rgba(0,0,0,.65);pointer-events:none;white-space:pre';
@@ -2240,6 +2243,7 @@ async function buildIntro(opts, undo, teardown) {
     const avg = perfWin.reduce((a, b) => a + b, 0) / perfWin.length;
     const over = perfWin.filter(x => x > 0.1).length;
     perfEl.textContent = `${o.game} ${o.tier} q${quality} t${at.toFixed(1)}s\n` +
+      `first frame ${perfFirst.toFixed(1)}s after load\n` +
       `median ${med.toFixed(1)}ms  ${(1 / avg).toFixed(0)}fps\n` +
       `worst ${(s[s.length - 1] * 1000).toFixed(0)}ms  >100ms: ${over}/${perfWin.length}\n` +
       `steps: ${perfLog.length ? perfLog.join(' ') : 'none'}`;
