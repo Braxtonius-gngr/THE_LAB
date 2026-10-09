@@ -2254,6 +2254,7 @@ async function buildIntro(opts, undo, teardown) {
     perfEl.textContent = `${o.game} ${o.tier} q${quality} t${at.toFixed(1)}s\n` +
       `first frame ${perfFirst.toFixed(1)}s after load\n` +
       `build: ${perfMarks.join(' | ') || '-'}\n` +
+      `programs ${renderer.info.programs.length}  textures ${renderer.info.memory.textures}\n` +
       `median ${med.toFixed(1)}ms  ${(1 / avg).toFixed(0)}fps\n` +
       `worst ${(s[s.length - 1] * 1000).toFixed(0)}ms  >100ms: ${over}/${perfWin.length}\n` +
       `steps: ${perfLog.length ? perfLog.join(' ') : 'none'}`;
