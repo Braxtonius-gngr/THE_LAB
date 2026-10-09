@@ -1983,6 +1983,28 @@ async function buildIntro(opts, undo, teardown) {
       renderer.setRenderTarget(was);
       renderer.shadowMap.enabled = true;
     }
+    // The quality steps' programs, built now as well: each step keeps the
+    // ones before it - q2 drops the post, q1 the shadows, q0 the glass dice's
+    // transmission. Each state is set, compiled and put back (nothing is
+    // drawn), so the first frame after a step finds its programs ready.
+    const post = composer, shadows = renderer.shadowMap.enabled;
+    const glass = dice.map(d => d.mat.transmission);
+    const stepJobs = [];
+    try {
+      renderer.setRenderTarget(null);
+      composer = null;
+      stepJobs.push(renderer.compileAsync(scene, camera).catch(() => {}));
+      renderer.shadowMap.enabled = false;
+      stepJobs.push(renderer.compileAsync(scene, camera).catch(() => {}));
+      dice.forEach(d => { d.mat.transmission = 0; });
+      stepJobs.push(renderer.compileAsync(scene, camera).catch(() => {}));
+    } catch (e) { /* compiled on the step */ }
+    finally {
+      composer = post; renderer.shadowMap.enabled = shadows;
+      dice.forEach((d, i) => { d.mat.transmission = glass[i]; });
+      renderer.setRenderTarget(was);
+    }
+    jobs.push(...stepJobs);
     const texs = new Set();
     scene.traverse(m => { if (m.material) [].concat(m.material).forEach(mat => Object.values(mat).forEach(v => { if (v && v.isTexture && !v.isRenderTargetTexture) texs.add(v); })); });
     hidden.forEach(x => { x.visible = false; });
