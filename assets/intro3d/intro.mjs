@@ -2293,7 +2293,7 @@ async function buildIntro(opts, undo, teardown) {
       scene.traverse(m => { if (m.material) [].concat(m.material).forEach(x => { x.needsUpdate = true; }); });
     }
     if (q <= 0) dice.forEach(d => { d.mat.transmission = 0; d.mat.color.set(0x9a1224); d.mat.clearcoat = 1; d.mat.needsUpdate = true; });
-    if (game && game.quality) game.quality(q);
+    if (game && game.quality) { const tg = performance.now(); game.quality(q); if (PERF) perfLog.push(`game ${Math.round(performance.now() - tg)}ms`); }
     size();
   };
   // The table's moving frames, timed by its loop: the resolution the
@@ -2355,6 +2355,7 @@ async function buildIntro(opts, undo, teardown) {
     cue();
   };
   const pacer = makePacer();
+  let afterStep = 0;
   const loop = now => {
     if (!playing) return;
     // Reduced motion switched on mid-shot (in the app or the system): the
@@ -2363,6 +2364,8 @@ async function buildIntro(opts, undo, teardown) {
     // (a frame between the ones drawn, on a fast screen: see makePacer)
     if (!pacer.due(now)) { raf = requestAnimationFrame(loop); return; }
     const raw = last ? (now - last) / 1000 : 1 / 60;
+    // (?perf: the frame that follows a quality step, the one a step can stall)
+    if (PERF && afterStep) { perfLog.push(`next ${Math.round(raw * 1000)}ms`); afterStep = 0; }
     last = now;
     // Time runs with the clock (a slow device drops frames rather than
     // stretching the shot); only a stall - a hidden tab - is held back.
@@ -2379,7 +2382,7 @@ async function buildIntro(opts, undo, teardown) {
     if (frames > 12 && o.quality !== 'full' && !stall) { win.push(raw); if (win.length > 10) win.shift(); }
     if (win.length >= 10) {
       const med = median(win);
-      if (med > 0.036 && quality > 0) { if (PERF) perfLog.push(`q${quality - 1}@${t.toFixed(1)}s`); applyQuality(--quality); win.length = 0; }
+      if (med > 0.036 && quality > 0) { if (PERF) perfLog.push(`q${quality - 1}@${t.toFixed(1)}s`); const ta = performance.now(); applyQuality(--quality); if (PERF) { perfLog.push(`apply ${Math.round(performance.now() - ta)}ms`); afterStep = performance.now(); } win.length = 0; }
       // Still a slideshow at the lowest setting: show the finished frame
       // instead (as with motion off) rather than stutter through the shot.
       else if (med > 0.12 && quality === 0) { still(); return; }
