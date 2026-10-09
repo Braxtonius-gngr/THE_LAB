@@ -1960,14 +1960,14 @@ async function buildIntro(opts, undo, teardown) {
     const was = renderer.getRenderTarget(), hidden = show.filter(x => !x.visible);
     hidden.forEach(x => { x.visible = true; });
     const jobs = [];
-    // (with the post, the screen's shaders too, not waited on: should a slow
-    // device drop the post mid-shot - applyQuality - the frame that drops it
-    // compiles nothing)
+    // (the screen's shaders too, awaited: a step that drops the post
+    // mid-shot (applyQuality) would otherwise compile them during the shot
+    // - the hitch - so they are built now, while the loading screen is up)
     for (const target of composer ? [probe, null] : [null, probe]) {
       renderer.setRenderTarget(target);
       try {
         const job = renderer.compileAsync(scene, camera).catch(() => {});
-        if (target === probe || !composer) jobs.push(job);
+        jobs.push(job);
       } catch (e) { /* compiled on first draw */ }
     }
     renderer.setRenderTarget(was);
