@@ -48,7 +48,9 @@ const perfMark = name => { if (PERF) perfMarks.push(`${name} ${((performance.now
 // hands the shot its plan, its camera path, its sounds and its frames - see
 // the `game` seam in buildIntro(). The set, the resolution, the post, the
 // sound, the quality steps and the handover to the homes are shared.
-export const GAMES = ['dice', 'wheel', 'plinko', 'blackjack', 'slots'];
+// (slots is out of the rotation while it is reworked: its module stays, and
+// ?game=slots falls back to the dice)
+export const GAMES = ['dice', 'wheel', 'plinko', 'blackjack'];
 export function pickGame(r) { return GAMES[Math.min(GAMES.length - 1, Math.floor(r * GAMES.length))]; }
 export const TIERS = ['standard', 'hardways', 'vault', 'edge'];
 export const TIER_NAMES = { standard: 'Standard Drop', hardways: 'The Hardways', vault: 'The Vault Pull', edge: 'The Defiant Edge' };
