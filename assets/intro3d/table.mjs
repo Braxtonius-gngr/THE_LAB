@@ -1611,10 +1611,12 @@ function buildDealerHand(m, mirror = false) {
   //   c       where each phalanx's gold collar sits along it (0 root, 1 tip)
   //   side    its share of a spread
   [
-    { x: 2.45, kz: -6.5, L: 6.0, f: [0.39, 0.33, 0.28], r: 1.36, yaw: 0.03, arch: 0, side: 1, c: [0.3, 0.3] },
-    { x: 0.85, kz: -6.7, L: 6.45, f: [0.38, 0.33, 0.29], r: 1.4, yaw: 0.0, arch: 0.05, side: 0.35, c: [0.2, 0.42] },
-    { x: -0.75, kz: -6.45, L: 6.1, f: [0.385, 0.335, 0.28], r: 1.28, yaw: -0.04, arch: 0.1, side: -0.35, c: [0.38, 0.24] },
-    { x: -2.25, kz: -6.05, L: 4.95, f: [0.41, 0.3, 0.29], r: 1.06, yaw: -0.1, arch: 0.17, side: -1, c: [0.5, 0.34] }
+    // (the girths and the knuckle spacing are drawn out together, a sixth wider
+    // than they were: the fingers were thin against the palm)
+    { x: 2.7, kz: -6.5, L: 6.0, f: [0.39, 0.33, 0.28], r: 1.58, yaw: 0.03, arch: 0, side: 1, c: [0.3, 0.3] },
+    { x: 0.95, kz: -6.7, L: 6.45, f: [0.38, 0.33, 0.29], r: 1.63, yaw: 0.0, arch: 0.05, side: 0.35, c: [0.2, 0.42] },
+    { x: -0.85, kz: -6.45, L: 6.1, f: [0.385, 0.335, 0.28], r: 1.5, yaw: -0.04, arch: 0.1, side: -0.35, c: [0.38, 0.24] },
+    { x: -2.55, kz: -6.05, L: 4.95, f: [0.41, 0.3, 0.29], r: 1.24, yaw: -0.1, arch: 0.17, side: -1, c: [0.5, 0.34] }
   ].forEach(({ x, kz, L, f, r, yaw, arch, side, c }) => {
     const p0 = V(x, 0.68, kz + L), p1 = p0.clone().add(V(0, 0.16, -L * f[2])), p2 = p1.clone().add(V(0, 0.2, -L * f[1])), p3 = V(x, 1.22, kz);
     // (the finger's rest direction is a turn of its own, under the pivots the
@@ -1649,7 +1651,7 @@ function buildDealerHand(m, mirror = false) {
   // knuckle, narrowing as they go)
   { const bridge = new THREE.Mesh(new THREE.CapsuleGeometry(0.72, 5.6, 6, 18), m.plain);
     bridge.rotation.z = Math.PI / 2; bridge.scale.set(1, 1, 0.92); bridge.position.set(0, 1.12, -6.25); hand.add(bridge);
-    [[1.62, -6.0], [0.05, -6.1], [-1.45, -5.85]].forEach(([x, z]) => { const w = new THREE.Mesh(new THREE.SphereGeometry(0.5, 14, 10), m.plain); w.scale.set(0.8, 0.62, 1.15); w.position.set(x, 1.02, z); hand.add(w); }); }
+    [[1.83, -6.0], [0.05, -6.1], [-1.7, -5.85]].forEach(([x, z]) => { const w = new THREE.Mesh(new THREE.SphereGeometry(0.5, 14, 10), m.plain); w.scale.set(0.8, 0.62, 1.15); w.position.set(x, 1.02, z); hand.add(w); }); }
   // the knuckles: one graphite bar with gold ends, the palm a ceramic plate
   // behind it
   const knuckles = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 7.0, 16), m.graphite);
@@ -1658,7 +1660,7 @@ function buildDealerHand(m, mirror = false) {
   // (the palm narrows from the knuckles to the wrist, its edges rounded
   // over: a shaped shell, not a slab)
   const palmShape = new THREE.Shape();
-  { const k = 3.4, w = 2.5, h = 3.0, r = 0.9;
+  { const k = 3.5, w = 2.05, h = 2.8, r = 0.9;
     palmShape.moveTo(-w + r * 0.4, -h); palmShape.lineTo(w - r * 0.4, -h);
     palmShape.quadraticCurveTo(w, -h, w + 0.1, -h + r);
     palmShape.lineTo(k, h - r); palmShape.quadraticCurveTo(k, h, k - r, h);
@@ -1686,7 +1688,7 @@ function buildDealerHand(m, mirror = false) {
   const inlay = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.04, 4.2), m.gold); inlay.position.set(0, 2.07, -9.7); hand.add(inlay);
   const leds = [-11.6, -11.0, -10.4].map(z => { const l = new THREE.Mesh(new THREE.CircleGeometry(0.17, 14), m.led.clone()); l.rotation.x = -Math.PI / 2; l.position.set(0.42, 2.075, z); hand.add(l); return l; });
   // vents down each side of the palm
-  [-1, 1].forEach(sd => { for (let v = 0; v < 3; v++) { const s = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.16, 1.4), m.graphite); s.position.set(sd * (2.62 + v * 0.18 - 0.1), 1.35, -11.2 + v * 0.55); s.rotation.y = sd * 0.16; hand.add(s); } });
+  [-1, 1].forEach(sd => { for (let v = 0; v < 3; v++) { const s = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.16, 1.4), m.graphite); s.position.set(sd * (2.2 + v * 0.18 - 0.1), 1.35, -11.2 + v * 0.55); s.rotation.y = sd * 0.16; hand.add(s); } });
   // the thumb, off to the side, clear of the card, on a pivot of its own
   const t0 = V(3.6, 1.15, -10.4), t1 = V(4.6, 0.95, -7.4), t2 = V(4.9, 0.72, -4.7);
   // A thumb is jointed twice: a ball at its root, seated in the hand (it
@@ -1702,8 +1704,8 @@ function buildDealerHand(m, mirror = false) {
     // (fuller than a finger, and the two phalanges meeting on a shared
     // joint sphere, a gold collar near the root of each, a pad under the tip
     // and a clear nail over it)
-    thumb.add(tapered(0.82, 0.7, o, d1, m.plain, true, true), collar(d1.clone().multiplyScalar(0.34), d1, 0.81));
-    thumbTip.add(tapered(0.7, 0.4, o, d2, m.plain, false, false), collar(d2.clone().multiplyScalar(0.32), d2, 0.69));
+    thumb.add(tapered(0.95, 0.82, o, d1, m.plain, true, true), collar(d1.clone().multiplyScalar(0.34), d1, 0.94));
+    thumbTip.add(tapered(0.82, 0.48, o, d2, m.plain, false, false), collar(d2.clone().multiplyScalar(0.32), d2, 0.81));
     thumbTip.add(tapered(0.46, 0.42, d2.clone().addScaledVector(d2.clone().normalize(), -0.7), d2, m.gold, false, false));
     const tn = new THREE.Mesh(new THREE.SphereGeometry(0.4, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), m.clear); tn.scale.set(0.95, 0.5, 1.2); tn.position.copy(d2).add(V(0, 0.2, -0.3)); thumbTip.add(tn);
     // (the knuckle's pin: across the thumb, standing a little proud of it
