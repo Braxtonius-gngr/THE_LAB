@@ -94,7 +94,17 @@ export const FELTS = {
   cream: { name: 'Cream', color: 0xae9b6e, sheen: 0xf0e2bc, light: 0.9 },
   chocolate: { name: 'Chocolate', color: 0x28170e, sheen: 0x6a4630, light: 0.1 },
   mahogany: { name: 'Mahogany', color: 0x40150e, sheen: 0x9c4a34, light: 0.14 },
-  crimson: { name: 'Crimson', color: 0x5c0913, sheen: 0xc2394a, light: 0.2 }
+  crimson: { name: 'Crimson', color: 0x5c0913, sheen: 0xc2394a, light: 0.2 },
+  // (2026-10-11: the casino cloths - the classic emerald baize, a royal
+  // blue, a midnight navy, a peacock teal, a plum, a charcoal, and a sage
+  // among the light ones)
+  emerald: { name: 'Emerald', color: 0x0d4a2c, sheen: 0x3f9a6a, light: 0.18 },
+  royal: { name: 'Royal blue', color: 0x14306e, sheen: 0x5276c8, light: 0.2 },
+  midnight: { name: 'Midnight navy', color: 0x0d1630, sheen: 0x3a4c78, light: 0.06 },
+  teal: { name: 'Peacock teal', color: 0x0b4a52, sheen: 0x3c9aa4, light: 0.2 },
+  plum: { name: 'Plum', color: 0x3a1640, sheen: 0x8c5296, light: 0.12 },
+  charcoal: { name: 'Charcoal', color: 0x26272b, sheen: 0x6e7078, light: 0.15 },
+  sage: { name: 'Sage', color: 0x6c7a5e, sheen: 0xc4d2b4, light: 0.55 }
 };
 export const feltOf = id => (FELTS[id] ? id : 'black');
 // (a felt material dressed as felt `id`)
@@ -130,7 +140,14 @@ export const TRIMS = {
   onyx: { name: 'Shiny onyx', color: 0x17161a, line: 0x0b0b0d, metalness: 0.0, roughness: 0.07, env: 2.2 },
   silver: { name: 'Luminous silver', color: 0xffffff, line: 0xf0f3f7, metalness: 1, roughness: 0.14, env: 2.1 },
   crimson: { name: 'Pooled crimson', color: 0xd21a34, line: 0x9c0f22, metalness: 0.45, roughness: 0.1, env: 1.35 },
-  burgundy: { name: 'Bronzed burgundy', color: 0xd06a5a, line: 0xa4463c, metalness: 1, roughness: 0.3, env: 1.45 }
+  burgundy: { name: 'Bronzed burgundy', color: 0xd06a5a, line: 0xa4463c, metalness: 1, roughness: 0.3, env: 1.45 },
+  // (2026-10-11: rose gold and champagne gold, burnished copper, and two
+  // more enamels fired over silver - emerald and sapphire)
+  rose: { name: 'Rose gold', color: 0xf0b8a0, line: 0xd99a84, metalness: 1, roughness: 0.18, env: 1.8 },
+  champagne: { name: 'Champagne', color: 0xf3e2b8, line: 0xe2cd98, metalness: 1, roughness: 0.16, env: 1.9 },
+  copper: { name: 'Burnished copper', color: 0xe08a5c, line: 0xb8683e, metalness: 1, roughness: 0.24, env: 1.6 },
+  emerald: { name: 'Emerald enamel', color: 0x1fa86a, line: 0x0f7a48, metalness: 0.45, roughness: 0.1, env: 1.35 },
+  sapphire: { name: 'Sapphire enamel', color: 0x2f62d8, line: 0x1c3f9c, metalness: 0.45, roughness: 0.1, env: 1.35 }
 };
 export const trimOf = id => (TRIMS[id] ? id : 'gold');
 // (the gold band's artwork in grey: its relief as light and dark, for a

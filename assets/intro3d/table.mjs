@@ -27,7 +27,7 @@
 
 import * as THREE from '../vendor/three/three.module.js';
 import { CSS3DRenderer, CSS3DObject } from '../vendor/three/three.addons.js';
-import { studioEnvironment, dressTrim, trimBaseOf } from './intro.mjs';
+import { studioEnvironment, dressTrim, trimBaseOf, FELTS, TRIMS } from './intro.mjs';
 import { retile, canvasTex, embossTex, seeded, wrapNoise, dataTex, finish, finished } from './finish.mjs';
 
 export const DESTS = ['card'];
@@ -579,12 +579,29 @@ function buildCardTable(set, opts = {}) {
   // (how light the felt is, 0 black to 1 ivory: the keyline's weight, and
   // the gold made to read on it - a little less mirror and more of its own
   // colour, as foil on a light cloth is seen against it rather than in it)
+  // (printHex: the foil in the trim's metal rather than the house gold - see
+  // printTrim)
+  let printHex = null;
   const printFor = light => {
     keys.forEach(k => { k.visible = light > 0.01; k.material.opacity = Math.min(1, 0.55 + 0.45 * light); });
-    [inkMat, markMat].forEach(m => { m.metalness = 0.8 - 0.3 * light; m.color.setHex(light > 0.01 ? 0xd9b563 : 0xc9a75a); });
+    [inkMat, markMat].forEach(m => { m.metalness = 0.8 - 0.3 * light; m.color.setHex(printHex != null ? printHex : light > 0.01 ? 0xd9b563 : 0xc9a75a); });
   };
   printFor(feltMat.userData.feltLight || 0);
   g.userData.printFor = printFor;
+  // The print takes the trim: the lettering, the arc and its diamonds
+  // stamped in the same metal as the inlay round them - unless that metal
+  // would vanish into the cloth (onyx on black), when the house gold stays.
+  // Gold is the house's own and stays as it was.
+  g.userData.printTrim = (trimId, feltId) => {
+    const t = TRIMS[trimId], f = FELTS[feltId] || FELTS.black;
+    printHex = null;
+    if (t && t.line != null) {
+      const ink = new THREE.Color(t.line), cloth = new THREE.Color(f.color);
+      const L = c => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+      if (Math.abs(L(ink) - L(cloth)) > 0.04) printHex = t.line;
+    }
+    printFor(feltMat.userData.feltLight || f.light || 0);
+  };
   g.userData.mark = markMesh;
   g.userData.detail = inkMat;
   // The dealer's edge: a walnut bar across the straight side, with the
@@ -595,6 +612,8 @@ function buildCardTable(set, opts = {}) {
   const bar = new THREE.Mesh(barGeo, woodMat);
   bar.position.set(0, -4, b + 6); bar.castShadow = true; bar.receiveShadow = true; g.add(bar);
   if (opts.split) {
+    // (this table's print follows its trim from the start - see printTrim)
+    g.userData.printTrim(set.gold.userData.trim || 'gold', feltMat.userData.felt || Object.keys(FELTS).find(k => FELTS[k].color === feltMat.color.getHex()) || 'black');
     // Split: the chips in two racks, one each side of the dealer's port, with
     // a low lacquered liner between them behind him, the house's seal in it.
     // The dealer's arms work in the middle of the edge; a rack straight across
@@ -1491,16 +1510,36 @@ function movementTex() {
   const glow = new THREE.CanvasTexture(lit); glow.colorSpace = THREE.SRGBColorSpace;
   return (MOVEMENT = { map, normal: embossTex(hgt, 3.2), rf, glow });
 }
-// The dealer's colours from the table's. The skin and the vein (the circuitry
-// in it) are two colours, the felt's and the detail's (the gold the table is
-// printed and trimmed in): mode 'a', the skin the felt's and the veins the
-// detail's; 'b', turned about. Anything else, null: the white glaze, as it was.
-function mimicPalette(table, mode) {
-  if (mode !== 'a' && mode !== 'b') return null;
-  const felt = table.felt.color.clone(), det = table.group.userData.detail ? table.group.userData.detail.color.clone() : new THREE.Color(0xc9a75a);
-  if (mode === 'a') return { skin: felt, vein: det };
-  const hsl = {}; felt.getHSL(hsl); const vein = felt.clone().setHSL(hsl.h, Math.min(1, hsl.s * 1.2 + 0.1), Math.max(0.3, hsl.l));
-  return { skin: det.clone().lerp(new THREE.Color(1, 1, 1), 0.3), vein };
+// The dealer's colours, picked in Settings: its skin (the glaze) and its
+// vein (the circuitry in it, and the light in that), each 'felt' or 'trim' -
+// the table's own, so it changes with them - or one of its own (ROBOT_SWATCH,
+// the same names as index.html's ROBOT_CHOICES). 'house' for both is the
+// machine as it was made: null, the white glaze and its amber light.
+const GOLD_HEX = 0xd6b064;
+const ROBOT_SWATCH = { house: 0xece6da, onyx: 0x1b1a1e, gold: GOLD_HEX, silver: 0xd9dde3, rose: 0xe8a890, emerald: 0x1f8a58, royal: 0x2d55a8, crimson: 0xa8202e, amber: 0xffb860 };
+// (a felt as the dealer wears it: the cloth's colour a quarter of the way to
+// its sheen, so a dark one reads as a glaze and not a hole; a trim, its
+// metal - gold's, which has no colour of its own in TRIMS, the house gold)
+const feltTone = id => { const f = FELTS[id] || FELTS.black; return new THREE.Color(f.color).lerp(new THREE.Color(f.sheen), 0.25); };
+const trimTone = id => { const t = TRIMS[id]; return new THREE.Color(t && t.line != null ? t.line : GOLD_HEX); };
+const lum = c => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+function robotPalette(skinId, veinId, feltId, trimId) {
+  if ((skinId || 'house') === 'house' && (veinId || 'house') === 'house') return null;
+  const pick = id => (id === 'felt' ? feltTone(feltId) : id === 'trim' ? trimTone(trimId) : new THREE.Color(ROBOT_SWATCH[id] != null ? ROBOT_SWATCH[id] : ROBOT_SWATCH.house));
+  const skin = pick(skinId || 'house'), vein = pick(!veinId || veinId === 'house' ? 'amber' : veinId);
+  // (circuitry the colour of the glaze would vanish into it - onyx trim on
+  // black felt: lifted toward white on a dark skin, deepened on a light one)
+  if (Math.abs(lum(skin) - lum(vein)) < 0.05) { if (lum(skin) < 0.25) vein.lerp(new THREE.Color(1, 1, 1), 0.55); else vein.multiplyScalar(0.3); }
+  return { skin, vein };
+}
+// (the dealer's materials recoloured, in place: a new pair of circuit maps,
+// the old ones given back)
+function repaintDealer(m, pal) {
+  const old = [m.ceramic.map, m.ceramic.emissiveMap];
+  m.ceramic.map = circuitTex(false, pal); m.ceramic.emissiveMap = circuitTex(true, pal);
+  m.ceramic.color.setHex(pal ? 0xffffff : 0xeeeae2); m.ceramic.emissive.setHex(pal ? 0xffffff : 0xffc877);
+  if (pal) m.plain.color.copy(pal.skin); else m.plain.color.setHex(0xe6e2da);
+  old.forEach(t => { if (t) t.dispose(); });
 }
 function dealerMaterials(pal = null) {
   // (the gold inlaid in the glaze: gold where the traces are - metal, and
@@ -2557,9 +2596,16 @@ export async function prepareTable(opts) {
     handSeat.position.copy(seat.position); handSeat.quaternion.copy(seat.quaternion);
     // (anything of the arm below the felt is inside the table: clipped)
     handGL.localClippingEnabled = true;
-    // (?mimic=a|b|off: the dealer in the table's colours, two ways about, or
-    // as it was. a, the default: skin the felt's, veins the detail's)
-    const dealerMats = dealerMaterials(mimicPalette(table, (/[?&]mimic=(a|b|off)/.exec(location.search) || [0, 'a'])[1]));
+    // The dealer's colours (Settings, through hooks.robot(): see
+    // robotPalette), from the felt and trim the table is dressed in now.
+    // (lab: ?mimic=a skin the felt's, veins the trim's; b the other way
+    // about; off the house's white - over whatever Settings says)
+    const mimicQ = (/[?&]mimic=(a|b|off)/.exec(location.search) || [])[1];
+    const robotIds = () => (mimicQ ? { a: { skin: 'felt', vein: 'trim' }, b: { skin: 'trim', vein: 'felt' }, off: { skin: 'house', vein: 'house' } }[mimicQ]
+      : Object.assign({ skin: 'felt', vein: 'trim' }, hooks.robot ? hooks.robot() : {}));
+    let feltNow = table.felt.userData.felt || Object.keys(FELTS).find(k => FELTS[k].color === table.felt.color.getHex()) || 'black', trimNow = (table.trim && table.trim.band[0] && table.trim.band[0].userData.trim) || 'gold';
+    const robotPal = () => { const r = robotIds(); return robotPalette(r.skin, r.vein, feltNow, trimNow); };
+    const dealerMats = dealerMaterials(robotPal());
     // (below the well's floor nothing of it is ever seen)
     const underFelt = [new THREE.Plane(V(0, 1, 0), 8.6)];
     Object.values(dealerMats).forEach(mat => { if (mat.isMaterial) mat.clippingPlanes = underFelt; });
@@ -4524,16 +4570,26 @@ export async function prepareTable(opts) {
       setFelt(id) {
         if (!world.dressFelt) return;
         world.setFelt(id); world.dressFelt(table.felt, id);
-        if (table.group.userData.printFor) table.group.userData.printFor(table.felt.userData.feltLight || 0);
+        feltNow = table.felt.userData.felt || id;
+        if (table.group.userData.printTrim) table.group.userData.printTrim(trimNow, feltNow);
+        else if (table.group.userData.printFor) table.group.userData.printFor(table.felt.userData.feltLight || 0);
+        // (a dealer matched to the felt changes with it)
+        repaintDealer(dealerMats, robotPal()); drawArms();
         show();
       },
       // The trim picked in Settings, laid now: the table's band and lines,
-      // and the shot's band (see TRIMS in intro.mjs).
+      // the shot's band, the print on the felt, and a dealer matched to it
+      // (see TRIMS in intro.mjs).
       setTrim(id) {
         if (world.setTrim) world.setTrim(id);
         if (table.trim) dressTrim(table.trim, id);
+        trimNow = TRIMS[id] ? id : 'gold';
+        if (table.group.userData.printTrim) table.group.userData.printTrim(trimNow, feltNow);
+        repaintDealer(dealerMats, robotPal()); drawArms();
         show();
       },
+      // The dealer's colours picked in Settings (hooks.robot()), laid now.
+      setRobot() { repaintDealer(dealerMats, robotPal()); drawArms(); show(); },
       // (lab: a gesture now - point, wave, spirit, drum, knock, sulk, peek,
       // pop - at the cards given by index, or the ready ones, and when it
       // runs, in the table's clock)
