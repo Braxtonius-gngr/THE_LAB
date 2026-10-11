@@ -49,6 +49,10 @@ const CARD_TABLE = { at: [212, 0, -18], yaw: 90 };
 // Its felt: a half-ellipse, a across and b deep, from the player's rail to
 // the dealer's straight edge.
 const FELT = { a: 80, b: 64 };
+// The dealer's edge, split (see buildCardTable): the two chip racks start
+// `gap` cm either side of the middle, and between them, behind the port, a
+// lacquered liner `w` half-width and `h` tall, `z` cm back of the bar's middle.
+const RACKS = { gap: 14, wall: { w: 13, h: 17, z: 4.2 } };
 // A playing card (6.35 x 8.89 cm), built at CARD.px page pixels per cm and
 // scaled down, so its print is rasterised sharp.
 const CARD = { w: 6.35, h: 8.89, px: 50 };
@@ -582,6 +586,7 @@ function buildCardTable(set, opts = {}) {
   printFor(feltMat.userData.feltLight || 0);
   g.userData.printFor = printFor;
   g.userData.mark = markMesh;
+  g.userData.detail = inkMat;
   // The dealer's edge: a walnut bar across the straight side, with the
   // chip tray let into it.
   const barLen = 2 * a + 26;
@@ -589,7 +594,23 @@ function buildCardTable(set, opts = {}) {
   { const uv = barGeo.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * barLen / 60, uv.getY(i) * 12 / 15); }
   const bar = new THREE.Mesh(barGeo, woodMat);
   bar.position.set(0, -4, b + 6); bar.castShadow = true; bar.receiveShadow = true; g.add(bar);
-  g.add(chipTray(set));
+  if (opts.split) {
+    // Split: the chips in two racks, one each side of the dealer's port, with
+    // a low lacquered liner between them behind him, the house's seal in it.
+    // The dealer's arms work in the middle of the edge; a rack straight across
+    // it was in their way.
+    const { gap, wall } = RACKS;
+    [[1, ['gold', 'plum', 'onyx', 'emerald', 'oxblood']], [-1, ['ivory', 'oxblood', 'emerald', 'onyx', 'plum']]].forEach(([sx, cols]) => {
+      const t = chipTray(set, cols); t.position.x = sx * (gap + (cols.length * 5.95 + 1.4) / 2); g.add(t);
+    });
+    const lacq = new THREE.MeshPhysicalMaterial({ color: 0x0b0a0a, roughness: 0.34, clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 1.1 });
+    const zW = b + 6 + wall.z, hW = wall.h, wW = 2 * wall.w;
+    const panelG = new THREE.Mesh(new THREE.BoxGeometry(wW, hW, 1.4), lacq); panelG.position.set(0, 1.1 + hW / 2, zW); panelG.castShadow = true; panelG.receiveShadow = true; g.add(panelG);
+    const capG = new THREE.Mesh(new THREE.BoxGeometry(wW + 0.6, 0.5, 1.9), set.brass); capG.position.set(0, 1.1 + hW + 0.25, zW); g.add(capG);
+    const polish = polishedOf(set.brass, 0.14);
+    const medalG = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.4, 0.5, 64), [polish, engravedMat(sealTex(), 2.6), polish]);
+    medalG.rotation.set(-Math.PI / 2, 0, 0); medalG.position.set(0, 1.1 + hW * 0.5, zW - 0.95); g.add(medalG);
+  } else g.add(chipTray(set));
   return { group: g, rim, focus: [0, 0, 30], felt: feltMat, trim: trimMats };
 }
 
@@ -721,7 +742,7 @@ function chipMats(name) {
   const faceM = finished(new THREE.MeshStandardMaterial({ map: chipFace(name), roughness: 0.5, metalness: 0.12 }), 'clay', 2, 2, 0.35);
   return [sideM, faceM];
 }
-function chipTray(set) {
+function chipTray(set, cols = null) {
   const g = new THREE.Group();
   // (piano lacquer: rubbed out and polished, so the coat is a mirror - its
   // peel all but gone, a whisper at 1 cm - over a black that is soft under
@@ -729,7 +750,10 @@ function chipTray(set) {
   const lacquer = finished(new THREE.MeshPhysicalMaterial({ color: 0x0b0a0a, roughness: 0.34, clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 1.1 }), 'peel', 1, 1, 0.01);
   // (troughs deeper than their radius above the top: a chip stands in its
   // trough to a little past half its height)
-  const TR = { n: 10, pitch: 5.95, r: 2.1, sink: 0.55, len: 10.4, h: 3.1 };
+  // (the troughs' colours, left to right as the player reads: the whole rack
+  // across the dealer's edge, or - `cols` - one half of a split pair)
+  const COL = cols || ['gold', 'plum', 'onyx', 'onyx', 'emerald', 'emerald', 'oxblood', 'oxblood', 'ivory', 'ivory'];
+  const TR = { n: COL.length, pitch: 5.95, r: 2.1, sink: 0.55, len: 10.4, h: 3.1 };
   const W = TR.n * TR.pitch + 1.4;
   // the rack: its section across the troughs, drawn and extruded along z
   const prof = new THREE.Shape();
@@ -779,7 +803,6 @@ function chipTray(set) {
   g.add(new THREE.Mesh(merged(screws), capMat));
   g.add(new THREE.Mesh(merged(slots), new THREE.MeshStandardMaterial({ color: 0x1a1206, roughness: 0.8, metalness: 0.4 })));
   // the value of each trough, on a brass strip along the front
-  const COL = ['gold', 'plum', 'onyx', 'onyx', 'emerald', 'emerald', 'oxblood', 'oxblood', 'ivory', 'ivory'];
   const VAL = { gold: '1000', plum: '500', onyx: '100', emerald: '25', oxblood: '5', ivory: '1' };
   const FILL = { gold: 13, plum: 16, onyx: 22, emerald: 25, oxblood: 27, ivory: 28 };
   const plate = canvasTex(2048, 64, (c, Wc, Hc) => {
@@ -1273,8 +1296,13 @@ const WRIST = V(0, 0.6, -15.0);
 // up through a layer); 'rm' the finish (roughness in green, metalness in
 // blue: the seam is glossy glass, not metal, in a matt-ish glaze); 'h' the
 // depth of the cut, white where it is, for the normal map.
-function circuitTex(kind) {
+// `pal`, if given ({skin, vein}: THREE.Colors), recolours it: the glaze in
+// the skin's colour, the seam and its light in the vein's (the dealer taking
+// its colours from the table - see mimicPalette).
+function circuitTex(kind, pal = null) {
   const W = 512, H = 256;
+  // (a canvas wants sRGB, a THREE.Color holds linear values)
+  const rgb = (c, k = 1) => { const s = c.clone().convertLinearToSRGB(); return `${Math.round(Math.min(255, s.r * 255 * k))},${Math.round(Math.min(255, s.g * 255 * k))},${Math.round(Math.min(255, s.b * 255 * k))}`; };
   let seed = 20260928;
   const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
   // (the layout, the same for every kind: runs of polyline, and the pads at
@@ -1297,7 +1325,7 @@ function circuitTex(kind) {
     runs.push(pts); pads.push([x, y]);
   }
   const t = canvasTex(W, H, c => {
-    c.fillStyle = kind === true || kind === 'h' ? '#000000' : kind === 'rm' ? 'rgb(255,255,0)' : '#f4f1eb'; c.fillRect(0, 0, W, H);
+    c.fillStyle = kind === true || kind === 'h' ? '#000000' : kind === 'rm' ? 'rgb(255,255,0)' : pal ? `rgb(${rgb(pal.skin)})` : '#f4f1eb'; c.fillRect(0, 0, W, H);
     c.lineJoin = 'round'; c.lineCap = 'round';
     // (one pass over every trace and pad: a width, a colour, a pad radius)
     const pass = (w, col, pr) => {
@@ -1308,11 +1336,13 @@ function circuitTex(kind) {
     if (kind === true) {
       // (the light through the layers: broad and faint, then narrower and
       // brighter, a hot thread at the core)
-      [[15, 0.03], [10, 0.05], [6.5, 0.09]].forEach(([w, a]) => pass(w, `rgba(255,160,70,${a})`, w * 0.5));
-      pass(3.2, 'rgba(255,196,120,0.38)', 3.2);
-      pass(1.4, 'rgba(255,234,196,0.9)', 1.9);
+      const hot = pal ? pal.vein.clone().lerp(new THREE.Color(1, 1, 1), 0.55) : null;
+      [[15, 0.03], [10, 0.05], [6.5, 0.09]].forEach(([w, a]) => pass(w, pal ? `rgba(${rgb(pal.vein)},${a})` : `rgba(255,160,70,${a})`, w * 0.5));
+      pass(3.2, pal ? `rgba(${rgb(pal.vein)},0.38)` : 'rgba(255,196,120,0.38)', 3.2);
+      pass(1.4, pal ? `rgba(${rgb(hot)},0.9)` : 'rgba(255,234,196,0.9)', 1.9);
     } else if (kind === 'rm') pass(3.6, 'rgb(255,36,0)', 3.6);
     else if (kind === 'h') pass(3.6, '#ffffff', 3.6);
+    else if (pal) { pass(8, `rgba(${rgb(pal.vein, 0.7)},0.1)`, 6); pass(3.0, `rgba(${rgb(pal.vein)},0.95)`, 3.0); }
     else { pass(8, 'rgba(70,52,34,0.07)', 6); pass(3.0, 'rgba(24,22,22,0.86)', 3.0); }
   });
   if (kind === 'rm' || kind === 'h') t.colorSpace = THREE.NoColorSpace;
@@ -1461,13 +1491,24 @@ function movementTex() {
   const glow = new THREE.CanvasTexture(lit); glow.colorSpace = THREE.SRGBColorSpace;
   return (MOVEMENT = { map, normal: embossTex(hgt, 3.2), rf, glow });
 }
-function dealerMaterials() {
+// The dealer's colours from the table's. The skin and the vein (the circuitry
+// in it) are two colours, the felt's and the detail's (the gold the table is
+// printed and trimmed in): mode 'a', the skin the felt's and the veins the
+// detail's; 'b', turned about. Anything else, null: the white glaze, as it was.
+function mimicPalette(table, mode) {
+  if (mode !== 'a' && mode !== 'b') return null;
+  const felt = table.felt.color.clone(), det = table.group.userData.detail ? table.group.userData.detail.color.clone() : new THREE.Color(0xc9a75a);
+  if (mode === 'a') return { skin: felt, vein: det };
+  const hsl = {}; felt.getHSL(hsl); const vein = felt.clone().setHSL(hsl.h, Math.min(1, hsl.s * 1.2 + 0.1), Math.max(0.3, hsl.l));
+  return { skin: det.clone().lerp(new THREE.Color(1, 1, 1), 0.3), vein };
+}
+function dealerMaterials(pal = null) {
   // (the gold inlaid in the glaze: gold where the traces are - metal, and
   // brighter - and each trace a hair proud of the glaze under its clear)
   const rm = circuitTex('rm');
-  const ceramic = new THREE.MeshPhysicalMaterial({ color: 0xeeeae2, map: circuitTex(false), roughness: 0.34, roughnessMap: rm, metalness: 1, metalnessMap: rm,
+  const ceramic = new THREE.MeshPhysicalMaterial({ color: pal ? 0xffffff : 0xeeeae2, map: circuitTex(false, pal), roughness: 0.34, roughnessMap: rm, metalness: 1, metalnessMap: rm,
     clearcoat: 0.85, clearcoatRoughness: 0.12, sheen: 0.4, sheenRoughness: 0.45, sheenColor: new THREE.Color(0xfff0dc),
-    emissive: 0xffc877, emissiveMap: circuitTex(true), emissiveIntensity: 0 });
+    emissive: pal ? 0xffffff : 0xffc877, emissiveMap: circuitTex(true, pal), emissiveIntensity: 0 });
   // (the cut a hair below the glaze: a negative emboss)
   { const n = embossTex(circuitTex('h').image, -1.6, 1); n.wrapS = n.wrapT = THREE.RepeatWrapping; ceramic.normalMap = n; ceramic.normalScale = new THREE.Vector2(0.28, 0.28); }
   // (the light in the traces runs in pulses along each part, from the
@@ -1485,7 +1526,7 @@ function dealerMaterials() {
   ceramic.customProgramCacheKey = () => 'dealer-ceramic-pulse';
   // (the glaze: a hard clear coat over soft white, and at its thin edges,
   // seen edge-on, the warm glow of light carried through it)
-  const plain = new THREE.MeshPhysicalMaterial({ color: 0xe6e2da, roughness: 0.34, clearcoat: 0.85, clearcoatRoughness: 0.12, sheen: 0.4, sheenRoughness: 0.45, sheenColor: new THREE.Color(0xfff0dc) });
+  const plain = new THREE.MeshPhysicalMaterial({ color: pal ? pal.skin : 0xe6e2da, roughness: 0.34, clearcoat: 0.85, clearcoatRoughness: 0.12, sheen: 0.4, sheenRoughness: 0.45, sheenColor: new THREE.Color(0xfff0dc) });
   // (sapphire over each movement and over every knuckle: no colour of its
   // own, only what it mirrors, and the faint violet-to-green bloom of its
   // anti-reflective coat at an angle)
@@ -2396,7 +2437,7 @@ export async function prepareTable(opts) {
   // ---- The seat frame and the destination.
   const seat = new THREE.Group();
   const L = LAYOUT[dest];
-  const table = buildCardTable(set);
+  const table = buildCardTable(set, { split: true });
   seat.add(table.group);
   const focus = table.focus;
   seat.position.set(...CARD_TABLE.at);
@@ -2516,7 +2557,9 @@ export async function prepareTable(opts) {
     handSeat.position.copy(seat.position); handSeat.quaternion.copy(seat.quaternion);
     // (anything of the arm below the felt is inside the table: clipped)
     handGL.localClippingEnabled = true;
-    const dealerMats = dealerMaterials();
+    // (?mimic=a|b|off: the dealer in the table's colours, two ways about, or
+    // as it was. a, the default: skin the felt's, veins the detail's)
+    const dealerMats = dealerMaterials(mimicPalette(table, (/[?&]mimic=(a|b|off)/.exec(location.search) || [0, 'a'])[1]));
     // (below the well's floor nothing of it is ever seen)
     const underFelt = [new THREE.Plane(V(0, 1, 0), 8.6)];
     Object.values(dealerMats).forEach(mat => { if (mat.isMaterial) mat.clippingPlanes = underFelt; });
@@ -3726,6 +3769,12 @@ export async function prepareTable(opts) {
     // second arm solved, and the first again if the second came near it -
     // the other arm's bulk.
     const house0 = [{ a: V(0, 0, 0), b: V(0, 0, 0), r: 3.05 }, { a: V(0, 0, 0), b: V(0, 0, 0), r: 2.0 }, { a: V(0, 0, 0), b: V(0, 0, 0), r: 2.0 }, { a: V(0, 0, 0), b: V(0, 0, 0), r: 2.0 }, { a: V(0, 0, 0), b: V(0, 0, 0), r: 2.2 }, { a: V(0, 0, 0), b: V(0, 0, 0), r: 2.2 }];
+    // (and the dealer's edge, which they must not reach into either: the two
+    // chip racks, a capsule each over the troughs and chips, and the liner
+    // behind the port, in two bars one over the other. Fixed, so set once.)
+    { const zR = FELT.b + 5.6, zL = FELT.b + 6 + RACKS.wall.z, xR = RACKS.gap + 5 * 5.95 + 1.4;
+      [[RACKS.gap, xR], [-xR, -RACKS.gap]].forEach(([x0, x1]) => house0.push({ a: V(x0, 1.8, zR), b: V(x1, 1.8, zR), r: 5.4 }));
+      [5, 13].forEach(y => house0.push({ a: V(-RACKS.wall.w, y, zL), b: V(RACKS.wall.w, y, zL), r: 2.6 })); }
     // (each arm's list leaves out its own J1 drum: its crank holds the
     // upper link just clear of that by construction)
     const houseFor = [house0.filter((c, i) => i !== 4), house0.filter((c, i) => i !== 5)];
