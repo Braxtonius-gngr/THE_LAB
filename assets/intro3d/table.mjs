@@ -1061,7 +1061,7 @@ function buildShoe(set) {
 //   under its edge; the stack and the loose cards lie on the pad; the
 //   medallion casts onto the cards.
 //   Motion: none.
-function buildDiscard(set) {
+function buildDiscard(set, opts = {}) {
   const g = new THREE.Group();
   // (the shoe's acrylic: see buildShoe)
   const smoke = glassy(new THREE.MeshPhysicalMaterial({ color: 0x2e2620, roughness: 0.04, metalness: 0, transparent: true, opacity: 0.26, clearcoat: 1, clearcoatRoughness: 0.02, depthWrite: false, side: THREE.DoubleSide }), 0.72, 1.1);
@@ -1093,6 +1093,15 @@ function buildDiscard(set) {
     g.add(rodBetween(V(x, Y0, -Z + 0.05), V(x, 2.45, -Z + 0.05), 0.1, polish));
   });
   g.add(rodBetween(V(-X, 5.62, Z - 0.3), V(X, 5.62, Z - 0.3), 0.12, polish));
+  // (presence, for the blackjack intro only: a brass trim round the rack's
+  // top edge with a warm glow of its own, so it reads as a real thing on the
+  // felt while it is not in use, as the robot's own opening trim does. The
+  // table's rack does not take it, so its look is unchanged.)
+  if (opts.presence) {
+    const trimGlow = polish.clone();
+    trimGlow.emissive = new THREE.Color(0x6a4a16); trimGlow.emissiveIntensity = 0.55;
+    g.add(tube(outline(2 * X - 0.3, 2 * Z - 0.3, 0.6, 5.66, 0), 0.07, trimGlow, true));
+  }
   // the stack, a few loose on top, and the weight
   const backM = new THREE.MeshStandardMaterial({ map: backTex(), roughness: 0.5 });
   const edgeM = giltEdges();
