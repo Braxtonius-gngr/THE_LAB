@@ -2388,7 +2388,7 @@ function railHTML() {
         <circle cx="50" cy="50" r="3.4" class="r3t-pin"/>
       </svg>
     </div>
-    <div class="r3t-time"><b class="r3t-now">--:--</b><small class="r3t-date"></small><span class="r3t-status"><b class="r3t-next">&mdash;</b><small class="r3t-done"></small></span></div>
+    <div class="r3t-time"><b class="r3t-now">--:--</b><small class="r3t-date"></small><span class="r3t-status"><b class="r3t-next">&mdash;</b><small class="r3t-done"></small></span><button type="button" class="r3t-clear" aria-live="polite"><i class="r3t-clear-ring" aria-hidden="true"></i><span class="r3t-clear-k">Done</span></button></div>
     <button type="button" class="r3t-run"><span class="r3t-run-coin" aria-hidden="true"></span><span class="r3t-run-k">Run the deck</span><span class="r3t-run-v">&mdash;</span></button>
   </div>`;
 }
@@ -2913,6 +2913,49 @@ export async function prepareTable(opts) {
     const introT0 = world.t;
     let focusId = null;
     const lift = new Map();                 // card id -> [k, target, from, t0]
+    // "Done": the hand swept off the felt, and for a few seconds the button
+    // is "Undo" - nothing is final until it runs out, when the app deals the
+    // next hand (hooks.redeal). Same shape as `lift`: card id -> [k, target,
+    // from, t0], k 1 is swept off.
+    const swp = new Map();
+    const CLEAR_MS = 8000;
+    let clearTimer = 0, clearPhase = 'idle';
+    const swpAt = (id, tt) => {
+      const S = swp.get(id);
+      if (!S) return 0;
+      const k = fo.reduced ? S[1] : smoother(S[2] + (S[1] - S[2]) * clamp01((tt - S[3]) / 0.6));
+      S[0] = k;
+      return k;
+    };
+    // (Done sweeps the hand off and starts the countdown; Undo, before it
+    // runs out, brings every card back where it lay and changes nothing.)
+    const clearBtn = railEl.querySelector('.r3t-clear'), clearK = railEl.querySelector('.r3t-clear-k');
+    const clearSet = (phase) => {
+      clearPhase = phase;
+      railEl.classList.toggle('r3t-clearing', phase === 'swept');
+      if (clearK) clearK.textContent = phase === 'swept' ? 'Undo' : 'Done';
+      if (clearBtn) clearBtn.setAttribute('aria-label', phase === 'swept' ? 'Undo: bring the cards back' : 'Done: clear the table for the next hand');
+    };
+    const clearToggle = () => {
+      if (clearPhase === 'gone') return;
+      if (clearPhase === 'idle') {
+        if (focusId) putDown();
+        cardObjs.forEach((o, i) => { const id = o.userData.card.id, cur = swpAt(id, tNow); swp.set(id, [cur, 1, cur, tNow + i * 0.06]); });
+        clearSet('swept');
+        clearTimer = setTimeout(() => {
+          clearTimer = 0;
+          clearSet('gone');
+          if (hooks.redeal) hooks.redeal();
+          else { cardObjs.forEach(o => swp.delete(o.userData.card.id)); clearSet('idle'); wake(); }
+        }, CLEAR_MS);
+      } else {
+        clearTimeout(clearTimer); clearTimer = 0;
+        const n = cardObjs.length;
+        cardObjs.forEach((o, i) => { const id = o.userData.card.id, cur = swpAt(id, tNow); swp.set(id, [cur, 0, cur, tNow + (n - 1 - i) * 0.05]); });
+        clearSet('idle');
+      }
+      wake();
+    };
 
     const tmpQ = new THREE.Quaternion(), camQ = new THREE.Quaternion();
     const up = V(0, 1, 0);
@@ -3602,6 +3645,15 @@ export async function prepareTable(opts) {
           q.slerp(focusPose.q, lk);
         }
       }
+      // (swept: slid off the felt toward the player's left, turning a little
+      // as it goes, and gone before it reaches the edge)
+      const sk = swpAt(obj.userData.card.id, tt);
+      if (sk > 0) {
+        p.x += (74 - p.x) * sk; p.z += 6 * sk; p.y += Math.sin(Math.PI * Math.min(1, sk)) * 1.2;
+        q.premultiply(tmpQ.setFromAxisAngle(up, 0.5 * sk));
+        el.style.opacity = (1 - smoother((sk - 0.45) / 0.55)).toFixed(3);
+        el.style.pointerEvents = sk > 0.02 ? 'none' : '';
+      } else if (el.style.opacity) { el.style.opacity = ''; el.style.pointerEvents = ''; }
       obj.position.copy(p);
       obj.quaternion.copy(q);
       shadeCard(obj.userData.i, p, q, true);
@@ -4390,6 +4442,7 @@ export async function prepareTable(opts) {
         wake();
         return;
       }
+      if (e.target.closest('.r3t-clear')) { clearToggle(); return; }
       if (e.target.closest('.r3t-run')) { if (hooks.run) hooks.run(); return; }
       const tile = e.target.closest('.r3t-ph-tile, .r3t-ph-gear');
       if (tile) { if (hooks.openView) hooks.openView(tile.dataset.view); return; }
@@ -4491,7 +4544,7 @@ export async function prepareTable(opts) {
       get waiting() { return { stage: idle.stage, waited: idle.since ? +((performance.now() - idle.since) / 1000).toFixed(1) : 0, sulk: idle.sulk, ready: idle.ready, until: +gestureEnd.toFixed(2), t: +tNow.toFixed(2), table: running, arms: !!armsRaf }; },
       dispose() {
         disposed = true; running = false; cancelAnimationFrame(raf); cancelAnimationFrame(armsRaf);
-        clearInterval(clock); clearInterval(idleClock);
+        clearInterval(clock); clearInterval(idleClock); clearTimeout(clearTimer);
         window.removeEventListener('resize', onResize);
         document.removeEventListener('keydown', skipAhead);
         world.canvas.removeEventListener('pointerdown', skipAhead);
