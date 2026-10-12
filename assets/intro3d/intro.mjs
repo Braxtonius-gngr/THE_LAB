@@ -70,6 +70,20 @@ const smoother = x => { x = clamp01(x); return x * x * x * (x * (6 * x - 15) + 1
 const easeOut = (x, k = 3) => 1 - Math.pow(1 - clamp01(x), k);
 const lerp = (a, b, k) => a + (b - a) * k;
 const mix3 = (a, b, k) => [lerp(a[0], b[0], k), lerp(a[1], b[1], k), lerp(a[2], b[2], k)];
+// A lens that glides: each call takes the next sample of a path (an array,
+// `dt` seconds on) and gives back where the lens is - two easings of `tau`
+// seconds in a row, so it starts, turns and stops without a jolt (its speed
+// never jumps, however sharply the path turns). It only ever trails the
+// path, about 2 * tau behind: it never sees where the path is going.
+const glide = tau => {
+  let a = null, b = null;
+  return (v, dt) => {
+    const k = 1 - Math.exp(-dt / tau);
+    a = a ? a.map((x, j) => x + (v[j] - x) * k) : v.slice();
+    b = b ? b.map((x, j) => x + (a[j] - x) * k) : a.slice();
+    return b;
+  };
+};
 const DEG = Math.PI / 180;
 // The light: the pendant over the table, and the studio the glossy surfaces
 // mirror (dimmed together round the Defiant Edge's die).
@@ -1263,7 +1277,7 @@ async function buildIntro(opts, undo, teardown) {
     game = await mod.makeGame({
       THREE, scene, set: scene.userData.set, lights, tier, seed: o.seed, trim: o.trim, aspect, host, signal: o.signal,
       room: { floor: ROOM.floor, lamp: ROOM.lamp, backdropZ: ROOM.backdropZ, FLOAT, CEIL, PENDANT, ENV_LEVEL, RIM }, asset,
-      helpers: { makeWarp, spline, smoother, easeOut, lerp, mix3, clamp01, canvasTexture, radial, finished, embossTex, scaleUV, boxUV }
+      helpers: { makeWarp, spline, glide, smoother, easeOut, lerp, mix3, clamp01, canvasTexture, radial, finished, embossTex, scaleUV, boxUV }
     });
     perfMark('game built');
     checkAbort();
