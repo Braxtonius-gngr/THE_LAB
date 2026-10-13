@@ -4340,7 +4340,8 @@ export async function prepareTable(opts) {
           // (from the keyboard, on to the card's first move)
           if (e.detail === 0) { const first = infoEl.querySelector('[data-act]'); if (first) first.focus({ preventScroll: true }); }
         } else hideInfo();
-        if (hooks.cardTap) hooks.cardTap(id);
+        // (and whether it came up or went down)
+        if (hooks.cardTap) hooks.cardTap(id, !!focusId);
         wake();
         return;
       }
