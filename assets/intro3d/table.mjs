@@ -4679,7 +4679,7 @@ export const tableKit = {
 // not the table's deal).
 export const dealerKit = {
   buildCardTable, buildShoe, buildDiscard, buildPort, chipMats, chipsReady: () => Promise.all(chipLoads),
-  dealerMaterials, buildDealerTorso, buildDealerArm, buildDealerHand, handPose, elbowWay, segDist,
+  dealerMaterials, robotPalette, buildDealerTorso, buildDealerArm, buildDealerHand, handPose, elbowWay, segDist,
   paintCardBack, backArt, weaveTex, PIPS, lying, contactShadow, polishedOf, freeTree,
   CARD, FELT, PORT, ARM, WRIST, SIDES, LAYOUT
 };

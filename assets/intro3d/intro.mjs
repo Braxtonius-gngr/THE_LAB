@@ -346,8 +346,10 @@ function cupAt(t) {
 function rampWorld(s, from, to) { return from * s + (to - from) * (Math.pow(s, 6) - 3 * Math.pow(s, 5) + 2.5 * Math.pow(s, 4)); }
 // (exported for the other games: the same slow motion round their own
 // moment - the wheel's clapper riding its last peg)
-export function makeWarp(wallW) {
-  const a = wallW - 0.05, down = 0.26, hold = 0.95, up = 0.6, rate = 0.12;
+// (`rate`: how slow the slow motion runs - 0.12 the dice's; 1 is none at
+// all, for a game whose moment slows of itself: the wheel's last pegs)
+export function makeWarp(wallW, rate = 0.12) {
+  const a = wallW - 0.05, down = 0.26, hold = 0.95, up = 0.6;
   const world = t => {
     const x = t - a;
     if (x <= 0) return t;
@@ -1142,7 +1144,7 @@ async function buildIntro(opts, undo, teardown) {
   // (still: the finished frame is all that will be shown - a muted skin,
   // or motion off - so nothing is made ready for a shot that never plays:
   // no sound, no frames drawn unseen at each of its turns)
-  const o = Object.assign({ host: null, controlsHost: null, tier: 'standard', seed: 1, game: 'dice', onReveal: null, onEnd: null, sound: true, onSoundChange: null, quality: 'auto', signal: null, motionOff: null, felt: 'black', trim: 'gold', still: false }, opts);
+  const o = Object.assign({ host: null, controlsHost: null, tier: 'standard', seed: 1, game: 'dice', onReveal: null, onEnd: null, sound: true, onSoundChange: null, quality: 'auto', signal: null, motionOff: null, felt: 'black', trim: 'gold', robot: null, still: false }, opts);
   const checkAbort = () => { if (o.signal && o.signal.aborted) throw new Error('intro cancelled'); };
   checkAbort();
   const host = o.host;
@@ -1415,7 +1417,7 @@ async function buildIntro(opts, undo, teardown) {
     perfMark('game module');
     checkAbort();
     game = await mod.makeGame({
-      THREE, scene, set: scene.userData.set, lights, tier, seed: o.seed, trim: o.trim, aspect, host, signal: o.signal,
+      THREE, scene, set: scene.userData.set, lights, tier, seed: o.seed, trim: o.trim, felt: o.felt, robot: o.robot, aspect, host, signal: o.signal,
       room: { floor: ROOM.floor, lamp: ROOM.lamp, backdropZ: ROOM.backdropZ, FLOAT, CEIL, PENDANT, ENV_LEVEL, RIM }, asset,
       helpers: { makeWarp, spline, glide, smoother, easeOut, lerp, mix3, clamp01, canvasTexture, radial, finished, embossTex, scaleUV, boxUV }
     });
