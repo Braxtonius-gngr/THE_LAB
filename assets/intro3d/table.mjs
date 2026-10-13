@@ -69,6 +69,11 @@ const SLOTS = { cols: 3, gapX: 1.3, gapZ: 2.4, max: 9 };
 const LAYOUT = {
   card: {
     view: [{ eye: [0, 54, -22], aim: [0, 0, 24], fov: 54 }, { eye: [0, 46, -24], aim: [0, 0, 27], fov: 44 }],
+    // (the discard rack's place is the house's one: at the dealer's right
+    // hand against the back rail, beside the port - where a dealer keeps
+    // it, in view and out of the dealing lane - and the blackjack's salon
+    // table keeps it there too, so a card undone always comes back from
+    // the same spot: see DISCARD_SPOT)
     z0: 18.5, rail: { x: 3.4, y: 7.2, z: -4.2, tilt: 28 }, shoe: [-15.5, 54], discard: [16, 55]
   }
 };
@@ -1105,8 +1110,11 @@ function buildShoe(set) {
 //   Motion: none.
 function buildDiscard(set) {
   const g = new THREE.Group();
-  // (the shoe's acrylic: see buildShoe)
-  const smoke = glassy(new THREE.MeshPhysicalMaterial({ color: 0x2e2620, roughness: 0.04, metalness: 0, transparent: true, opacity: 0.26, clearcoat: 1, clearcoatRoughness: 0.02, depthWrite: false, side: THREE.DoubleSide }), 0.72, 1.1);
+  // (the shoe's acrylic: see buildShoe - but warmer, a tea-smoked tint,
+  // and its reflections held to the room's warm half: the clear smoke
+  // mirrored the studio's cool panel and the light behind the lens, and
+  // read as a ghostly blue box that lit up and faded as the lens moved)
+  const smoke = glassy(new THREE.MeshPhysicalMaterial({ color: 0x4a3420, roughness: 0.08, metalness: 0, transparent: true, opacity: 0.3, clearcoat: 1, clearcoatRoughness: 0.08, envMapIntensity: 0.35, specularColor: new THREE.Color(0xd8a860), specularIntensity: 0.6, depthWrite: false, side: THREE.DoubleSide }), 0.5, 0.6);
   // (polished, but a satin polish rather than the shoe's mirror: they are
   // thin and run under the lamp end to end, and a mirror line that long
   // flared into a lit tube)
@@ -4681,5 +4689,5 @@ export const dealerKit = {
   buildCardTable, buildShoe, buildDiscard, buildPort, chipMats, chipsReady: () => Promise.all(chipLoads),
   dealerMaterials, robotPalette, buildDealerTorso, buildDealerArm, buildDealerHand, handPose, elbowWay, segDist,
   paintCardBack, backArt, weaveTex, PIPS, lying, contactShadow, polishedOf, freeTree,
-  CARD, FELT, PORT, ARM, WRIST, SIDES, LAYOUT
+  CARD, FELT, PORT, ARM, WRIST, SIDES, LAYOUT, DISCARD_SPOT: LAYOUT.card.discard
 };
