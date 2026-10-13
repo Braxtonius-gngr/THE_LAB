@@ -2478,7 +2478,10 @@ function phoneHTML(asset) {
 // still floats (its lamp comes up out of the dark) - and returns the
 // controller: fly() takes over from the intro and plays the shot in.
 export async function prepareTable(opts) {
-  const o = Object.assign({ scene: null, dest: 'card', hooks: {} }, opts);
+  // (o.showWhen: a promise - the table is built and warmed at once, but
+  // shown, its lamp coming up, only once this resolves: started under the
+  // landing's gate, it must not light the shot's frames)
+  const o = Object.assign({ scene: null, dest: 'card', hooks: {}, showWhen: null }, opts);
   const scene = o.scene;
   if (!scene.userData.set) throw new Error('table: the intro set is missing');
   const set = fineSet(scene.userData.set);
@@ -4635,6 +4638,9 @@ export async function prepareTable(opts) {
     await Promise.race([Promise.all(chipLoads), new Promise(res => setTimeout(res, 1500))]);
     try { await o.warm({ show: [seat], spread: true }); } catch (e) { /* compiled on first draw */ }
   }
+  if (o.showWhen) { try { await o.showWhen; } catch (e) { /* shown anyway */ } }
+  // (the lamp comes up from here, not from the build)
+  lampT0 = performance.now();
   seat.visible = true;
 
   return {
