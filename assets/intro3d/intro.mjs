@@ -2152,9 +2152,13 @@ async function buildIntro(opts, undo, teardown) {
   // the loading screen waited for; they are built in the background while
   // the shot plays instead, from the moment frames start to run slow, and a
   // step is taken once its programs are ready: see prepStep / loop.)
+  // (what the last warm was shown - a home's seat, still hidden while the
+  // shot floats - is shown to the steps' compiles too: its lights count)
+  let warmShow = [];
   const warm = async ({ show = [], spread = false } = {}) => {
     const hidden = show.filter(x => !x.visible);
     hidden.forEach(x => { x.visible = true; });
+    warmShow = show.slice();
     stepsAgain();
     const job = compileInto(targetsNow());
     const texs = new Set();
@@ -2189,6 +2193,8 @@ async function buildIntro(opts, undo, teardown) {
     const gen = stepGen;
     const was = renderer.getRenderTarget(), post = composer, shadows = renderer.shadowMap.enabled, glass = dice.map(d => d.mat.transmission);
     const programs = [];
+    const hidden = warmShow.filter(x => !x.visible);
+    hidden.forEach(x => { x.visible = true; });
     try {
       if (q <= 2) composer = null;
       if (q <= 1) renderer.shadowMap.enabled = false;
@@ -2199,6 +2205,7 @@ async function buildIntro(opts, undo, teardown) {
       }
     } catch (e) { /* compiled on the step */ }
     finally {
+      hidden.forEach(x => { x.visible = false; });
       renderer.setRenderTarget(was);
       composer = post; renderer.shadowMap.enabled = shadows;
       dice.forEach((d, i) => { d.mat.transmission = glass[i]; });
