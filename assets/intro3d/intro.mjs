@@ -779,12 +779,15 @@ export function studioEnvironment(renderer) {
 // starts the sound (see createIntro), and the speaker button turns it on
 // or off without skipping the shot.
 class Sound {
-  constructor() {
+  constructor(trim) {
     const AC = window.AudioContext || window.webkitAudioContext;
     this.ctx = AC ? new AC() : null;
     if (!this.ctx) return;
     const c = this.ctx;
     this.master = c.createGain(); this.master.gain.value = 0.85; this.master.connect(c.destination);
+    // (a game's own level under the master: blackjack's machine, with its
+    // servos, latches and card snaps, sits well below the dice)
+    if (trim && trim !== 1) { this.out = c.createGain(); this.out.gain.value = trim; this.out.connect(this.master); }
     const n = c.sampleRate;
     this.noise = c.createBuffer(1, n, n);
     const d = this.noise.getChannelData(0);
@@ -924,8 +927,8 @@ class Sound {
         break;
       }
       case 'latch':
-        this.burst(when, 'bandpass', 1400, 1.2, 0.18, 0.03);
-        this.tone(when + 0.01, 520, 0.06, 0.05, 'triangle', 380);
+        this.burst(when, 'bandpass', 1100, 1.0, 0.1, 0.03);
+        this.tone(when + 0.01, 480, 0.035, 0.05, 'triangle', 360);
         break;
       // (blackjack's: a card drawn from the shoe or sliding over the cloth -
       // a dry hiss as long as the slide; the snap of a card off the
@@ -935,13 +938,13 @@ class Sound {
         this.burst(when, 'bandpass', 2600 * k, 1.1, 0.06, (ev.dur || 0.08) / k, 1.3);
         break;
       case 'snap':
-        this.burst(when, 'bandpass', 3800 * k, 3.5, ev.soft ? 0.07 : 0.14, 0.012 / k);
-        this.tone(when, 1900 * k, ev.soft ? 0.02 : 0.04, 0.03 / k, 'triangle', 1500 * k);
+        this.burst(when, 'bandpass', 3200 * k, 2.5, ev.soft ? 0.04 : 0.08, 0.012 / k);
+        this.tone(when, 1700 * k, ev.soft ? 0.012 : 0.022, 0.03 / k, 'triangle', 1400 * k);
         break;
       case 'pat': {
         const f = Math.min(1, (ev.speed || 60) / 160);
-        this.burst(when, 'lowpass', 1100 * k, 0.9, 0.08 + 0.18 * f, 0.03 / k);
-        this.burst(when, 'bandpass', 3000 * k, 2.2, 0.03 + 0.05 * f, 0.012 / k);
+        this.burst(when, 'lowpass', 1000 * k, 0.9, 0.07 + 0.14 * f, 0.03 / k);
+        this.burst(when, 'bandpass', 2600 * k, 1.8, 0.015 + 0.03 * f, 0.012 / k);
         break;
       }
       case 'servo':
@@ -1711,7 +1714,10 @@ async function buildIntro(opts, undo, teardown) {
 
   // ---- Sound.
   let sound = null;
-  try { sound = o.sound ? new Sound() : null; } catch (e) { sound = null; }
+  // (each game's level: see Sound - the machine's clicks and ticks were loud
+  // next to the dice)
+  const SOUND_TRIM = { blackjack: 0.5 };
+  try { sound = o.sound ? new Sound(SOUND_TRIM[o.game] || 1) : null; } catch (e) { sound = null; }
   // (read when undone: the speaker can make one later)
   undo.push(() => { if (sound && sound.ctx) sound.ctx.close().catch(() => {}); });
   if (sound && sound.ctx) {
@@ -2390,7 +2396,7 @@ async function buildIntro(opts, undo, teardown) {
   ['pointerdown', 'focusin', 'keydown'].forEach(type => soundBtn.addEventListener(type, e => e.stopPropagation()));
   soundBtn.addEventListener('click', e => {
     e.stopPropagation();
-    if (!sound) { try { sound = new Sound(); } catch (err) { sound = null; } }
+    if (!sound) { try { sound = new Sound(SOUND_TRIM[o.game] || 1); } catch (err) { sound = null; } }
     if (!sound || !sound.ctx) return;
     if (sound.on) { sound.muted = true; sound.master.gain.setTargetAtTime(0, sound.ctx.currentTime, 0.02); }
     else {
