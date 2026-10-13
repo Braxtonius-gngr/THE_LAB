@@ -27,7 +27,7 @@
 
 import * as THREE from '../vendor/three/three.module.js';
 import { CSS3DRenderer, CSS3DObject } from '../vendor/three/three.addons.js';
-import { studioEnvironment, dressTrim, trimBaseOf } from './intro.mjs';
+import { studioEnvironment, dressTrim, trimBaseOf, FELTS, TRIMS } from './intro.mjs';
 import { retile, canvasTex, embossTex, seeded, wrapNoise, dataTex, finish, finished } from './finish.mjs';
 
 export const DESTS = ['card'];
@@ -49,6 +49,10 @@ const CARD_TABLE = { at: [212, 0, -18], yaw: 90 };
 // Its felt: a half-ellipse, a across and b deep, from the player's rail to
 // the dealer's straight edge.
 const FELT = { a: 80, b: 64 };
+// The dealer's edge, split (see buildCardTable): the two chip racks start
+// `gap` cm either side of the middle, and between them, behind the port, a
+// lacquered liner `w` half-width and `h` tall, `z` cm back of the bar's middle.
+const RACKS = { gap: 14, wall: { w: 13, h: 17, z: 4.2 } };
 // A playing card (6.35 x 8.89 cm), built at CARD.px page pixels per cm and
 // scaled down, so its print is rasterised sharp.
 const CARD = { w: 6.35, h: 8.89, px: 50 };
@@ -65,6 +69,11 @@ const SLOTS = { cols: 3, gapX: 1.3, gapZ: 2.4, max: 9 };
 const LAYOUT = {
   card: {
     view: [{ eye: [0, 54, -22], aim: [0, 0, 24], fov: 54 }, { eye: [0, 46, -24], aim: [0, 0, 27], fov: 44 }],
+    // (the discard rack's place is the house's one: at the dealer's right
+    // hand against the back rail, beside the port - where a dealer keeps
+    // it, in view and out of the dealing lane - and the blackjack's salon
+    // table keeps it there too, so a card undone always comes back from
+    // the same spot: see DISCARD_SPOT)
     z0: 18.5, rail: { x: 3.4, y: 7.2, z: -4.2, tilt: 28 }, shoe: [-15.5, 54], discard: [16, 55]
   }
 };
@@ -575,13 +584,31 @@ function buildCardTable(set, opts = {}) {
   // (how light the felt is, 0 black to 1 ivory: the keyline's weight, and
   // the gold made to read on it - a little less mirror and more of its own
   // colour, as foil on a light cloth is seen against it rather than in it)
+  // (printHex: the foil in the trim's metal rather than the house gold - see
+  // printTrim)
+  let printHex = null;
   const printFor = light => {
     keys.forEach(k => { k.visible = light > 0.01; k.material.opacity = Math.min(1, 0.55 + 0.45 * light); });
-    [inkMat, markMat].forEach(m => { m.metalness = 0.8 - 0.3 * light; m.color.setHex(light > 0.01 ? 0xd9b563 : 0xc9a75a); });
+    [inkMat, markMat].forEach(m => { m.metalness = 0.8 - 0.3 * light; m.color.setHex(printHex != null ? printHex : light > 0.01 ? 0xd9b563 : 0xc9a75a); });
   };
   printFor(feltMat.userData.feltLight || 0);
   g.userData.printFor = printFor;
+  // The print takes the trim: the lettering, the arc and its diamonds
+  // stamped in the same metal as the inlay round them - unless that metal
+  // would vanish into the cloth (onyx on black), when the house gold stays.
+  // Gold is the house's own and stays as it was.
+  g.userData.printTrim = (trimId, feltId) => {
+    const t = TRIMS[trimId], f = FELTS[feltId] || FELTS.black;
+    printHex = null;
+    if (t && t.line != null) {
+      const ink = new THREE.Color(t.line), cloth = new THREE.Color(f.color);
+      const L = c => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+      if (Math.abs(L(ink) - L(cloth)) > 0.04) printHex = t.line;
+    }
+    printFor(feltMat.userData.feltLight || f.light || 0);
+  };
   g.userData.mark = markMesh;
+  g.userData.detail = inkMat;
   // The dealer's edge: a walnut bar across the straight side, with the
   // chip tray let into it.
   const barLen = 2 * a + 26;
@@ -589,7 +616,25 @@ function buildCardTable(set, opts = {}) {
   { const uv = barGeo.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * barLen / 60, uv.getY(i) * 12 / 15); }
   const bar = new THREE.Mesh(barGeo, woodMat);
   bar.position.set(0, -4, b + 6); bar.castShadow = true; bar.receiveShadow = true; g.add(bar);
-  g.add(chipTray(set));
+  if (opts.split) {
+    // (this table's print follows its trim from the start - see printTrim)
+    g.userData.printTrim(set.gold.userData.trim || 'gold', feltMat.userData.felt || Object.keys(FELTS).find(k => FELTS[k].color === feltMat.color.getHex()) || 'black');
+    // Split: the chips in two racks, one each side of the dealer's port, with
+    // a low lacquered liner between them behind him, the house's seal in it.
+    // The dealer's arms work in the middle of the edge; a rack straight across
+    // it was in their way.
+    const { gap, wall } = RACKS;
+    [[1, ['gold', 'plum', 'onyx', 'emerald', 'oxblood']], [-1, ['ivory', 'oxblood', 'emerald', 'onyx', 'plum']]].forEach(([sx, cols]) => {
+      const t = chipTray(set, cols); t.position.x = sx * (gap + (cols.length * 5.95 + 1.4) / 2); g.add(t);
+    });
+    const lacq = new THREE.MeshPhysicalMaterial({ color: 0x0b0a0a, roughness: 0.34, clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 1.1 });
+    const zW = b + 6 + wall.z, hW = wall.h, wW = 2 * wall.w;
+    const panelG = new THREE.Mesh(new THREE.BoxGeometry(wW, hW, 1.4), lacq); panelG.position.set(0, 1.1 + hW / 2, zW); panelG.castShadow = true; panelG.receiveShadow = true; g.add(panelG);
+    const capG = new THREE.Mesh(new THREE.BoxGeometry(wW + 0.6, 0.5, 1.9), set.brass); capG.position.set(0, 1.1 + hW + 0.25, zW); g.add(capG);
+    const polish = polishedOf(set.brass, 0.14);
+    const medalG = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.4, 0.5, 64), [polish, engravedMat(sealTex(), 2.6), polish]);
+    medalG.rotation.set(-Math.PI / 2, 0, 0); medalG.position.set(0, 1.1 + hW * 0.5, zW - 0.95); g.add(medalG);
+  } else g.add(chipTray(set));
   return { group: g, rim, focus: [0, 0, 30], felt: feltMat, trim: trimMats };
 }
 
@@ -721,7 +766,7 @@ function chipMats(name) {
   const faceM = finished(new THREE.MeshStandardMaterial({ map: chipFace(name), roughness: 0.5, metalness: 0.12 }), 'clay', 2, 2, 0.35);
   return [sideM, faceM];
 }
-function chipTray(set) {
+function chipTray(set, cols = null) {
   const g = new THREE.Group();
   // (piano lacquer: rubbed out and polished, so the coat is a mirror - its
   // peel all but gone, a whisper at 1 cm - over a black that is soft under
@@ -729,7 +774,10 @@ function chipTray(set) {
   const lacquer = finished(new THREE.MeshPhysicalMaterial({ color: 0x0b0a0a, roughness: 0.34, clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 1.1 }), 'peel', 1, 1, 0.01);
   // (troughs deeper than their radius above the top: a chip stands in its
   // trough to a little past half its height)
-  const TR = { n: 10, pitch: 5.95, r: 2.1, sink: 0.55, len: 10.4, h: 3.1 };
+  // (the troughs' colours, left to right as the player reads: the whole rack
+  // across the dealer's edge, or - `cols` - one half of a split pair)
+  const COL = cols || ['gold', 'plum', 'onyx', 'onyx', 'emerald', 'emerald', 'oxblood', 'oxblood', 'ivory', 'ivory'];
+  const TR = { n: COL.length, pitch: 5.95, r: 2.1, sink: 0.55, len: 10.4, h: 3.1 };
   const W = TR.n * TR.pitch + 1.4;
   // the rack: its section across the troughs, drawn and extruded along z
   const prof = new THREE.Shape();
@@ -779,7 +827,6 @@ function chipTray(set) {
   g.add(new THREE.Mesh(merged(screws), capMat));
   g.add(new THREE.Mesh(merged(slots), new THREE.MeshStandardMaterial({ color: 0x1a1206, roughness: 0.8, metalness: 0.4 })));
   // the value of each trough, on a brass strip along the front
-  const COL = ['gold', 'plum', 'onyx', 'onyx', 'emerald', 'emerald', 'oxblood', 'oxblood', 'ivory', 'ivory'];
   const VAL = { gold: '1000', plum: '500', onyx: '100', emerald: '25', oxblood: '5', ivory: '1' };
   const FILL = { gold: 13, plum: 16, onyx: 22, emerald: 25, oxblood: 27, ivory: 28 };
   const plate = canvasTex(2048, 64, (c, Wc, Hc) => {
@@ -1063,8 +1110,11 @@ function buildShoe(set) {
 //   Motion: none.
 function buildDiscard(set) {
   const g = new THREE.Group();
-  // (the shoe's acrylic: see buildShoe)
-  const smoke = glassy(new THREE.MeshPhysicalMaterial({ color: 0x2e2620, roughness: 0.04, metalness: 0, transparent: true, opacity: 0.26, clearcoat: 1, clearcoatRoughness: 0.02, depthWrite: false, side: THREE.DoubleSide }), 0.72, 1.1);
+  // (the shoe's acrylic: see buildShoe - but warmer, a tea-smoked tint,
+  // and its reflections held to the room's warm half: the clear smoke
+  // mirrored the studio's cool panel and the light behind the lens, and
+  // read as a ghostly blue box that lit up and faded as the lens moved)
+  const smoke = glassy(new THREE.MeshPhysicalMaterial({ color: 0x4a3420, roughness: 0.08, metalness: 0, transparent: true, opacity: 0.3, clearcoat: 1, clearcoatRoughness: 0.08, envMapIntensity: 0.35, specularColor: new THREE.Color(0xd8a860), specularIntensity: 0.6, depthWrite: false, side: THREE.DoubleSide }), 0.5, 0.6);
   // (polished, but a satin polish rather than the shoe's mirror: they are
   // thin and run under the lamp end to end, and a mirror line that long
   // flared into a lit tube)
@@ -1273,8 +1323,13 @@ const WRIST = V(0, 0.6, -15.0);
 // up through a layer); 'rm' the finish (roughness in green, metalness in
 // blue: the seam is glossy glass, not metal, in a matt-ish glaze); 'h' the
 // depth of the cut, white where it is, for the normal map.
-function circuitTex(kind) {
+// `pal`, if given ({skin, vein}: THREE.Colors), recolours it: the glaze in
+// the skin's colour, the seam and its light in the vein's (the dealer taking
+// its colours from the table - see mimicPalette).
+function circuitTex(kind, pal = null) {
   const W = 512, H = 256;
+  // (a canvas wants sRGB, a THREE.Color holds linear values)
+  const rgb = (c, k = 1) => { const s = c.clone().convertLinearToSRGB(); return `${Math.round(Math.min(255, s.r * 255 * k))},${Math.round(Math.min(255, s.g * 255 * k))},${Math.round(Math.min(255, s.b * 255 * k))}`; };
   let seed = 20260928;
   const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
   // (the layout, the same for every kind: runs of polyline, and the pads at
@@ -1297,7 +1352,7 @@ function circuitTex(kind) {
     runs.push(pts); pads.push([x, y]);
   }
   const t = canvasTex(W, H, c => {
-    c.fillStyle = kind === true || kind === 'h' ? '#000000' : kind === 'rm' ? 'rgb(255,255,0)' : '#f4f1eb'; c.fillRect(0, 0, W, H);
+    c.fillStyle = kind === true || kind === 'h' ? '#000000' : kind === 'rm' ? 'rgb(255,255,0)' : pal ? `rgb(${rgb(pal.skin)})` : '#f4f1eb'; c.fillRect(0, 0, W, H);
     c.lineJoin = 'round'; c.lineCap = 'round';
     // (one pass over every trace and pad: a width, a colour, a pad radius)
     const pass = (w, col, pr) => {
@@ -1308,11 +1363,13 @@ function circuitTex(kind) {
     if (kind === true) {
       // (the light through the layers: broad and faint, then narrower and
       // brighter, a hot thread at the core)
-      [[15, 0.03], [10, 0.05], [6.5, 0.09]].forEach(([w, a]) => pass(w, `rgba(255,160,70,${a})`, w * 0.5));
-      pass(3.2, 'rgba(255,196,120,0.38)', 3.2);
-      pass(1.4, 'rgba(255,234,196,0.9)', 1.9);
+      const hot = pal ? pal.vein.clone().lerp(new THREE.Color(1, 1, 1), 0.55) : null;
+      [[15, 0.03], [10, 0.05], [6.5, 0.09]].forEach(([w, a]) => pass(w, pal ? `rgba(${rgb(pal.vein)},${a})` : `rgba(255,160,70,${a})`, w * 0.5));
+      pass(3.2, pal ? `rgba(${rgb(pal.vein)},0.38)` : 'rgba(255,196,120,0.38)', 3.2);
+      pass(1.4, pal ? `rgba(${rgb(hot)},0.9)` : 'rgba(255,234,196,0.9)', 1.9);
     } else if (kind === 'rm') pass(3.6, 'rgb(255,36,0)', 3.6);
     else if (kind === 'h') pass(3.6, '#ffffff', 3.6);
+    else if (pal) { pass(8, `rgba(${rgb(pal.vein, 0.7)},0.1)`, 6); pass(3.0, `rgba(${rgb(pal.vein)},0.95)`, 3.0); }
     else { pass(8, 'rgba(70,52,34,0.07)', 6); pass(3.0, 'rgba(24,22,22,0.86)', 3.0); }
   });
   if (kind === 'rm' || kind === 'h') t.colorSpace = THREE.NoColorSpace;
@@ -1461,13 +1518,44 @@ function movementTex() {
   const glow = new THREE.CanvasTexture(lit); glow.colorSpace = THREE.SRGBColorSpace;
   return (MOVEMENT = { map, normal: embossTex(hgt, 3.2), rf, glow });
 }
-function dealerMaterials() {
+// The dealer's colours, picked in Settings: its skin (the glaze) and its
+// vein (the circuitry in it, and the light in that), each 'felt' or 'trim' -
+// the table's own, so it changes with them - or one of its own (ROBOT_SWATCH,
+// the same names as index.html's ROBOT_CHOICES). 'house' for both is the
+// machine as it was made: null, the white glaze and its amber light.
+const GOLD_HEX = 0xd6b064;
+const ROBOT_SWATCH = { house: 0xece6da, onyx: 0x1b1a1e, gold: GOLD_HEX, silver: 0xd9dde3, rose: 0xe8a890, emerald: 0x1f8a58, royal: 0x2d55a8, crimson: 0xa8202e, amber: 0xffb860 };
+// (a felt as the dealer wears it: the cloth's colour a quarter of the way to
+// its sheen, so a dark one reads as a glaze and not a hole; a trim, its
+// metal - gold's, which has no colour of its own in TRIMS, the house gold)
+const feltTone = id => { const f = FELTS[id] || FELTS.black; return new THREE.Color(f.color).lerp(new THREE.Color(f.sheen), 0.25); };
+const trimTone = id => { const t = TRIMS[id]; return new THREE.Color(t && t.line != null ? t.line : GOLD_HEX); };
+const lum = c => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+function robotPalette(skinId, veinId, feltId, trimId) {
+  if ((skinId || 'house') === 'house' && (veinId || 'house') === 'house') return null;
+  const pick = id => (id === 'felt' ? feltTone(feltId) : id === 'trim' ? trimTone(trimId) : new THREE.Color(ROBOT_SWATCH[id] != null ? ROBOT_SWATCH[id] : ROBOT_SWATCH.house));
+  const skin = pick(skinId || 'house'), vein = pick(!veinId || veinId === 'house' ? 'amber' : veinId);
+  // (circuitry the colour of the glaze would vanish into it - onyx trim on
+  // black felt: lifted toward white on a dark skin, deepened on a light one)
+  if (Math.abs(lum(skin) - lum(vein)) < 0.05) { if (lum(skin) < 0.25) vein.lerp(new THREE.Color(1, 1, 1), 0.55); else vein.multiplyScalar(0.3); }
+  return { skin, vein };
+}
+// (the dealer's materials recoloured, in place: a new pair of circuit maps,
+// the old ones given back)
+function repaintDealer(m, pal) {
+  const old = [m.ceramic.map, m.ceramic.emissiveMap];
+  m.ceramic.map = circuitTex(false, pal); m.ceramic.emissiveMap = circuitTex(true, pal);
+  m.ceramic.color.setHex(pal ? 0xffffff : 0xeeeae2); m.ceramic.emissive.setHex(pal ? 0xffffff : 0xffc877);
+  if (pal) m.plain.color.copy(pal.skin); else m.plain.color.setHex(0xe6e2da);
+  old.forEach(t => { if (t) t.dispose(); });
+}
+function dealerMaterials(pal = null) {
   // (the gold inlaid in the glaze: gold where the traces are - metal, and
   // brighter - and each trace a hair proud of the glaze under its clear)
   const rm = circuitTex('rm');
-  const ceramic = new THREE.MeshPhysicalMaterial({ color: 0xeeeae2, map: circuitTex(false), roughness: 0.34, roughnessMap: rm, metalness: 1, metalnessMap: rm,
+  const ceramic = new THREE.MeshPhysicalMaterial({ color: pal ? 0xffffff : 0xeeeae2, map: circuitTex(false, pal), roughness: 0.34, roughnessMap: rm, metalness: 1, metalnessMap: rm,
     clearcoat: 0.85, clearcoatRoughness: 0.12, sheen: 0.4, sheenRoughness: 0.45, sheenColor: new THREE.Color(0xfff0dc),
-    emissive: 0xffc877, emissiveMap: circuitTex(true), emissiveIntensity: 0 });
+    emissive: pal ? 0xffffff : 0xffc877, emissiveMap: circuitTex(true, pal), emissiveIntensity: 0 });
   // (the cut a hair below the glaze: a negative emboss)
   { const n = embossTex(circuitTex('h').image, -1.6, 1); n.wrapS = n.wrapT = THREE.RepeatWrapping; ceramic.normalMap = n; ceramic.normalScale = new THREE.Vector2(0.28, 0.28); }
   // (the light in the traces runs in pulses along each part, from the
@@ -1485,7 +1573,7 @@ function dealerMaterials() {
   ceramic.customProgramCacheKey = () => 'dealer-ceramic-pulse';
   // (the glaze: a hard clear coat over soft white, and at its thin edges,
   // seen edge-on, the warm glow of light carried through it)
-  const plain = new THREE.MeshPhysicalMaterial({ color: 0xe6e2da, roughness: 0.34, clearcoat: 0.85, clearcoatRoughness: 0.12, sheen: 0.4, sheenRoughness: 0.45, sheenColor: new THREE.Color(0xfff0dc) });
+  const plain = new THREE.MeshPhysicalMaterial({ color: pal ? pal.skin : 0xe6e2da, roughness: 0.34, clearcoat: 0.85, clearcoatRoughness: 0.12, sheen: 0.4, sheenRoughness: 0.45, sheenColor: new THREE.Color(0xfff0dc) });
   // (sapphire over each movement and over every knuckle: no colour of its
   // own, only what it mirrors, and the faint violet-to-green bloom of its
   // anti-reflective coat at an angle)
@@ -1611,10 +1699,12 @@ function buildDealerHand(m, mirror = false) {
   //   c       where each phalanx's gold collar sits along it (0 root, 1 tip)
   //   side    its share of a spread
   [
-    { x: 2.45, kz: -6.5, L: 6.0, f: [0.39, 0.33, 0.28], r: 1.36, yaw: 0.03, arch: 0, side: 1, c: [0.3, 0.3] },
-    { x: 0.85, kz: -6.7, L: 6.45, f: [0.38, 0.33, 0.29], r: 1.4, yaw: 0.0, arch: 0.05, side: 0.35, c: [0.2, 0.42] },
-    { x: -0.75, kz: -6.45, L: 6.1, f: [0.385, 0.335, 0.28], r: 1.28, yaw: -0.04, arch: 0.1, side: -0.35, c: [0.38, 0.24] },
-    { x: -2.25, kz: -6.05, L: 4.95, f: [0.41, 0.3, 0.29], r: 1.06, yaw: -0.1, arch: 0.17, side: -1, c: [0.5, 0.34] }
+    // (the girths and the knuckle spacing are drawn out together, a sixth wider
+    // than they were: the fingers were thin against the palm)
+    { x: 2.7, kz: -6.5, L: 6.0, f: [0.39, 0.33, 0.28], r: 1.58, yaw: 0.03, arch: 0, side: 1, c: [0.3, 0.3] },
+    { x: 0.95, kz: -6.7, L: 6.45, f: [0.38, 0.33, 0.29], r: 1.63, yaw: 0.0, arch: 0.05, side: 0.35, c: [0.2, 0.42] },
+    { x: -0.85, kz: -6.45, L: 6.1, f: [0.385, 0.335, 0.28], r: 1.5, yaw: -0.04, arch: 0.1, side: -0.35, c: [0.38, 0.24] },
+    { x: -2.55, kz: -6.05, L: 4.95, f: [0.41, 0.3, 0.29], r: 1.24, yaw: -0.1, arch: 0.17, side: -1, c: [0.5, 0.34] }
   ].forEach(({ x, kz, L, f, r, yaw, arch, side, c }) => {
     const p0 = V(x, 0.68, kz + L), p1 = p0.clone().add(V(0, 0.16, -L * f[2])), p2 = p1.clone().add(V(0, 0.2, -L * f[1])), p3 = V(x, 1.22, kz);
     // (the finger's rest direction is a turn of its own, under the pivots the
@@ -1654,7 +1744,7 @@ function buildDealerHand(m, mirror = false) {
   // knuckle, narrowing as they go)
   { const bridge = new THREE.Mesh(new THREE.CapsuleGeometry(0.72, 5.6, 6, 18), m.plain);
     bridge.rotation.z = Math.PI / 2; bridge.scale.set(1, 1, 0.92); bridge.position.set(0, 1.12, -6.25); hand.add(bridge);
-    [[1.62, -6.0], [0.05, -6.1], [-1.45, -5.85]].forEach(([x, z]) => { const w = new THREE.Mesh(new THREE.SphereGeometry(0.5, 14, 10), m.plain); w.scale.set(0.8, 0.62, 1.15); w.position.set(x, 1.02, z); hand.add(w); }); }
+    [[1.83, -6.0], [0.05, -6.1], [-1.7, -5.85]].forEach(([x, z]) => { const w = new THREE.Mesh(new THREE.SphereGeometry(0.5, 14, 10), m.plain); w.scale.set(0.8, 0.62, 1.15); w.position.set(x, 1.02, z); hand.add(w); }); }
   // the knuckles: one graphite bar with gold ends, the palm a ceramic plate
   // behind it
   const knuckles = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 7.0, 16), m.graphite);
@@ -1663,7 +1753,7 @@ function buildDealerHand(m, mirror = false) {
   // (the palm narrows from the knuckles to the wrist, its edges rounded
   // over: a shaped shell, not a slab)
   const palmShape = new THREE.Shape();
-  { const k = 3.4, w = 2.5, h = 3.0, r = 0.9;
+  { const k = 3.5, w = 2.05, h = 2.8, r = 0.9;
     palmShape.moveTo(-w + r * 0.4, -h); palmShape.lineTo(w - r * 0.4, -h);
     palmShape.quadraticCurveTo(w, -h, w + 0.1, -h + r);
     palmShape.lineTo(k, h - r); palmShape.quadraticCurveTo(k, h, k - r, h);
@@ -1691,7 +1781,7 @@ function buildDealerHand(m, mirror = false) {
   const inlay = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.04, 4.2), m.gold); inlay.position.set(0, 2.07, -9.7); hand.add(inlay);
   const leds = [-11.6, -11.0, -10.4].map(z => { const l = new THREE.Mesh(new THREE.CircleGeometry(0.17, 14), m.led.clone()); l.rotation.x = -Math.PI / 2; l.position.set(0.42, 2.075, z); hand.add(l); return l; });
   // vents down each side of the palm
-  [-1, 1].forEach(sd => { for (let v = 0; v < 3; v++) { const s = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.16, 1.4), m.graphite); s.position.set(sd * (2.62 + v * 0.18 - 0.1), 1.35, -11.2 + v * 0.55); s.rotation.y = sd * 0.16; hand.add(s); } });
+  [-1, 1].forEach(sd => { for (let v = 0; v < 3; v++) { const s = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.16, 1.4), m.graphite); s.position.set(sd * (2.2 + v * 0.18 - 0.1), 1.35, -11.2 + v * 0.55); s.rotation.y = sd * 0.16; hand.add(s); } });
   // the thumb, off to the side, clear of the card, on a pivot of its own
   const t0 = V(3.6, 1.15, -10.4), t1 = V(4.6, 0.95, -7.4), t2 = V(4.9, 0.72, -4.7);
   // A thumb is jointed twice: a ball at its root, seated in the hand (it
@@ -1707,8 +1797,8 @@ function buildDealerHand(m, mirror = false) {
     // (fuller than a finger, and the two phalanges meeting on a shared
     // joint sphere, a gold collar near the root of each, a pad under the tip
     // and a clear nail over it)
-    thumb.add(tapered(0.82, 0.7, o, d1, m.plain, true, true), collar(d1.clone().multiplyScalar(0.34), d1, 0.81));
-    thumbTip.add(tapered(0.7, 0.4, o, d2, m.plain, false, false), collar(d2.clone().multiplyScalar(0.32), d2, 0.69));
+    thumb.add(tapered(0.95, 0.82, o, d1, m.plain, true, true), collar(d1.clone().multiplyScalar(0.34), d1, 0.94));
+    thumbTip.add(tapered(0.82, 0.48, o, d2, m.plain, false, false), collar(d2.clone().multiplyScalar(0.32), d2, 0.81));
     thumbTip.add(tapered(0.46, 0.42, d2.clone().addScaledVector(d2.clone().normalize(), -0.7), d2, m.gold, false, false));
     const tn = new THREE.Mesh(new THREE.SphereGeometry(0.4, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), m.clear); tn.scale.set(0.95, 0.5, 1.2); tn.position.copy(d2).add(V(0, 0.2, -0.3)); thumbTip.add(tn);
     // (the knuckle's pin: across the thumb, standing a little proud of it
@@ -2350,7 +2440,7 @@ function railHTML() {
         <circle cx="50" cy="50" r="3.4" class="r3t-pin"/>
       </svg>
     </div>
-    <div class="r3t-time"><b class="r3t-now">--:--</b><small class="r3t-date"></small><span class="r3t-status"><b class="r3t-next">&mdash;</b><small class="r3t-done"></small></span></div>
+    <div class="r3t-time"><b class="r3t-now">--:--</b><small class="r3t-date"></small><span class="r3t-status"><b class="r3t-next">&mdash;</b><small class="r3t-done"></small></span><button type="button" class="r3t-clear" aria-live="polite"><i class="r3t-clear-ring" aria-hidden="true"></i><span class="r3t-clear-k">Done</span></button></div>
     <button type="button" class="r3t-run"><span class="r3t-run-coin" aria-hidden="true"></span><span class="r3t-run-k">Run the deck</span><span class="r3t-run-v">&mdash;</span></button>
   </div>`;
 }
@@ -2399,7 +2489,7 @@ export async function prepareTable(opts) {
   // ---- The seat frame and the destination.
   const seat = new THREE.Group();
   const L = LAYOUT[dest];
-  const table = buildCardTable(set);
+  const table = buildCardTable(set, { split: true });
   seat.add(table.group);
   const focus = table.focus;
   seat.position.set(...CARD_TABLE.at);
@@ -2519,7 +2609,16 @@ export async function prepareTable(opts) {
     handSeat.position.copy(seat.position); handSeat.quaternion.copy(seat.quaternion);
     // (anything of the arm below the felt is inside the table: clipped)
     handGL.localClippingEnabled = true;
-    const dealerMats = dealerMaterials();
+    // The dealer's colours (Settings, through hooks.robot(): see
+    // robotPalette), from the felt and trim the table is dressed in now.
+    // (lab: ?mimic=a skin the felt's, veins the trim's; b the other way
+    // about; off the house's white - over whatever Settings says)
+    const mimicQ = (/[?&]mimic=(a|b|off)/.exec(location.search) || [])[1];
+    const robotIds = () => (mimicQ ? { a: { skin: 'felt', vein: 'trim' }, b: { skin: 'trim', vein: 'felt' }, off: { skin: 'house', vein: 'house' } }[mimicQ]
+      : Object.assign({ skin: 'felt', vein: 'trim' }, hooks.robot ? hooks.robot() : {}));
+    let feltNow = table.felt.userData.felt || Object.keys(FELTS).find(k => FELTS[k].color === table.felt.color.getHex()) || 'black', trimNow = (table.trim && table.trim.band[0] && table.trim.band[0].userData.trim) || 'gold';
+    const robotPal = () => { const r = robotIds(); return robotPalette(r.skin, r.vein, feltNow, trimNow); };
+    const dealerMats = dealerMaterials(robotPal());
     // (below the well's floor nothing of it is ever seen)
     const underFelt = [new THREE.Plane(V(0, 1, 0), 8.6)];
     Object.values(dealerMats).forEach(mat => { if (mat.isMaterial) mat.clippingPlanes = underFelt; });
@@ -2873,6 +2972,49 @@ export async function prepareTable(opts) {
     const introT0 = world.t;
     let focusId = null;
     const lift = new Map();                 // card id -> [k, target, from, t0]
+    // "Done": the hand swept off the felt, and for a few seconds the button
+    // is "Undo" - nothing is final until it runs out, when the app deals the
+    // next hand (hooks.redeal). Same shape as `lift`: card id -> [k, target,
+    // from, t0], k 1 is swept off.
+    const swp = new Map();
+    const CLEAR_MS = 8000;
+    let clearTimer = 0, clearPhase = 'idle';
+    const swpAt = (id, tt) => {
+      const S = swp.get(id);
+      if (!S) return 0;
+      const k = fo.reduced ? S[1] : smoother(S[2] + (S[1] - S[2]) * clamp01((tt - S[3]) / 0.6));
+      S[0] = k;
+      return k;
+    };
+    // (Done sweeps the hand off and starts the countdown; Undo, before it
+    // runs out, brings every card back where it lay and changes nothing.)
+    const clearBtn = railEl.querySelector('.r3t-clear'), clearK = railEl.querySelector('.r3t-clear-k');
+    const clearSet = (phase) => {
+      clearPhase = phase;
+      railEl.classList.toggle('r3t-clearing', phase === 'swept');
+      if (clearK) clearK.textContent = phase === 'swept' ? 'Undo' : 'Done';
+      if (clearBtn) clearBtn.setAttribute('aria-label', phase === 'swept' ? 'Undo: bring the cards back' : 'Done: clear the table for the next hand');
+    };
+    const clearToggle = () => {
+      if (clearPhase === 'gone') return;
+      if (clearPhase === 'idle') {
+        if (focusId) putDown();
+        cardObjs.forEach((o, i) => { const id = o.userData.card.id, cur = swpAt(id, tNow); swp.set(id, [cur, 1, cur, tNow + i * 0.06]); });
+        clearSet('swept');
+        clearTimer = setTimeout(() => {
+          clearTimer = 0;
+          clearSet('gone');
+          if (hooks.redeal) hooks.redeal();
+          else { cardObjs.forEach(o => swp.delete(o.userData.card.id)); clearSet('idle'); wake(); }
+        }, CLEAR_MS);
+      } else {
+        clearTimeout(clearTimer); clearTimer = 0;
+        const n = cardObjs.length;
+        cardObjs.forEach((o, i) => { const id = o.userData.card.id, cur = swpAt(id, tNow); swp.set(id, [cur, 0, cur, tNow + (n - 1 - i) * 0.05]); });
+        clearSet('idle');
+      }
+      wake();
+    };
 
     const tmpQ = new THREE.Quaternion(), camQ = new THREE.Quaternion();
     const up = V(0, 1, 0);
@@ -3562,6 +3704,15 @@ export async function prepareTable(opts) {
           q.slerp(focusPose.q, lk);
         }
       }
+      // (swept: slid off the felt toward the player's left, turning a little
+      // as it goes, and gone before it reaches the edge)
+      const sk = swpAt(obj.userData.card.id, tt);
+      if (sk > 0) {
+        p.x += (74 - p.x) * sk; p.z += 6 * sk; p.y += Math.sin(Math.PI * Math.min(1, sk)) * 1.2;
+        q.premultiply(tmpQ.setFromAxisAngle(up, 0.5 * sk));
+        el.style.opacity = (1 - smoother((sk - 0.45) / 0.55)).toFixed(3);
+        el.style.pointerEvents = sk > 0.02 ? 'none' : '';
+      } else if (el.style.opacity) { el.style.opacity = ''; el.style.pointerEvents = ''; }
       obj.position.copy(p);
       obj.quaternion.copy(q);
       shadeCard(obj.userData.i, p, q, true);
@@ -3729,6 +3880,12 @@ export async function prepareTable(opts) {
     // second arm solved, and the first again if the second came near it -
     // the other arm's bulk.
     const house0 = [{ a: V(0, 0, 0), b: V(0, 0, 0), r: 3.05 }, { a: V(0, 0, 0), b: V(0, 0, 0), r: 2.0 }, { a: V(0, 0, 0), b: V(0, 0, 0), r: 2.0 }, { a: V(0, 0, 0), b: V(0, 0, 0), r: 2.0 }, { a: V(0, 0, 0), b: V(0, 0, 0), r: 2.2 }, { a: V(0, 0, 0), b: V(0, 0, 0), r: 2.2 }];
+    // (and the dealer's edge, which they must not reach into either: the two
+    // chip racks, a capsule each over the troughs and chips, and the liner
+    // behind the port, in two bars one over the other. Fixed, so set once.)
+    { const zR = FELT.b + 5.6, zL = FELT.b + 6 + RACKS.wall.z, xR = RACKS.gap + 5 * 5.95 + 1.4;
+      [[RACKS.gap, xR], [-xR, -RACKS.gap]].forEach(([x0, x1]) => house0.push({ a: V(x0, 1.8, zR), b: V(x1, 1.8, zR), r: 5.4 }));
+      [5, 13].forEach(y => house0.push({ a: V(-RACKS.wall.w, y, zL), b: V(RACKS.wall.w, y, zL), r: 2.6 })); }
     // (each arm's list leaves out its own J1 drum: its crank holds the
     // upper link just clear of that by construction)
     const houseFor = [house0.filter((c, i) => i !== 4), house0.filter((c, i) => i !== 5)];
@@ -4345,6 +4502,7 @@ export async function prepareTable(opts) {
         wake();
         return;
       }
+      if (e.target.closest('.r3t-clear')) { clearToggle(); return; }
       if (e.target.closest('.r3t-run')) { if (hooks.run) hooks.run(); return; }
       const tile = e.target.closest('.r3t-ph-tile, .r3t-ph-gear');
       if (tile) { if (hooks.openView) hooks.openView(tile.dataset.view); return; }
@@ -4426,16 +4584,26 @@ export async function prepareTable(opts) {
       setFelt(id) {
         if (!world.dressFelt) return;
         world.setFelt(id); world.dressFelt(table.felt, id);
-        if (table.group.userData.printFor) table.group.userData.printFor(table.felt.userData.feltLight || 0);
+        feltNow = table.felt.userData.felt || id;
+        if (table.group.userData.printTrim) table.group.userData.printTrim(trimNow, feltNow);
+        else if (table.group.userData.printFor) table.group.userData.printFor(table.felt.userData.feltLight || 0);
+        // (a dealer matched to the felt changes with it)
+        repaintDealer(dealerMats, robotPal()); drawArms();
         show();
       },
       // The trim picked in Settings, laid now: the table's band and lines,
-      // and the shot's band (see TRIMS in intro.mjs).
+      // the shot's band, the print on the felt, and a dealer matched to it
+      // (see TRIMS in intro.mjs).
       setTrim(id) {
         if (world.setTrim) world.setTrim(id);
         if (table.trim) dressTrim(table.trim, id);
+        trimNow = TRIMS[id] ? id : 'gold';
+        if (table.group.userData.printTrim) table.group.userData.printTrim(trimNow, feltNow);
+        repaintDealer(dealerMats, robotPal()); drawArms();
         show();
       },
+      // The dealer's colours picked in Settings (hooks.robot()), laid now.
+      setRobot() { repaintDealer(dealerMats, robotPal()); drawArms(); show(); },
       // (lab: a gesture now - point, wave, spirit, drum, knock, sulk, peek,
       // pop - at the cards given by index, or the ready ones, and when it
       // runs, in the table's clock)
@@ -4446,7 +4614,7 @@ export async function prepareTable(opts) {
       get waiting() { return { stage: idle.stage, waited: idle.since ? +((performance.now() - idle.since) / 1000).toFixed(1) : 0, sulk: idle.sulk, ready: idle.ready, until: +gestureEnd.toFixed(2), t: +tNow.toFixed(2), table: running, arms: !!armsRaf }; },
       dispose() {
         disposed = true; running = false; cancelAnimationFrame(raf); cancelAnimationFrame(armsRaf);
-        clearInterval(clock); clearInterval(idleClock);
+        clearInterval(clock); clearInterval(idleClock); clearTimeout(clearTimer);
         window.removeEventListener('resize', onResize);
         document.removeEventListener('keydown', skipAhead);
         world.canvas.removeEventListener('pointerdown', skipAhead);
@@ -4525,7 +4693,7 @@ export const tableKit = {
 // not the table's deal).
 export const dealerKit = {
   buildCardTable, buildShoe, buildDiscard, buildPort, chipMats, chipsReady: () => Promise.all(chipLoads),
-  dealerMaterials, buildDealerTorso, buildDealerArm, buildDealerHand, handPose, elbowWay, segDist,
+  dealerMaterials, robotPalette, buildDealerTorso, buildDealerArm, buildDealerHand, handPose, elbowWay, segDist,
   paintCardBack, backArt, weaveTex, PIPS, lying, contactShadow, polishedOf, freeTree,
-  CARD, FELT, PORT, ARM, WRIST, SIDES, LAYOUT
+  CARD, FELT, PORT, ARM, WRIST, SIDES, LAYOUT, DISCARD_SPOT: LAYOUT.card.discard
 };

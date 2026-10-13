@@ -34,6 +34,12 @@ import { finish, finished, embossTex } from './finish.mjs';
 
 const HERE = new URL('./', import.meta.url);
 const asset = f => new URL(f, HERE).href;
+// (?perf: when this module loaded, for the readout's time to first frame)
+const PERF_T0 = performance.now();
+const PERF = typeof location !== 'undefined' && /[?&]perf(?=&|=|$)/.test(location.search);
+const perfMarks = [];
+// (?perf: the build's steps, each with its time since load)
+const perfMark = name => { if (PERF) perfMarks.push(`${name} ${((performance.now() - PERF_T0) / 1000).toFixed(1)}s`); };
 
 // The games: the shot is one of these each launch, drawn alike (pickGame)
 // unless ?game= names one. The dice are this module's own; every other game
@@ -42,7 +48,9 @@ const asset = f => new URL(f, HERE).href;
 // hands the shot its plan, its camera path, its sounds and its frames - see
 // the `game` seam in buildIntro(). The set, the resolution, the post, the
 // sound, the quality steps and the handover to the homes are shared.
-export const GAMES = ['dice', 'wheel', 'plinko', 'blackjack', 'slots'];
+// (slots is out of the rotation while it is reworked: its module stays, and
+// ?game=slots falls back to the dice)
+export const GAMES = ['dice', 'wheel', 'plinko', 'blackjack'];
 export function pickGame(r) { return GAMES[Math.min(GAMES.length - 1, Math.floor(r * GAMES.length))]; }
 export const TIERS = ['standard', 'hardways', 'vault', 'edge'];
 export const TIER_NAMES = { standard: 'Standard Drop', hardways: 'The Hardways', vault: 'The Vault Pull', edge: 'The Defiant Edge' };
@@ -57,11 +65,44 @@ export function pickTier(r) {
 }
 
 // ---------------------------------------------------------------- helpers
+// Whether this browser makes a bitmap turned over on request (a 1 x 2
+// picture, flipped, read back): the bitmaps' textures are uploaded as they
+// are, so one made the right way up would hang upside down - its bumps
+// dents. Asked once; the answer is kept.
+let flipTest = null;
+function bitmapsFlip() {
+  if (flipTest) return flipTest;
+  flipTest = (async () => {
+    if (typeof createImageBitmap !== 'function' || typeof ImageData !== 'function') return false;
+    const px = new ImageData(new Uint8ClampedArray([255, 0, 0, 255, 0, 0, 255, 255]), 1, 2);
+    const b = await createImageBitmap(px, { imageOrientation: 'flipY', premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+    const c = document.createElement('canvas'); c.width = 1; c.height = 2;
+    const g = c.getContext('2d'); g.drawImage(b, 0, 0);
+    const d = g.getImageData(0, 0, 1, 1).data;
+    b.close();
+    return d[2] > 128 && d[0] < 128;
+  })().catch(() => false);
+  return flipTest;
+}
 const clamp01 = x => Math.min(Math.max(x, 0), 1);
 const smoother = x => { x = clamp01(x); return x * x * x * (x * (6 * x - 15) + 10); };
 const easeOut = (x, k = 3) => 1 - Math.pow(1 - clamp01(x), k);
 const lerp = (a, b, k) => a + (b - a) * k;
 const mix3 = (a, b, k) => [lerp(a[0], b[0], k), lerp(a[1], b[1], k), lerp(a[2], b[2], k)];
+// A lens that glides: each call takes the next sample of a path (an array,
+// `dt` seconds on) and gives back where the lens is - two easings of `tau`
+// seconds in a row, so it starts, turns and stops without a jolt (its speed
+// never jumps, however sharply the path turns). It only ever trails the
+// path, about 2 * tau behind: it never sees where the path is going.
+const glide = tau => {
+  let a = null, b = null;
+  return (v, dt) => {
+    const k = 1 - Math.exp(-dt / tau);
+    a = a ? a.map((x, j) => x + (v[j] - x) * k) : v.slice();
+    b = b ? b.map((x, j) => x + (a[j] - x) * k) : a.slice();
+    return b;
+  };
+};
 const DEG = Math.PI / 180;
 // The light: the pendant over the table, and the studio the glossy surfaces
 // mirror (dimmed together round the Defiant Edge's die).
@@ -86,7 +127,17 @@ export const FELTS = {
   cream: { name: 'Cream', color: 0xae9b6e, sheen: 0xf0e2bc, light: 0.9 },
   chocolate: { name: 'Chocolate', color: 0x28170e, sheen: 0x6a4630, light: 0.1 },
   mahogany: { name: 'Mahogany', color: 0x40150e, sheen: 0x9c4a34, light: 0.14 },
-  crimson: { name: 'Crimson', color: 0x5c0913, sheen: 0xc2394a, light: 0.2 }
+  crimson: { name: 'Crimson', color: 0x5c0913, sheen: 0xc2394a, light: 0.2 },
+  // (2026-10-11: the casino cloths - the classic emerald baize, a royal
+  // blue, a midnight navy, a peacock teal, a plum, a charcoal, and a sage
+  // among the light ones)
+  emerald: { name: 'Emerald', color: 0x0d4a2c, sheen: 0x3f9a6a, light: 0.18 },
+  royal: { name: 'Royal blue', color: 0x14306e, sheen: 0x5276c8, light: 0.2 },
+  midnight: { name: 'Midnight navy', color: 0x0d1630, sheen: 0x3a4c78, light: 0.06 },
+  teal: { name: 'Peacock teal', color: 0x0b4a52, sheen: 0x3c9aa4, light: 0.2 },
+  plum: { name: 'Plum', color: 0x3a1640, sheen: 0x8c5296, light: 0.12 },
+  charcoal: { name: 'Charcoal', color: 0x26272b, sheen: 0x6e7078, light: 0.15 },
+  sage: { name: 'Sage', color: 0x6c7a5e, sheen: 0xc4d2b4, light: 0.55 }
 };
 export const feltOf = id => (FELTS[id] ? id : 'black');
 // (a felt material dressed as felt `id`)
@@ -122,7 +173,14 @@ export const TRIMS = {
   onyx: { name: 'Shiny onyx', color: 0x17161a, line: 0x0b0b0d, metalness: 0.0, roughness: 0.07, env: 2.2 },
   silver: { name: 'Luminous silver', color: 0xffffff, line: 0xf0f3f7, metalness: 1, roughness: 0.14, env: 2.1 },
   crimson: { name: 'Pooled crimson', color: 0xd21a34, line: 0x9c0f22, metalness: 0.45, roughness: 0.1, env: 1.35 },
-  burgundy: { name: 'Bronzed burgundy', color: 0xd06a5a, line: 0xa4463c, metalness: 1, roughness: 0.3, env: 1.45 }
+  burgundy: { name: 'Bronzed burgundy', color: 0xd06a5a, line: 0xa4463c, metalness: 1, roughness: 0.3, env: 1.45 },
+  // (2026-10-11: rose gold and champagne gold, burnished copper, and two
+  // more enamels fired over silver - emerald and sapphire)
+  rose: { name: 'Rose gold', color: 0xf0b8a0, line: 0xd99a84, metalness: 1, roughness: 0.18, env: 1.8 },
+  champagne: { name: 'Champagne', color: 0xf3e2b8, line: 0xe2cd98, metalness: 1, roughness: 0.16, env: 1.9 },
+  copper: { name: 'Burnished copper', color: 0xe08a5c, line: 0xb8683e, metalness: 1, roughness: 0.24, env: 1.6 },
+  emerald: { name: 'Emerald enamel', color: 0x1fa86a, line: 0x0f7a48, metalness: 0.45, roughness: 0.1, env: 1.35 },
+  sapphire: { name: 'Sapphire enamel', color: 0x2f62d8, line: 0x1c3f9c, metalness: 0.45, roughness: 0.1, env: 1.35 }
 };
 export const trimOf = id => (TRIMS[id] ? id : 'gold');
 // (the gold band's artwork in grey: its relief as light and dark, for a
@@ -288,8 +346,10 @@ function cupAt(t) {
 function rampWorld(s, from, to) { return from * s + (to - from) * (Math.pow(s, 6) - 3 * Math.pow(s, 5) + 2.5 * Math.pow(s, 4)); }
 // (exported for the other games: the same slow motion round their own
 // moment - the wheel's clapper riding its last peg)
-export function makeWarp(wallW) {
-  const a = wallW - 0.05, down = 0.26, hold = 0.95, up = 0.6, rate = 0.12;
+// (`rate`: how slow the slow motion runs - 0.12 the dice's; 1 is none at
+// all, for a game whose moment slows of itself: the wheel's last pegs)
+export function makeWarp(wallW, rate = 0.12) {
+  const a = wallW - 0.05, down = 0.26, hold = 0.95, up = 0.6;
   const world = t => {
     const x = t - a;
     if (x <= 0) return t;
@@ -439,6 +499,109 @@ const throwOpts = tier => ({
     return stickLine(rest) ? null : 'stick cannot take both dice';
   } : null
 });
+// Whether a seed's first throw is one the shot can play (judged as the
+// search judges it, the stick's line included): scripts/dice-seeds.mjs
+// collects such seeds into DICE_SEEDS.
+export function firstThrowOk(seed) {
+  return P.throwDice(seed, Object.assign(throwOpts('standard'), { tries: 1 })).score.ok;
+}
+// Seeds whose first throw passes: a launch takes one of these (pickDiceSeed)
+// so the plan is one throw simulated, not a search of a dozen or more (a
+// second or two of a phone's loading screen). Found by
+// scripts/dice-seeds.mjs with V8's arithmetic - the phone's Chrome's, and
+// node's; an engine whose last digits differ (Math.sin's) just searches on
+// from the seed, as from any other. ?seed= takes any seed, as before.
+// DICE_SEEDS: written by scripts/dice-seeds.mjs - do not edit by hand
+export const DICE_SEEDS = [
+  26, 219, 230, 245, 320, 326, 395, 410, 439, 440, 508, 513,
+  524, 530, 642, 649, 666, 683, 721, 732, 784, 815, 817, 872,
+  882, 907, 924, 942, 1029, 1048, 1059, 1062, 1127, 1172, 1195, 1232,
+  1237, 1246, 1274, 1295, 1321, 1330, 1335, 1364, 1409, 1459, 1518, 1592,
+  1603, 1639, 1666, 1696, 1756, 1799, 1816, 1864, 1923, 2014, 2044, 2054,
+  2098, 2238, 2239, 2251, 2287, 2315, 2342, 2393, 2417, 2489, 2512, 2533,
+  2601, 2669, 2748, 2757, 2787, 2875, 2899, 2900, 2911, 2972, 2999, 3041,
+  3043, 3067, 3076, 3131, 3150, 3157, 3164, 3218, 3277, 3315, 3318, 3357,
+  3399, 3408, 3414, 3420, 3473, 3503, 3568, 3599, 3601, 3610, 3636, 3651,
+  3659, 3668, 3681, 3749, 3750, 3764, 3781, 3797, 3822, 3850, 3856, 3858,
+  3869, 3876, 3910, 3918, 3961, 3981, 3985, 3987, 4000, 4029, 4045, 4056,
+  4113, 4123, 4146, 4177, 4232, 4282, 4332, 4337, 4360, 4374, 4499, 4505,
+  4524, 4549, 4574, 4578, 4606, 4638, 4653, 4668, 4678, 4740, 4807, 4830,
+  4862, 4864, 4875, 4903, 4913, 4932, 4988, 5034, 5083, 5089, 5119, 5168,
+  5206, 5258, 5265, 5275, 5286, 5327, 5330, 5344, 5488, 5501, 5527, 5543,
+  5605, 5636, 5655, 5701, 5714, 5730, 5790, 5853, 5915, 5939, 5990, 6029,
+  6042, 6047, 6053, 6082, 6204, 6216, 6229, 6243, 6276, 6283, 6413, 6432,
+  6467, 6537, 6558, 6625, 6634, 6648, 6653, 6712, 6729, 6828, 6877, 6906,
+  6919, 6936, 6967, 7032, 7053, 7187, 7218, 7247, 7300, 7303, 7339, 7343,
+  7382, 7405, 7482, 7515, 7527, 7581, 7616, 7626, 7685, 7695, 7705, 7745,
+  7803, 7850, 7868, 7939, 7964, 7986, 8000, 8074, 8083, 8125, 100000045, 100000105,
+  100000137, 100000146, 100000163, 100000166, 100000171, 100000182, 100000194, 100000202, 100000250, 100000275, 100000376, 100000399,
+  100000492, 100000496, 100000505, 100000511, 100000564, 100000575, 100000593, 100000608, 100000647, 100000666, 100000695, 100000699,
+  100000748, 100000759, 100000783, 100000802, 100000813, 100000837, 100000847, 100000857, 100000869, 100000876, 100000935, 100000950,
+  100000964, 100000981, 100001016, 100001038, 100001046, 100001098, 100001144, 100001145, 100001184, 100001284, 100001289, 100001306,
+  100001348, 100001424, 100001458, 100001466, 100001490, 100001498, 100001574, 100001607, 100001610, 100001614, 100001649, 100001839,
+  100001853, 100001940, 100001984, 100002072, 100002090, 100002125, 100002140, 100002147, 100002220, 100002243, 100002247, 100002287,
+  100002291, 100002297, 100002369, 100002403, 100002505, 100002531, 100002577, 100002580, 100002621, 100002642, 100002700, 100002832,
+  100002854, 100002965, 100002968, 100003008, 100003071, 100003152, 100003265, 100003351, 100003378, 100003390, 100003446, 100003458,
+  100003463, 100003480, 100003495, 100003560, 100003602, 100003640, 100003658, 100003779, 100003851, 100003888, 100003927, 100004004,
+  100004008, 100004028, 100004045, 100004058, 100004068, 100004069, 100004107, 100004155, 100004194, 100004217, 100004240, 100004328,
+  100004361, 100004379, 100004382, 100004384, 100004437, 100004440, 100004443, 100004455, 100004487, 100004522, 100004526, 100004551,
+  100004569, 100004571, 100004625, 100004633, 100004684, 100004686, 100004701, 100004709, 100004745, 100004752, 100004756, 100004768,
+  100004779, 100004798, 100004810, 100004812, 100004844, 100004869, 100004875, 100004913, 100004943, 100004980, 100005018, 100005043,
+  100005047, 100005080, 100005152, 100005214, 100005240, 100005372, 100005382, 100005385, 100005387, 100005478, 100005481, 100005551,
+  100005571, 100005615, 100005670, 100005677, 100005709, 100005763, 100005811, 100005840, 100005851, 100005871, 100005935, 100005960,
+  100006032, 100006045, 100006059, 100006106, 100006120, 100006132, 100006227, 100006306, 100006321, 100006367, 100006444, 100006477,
+  100006485, 100006494, 100006531, 100006610, 100006620, 100006646, 100006673, 100006763, 100006772, 100006794, 100006870, 100006883,
+  100006913, 100006971, 100006973, 100007061, 100007063, 100007101, 100007112, 100007131, 100007248, 100007288, 100007315, 100007371,
+  100007419, 100007427, 100007448, 100007480, 100007656, 100007698, 100007742, 100007761, 100007806, 100007915, 100007960, 100007963,
+  100008015, 100008078, 100008081, 100008095, 100008098, 100008131, 100008148, 100008177, 100008180, 100008195, 100008266, 100008273,
+  100008275, 100008284, 100008298, 100008302, 100008321, 100008338, 100008360, 100008376, 200000015, 200000037, 200000085, 200000139,
+  200000145, 200000218, 200000267, 200000294, 200000303, 200000335, 200000357, 200000456, 200000466, 200000473, 200000486, 200000502,
+  200000534, 200000535, 200000619, 200000658, 200000663, 200000664, 200000703, 200000711, 200000713, 200000717, 200000729, 200000776,
+  200000812, 200000891, 200000989, 200001033, 200001065, 200001076, 200001100, 200001109, 200001167, 200001177, 200001195, 200001269,
+  200001303, 200001343, 200001346, 200001404, 200001406, 200001420, 200001427, 200001438, 200001440, 200001447, 200001474, 200001551,
+  200001554, 200001571, 200001598, 200001614, 200001628, 200001662, 200001674, 200001704, 200001764, 200001783, 200001784, 200001801,
+  200001824, 200001845, 200001863, 200001896, 200001922, 200002059, 200002130, 200002169, 200002200, 200002246, 200002262, 200002297,
+  200002301, 200002317, 200002348, 200002392, 200002472, 200002542, 200002590, 200002603, 200002614, 200002625, 200002670, 200002677,
+  200002698, 200002706, 200002738, 200002752, 200002758, 200002760, 200002766, 200002798, 200002857, 200002859, 200002878, 200002887,
+  200002888, 200002939, 200003020, 200003030, 200003038, 200003082, 200003146, 200003202, 200003223, 200003235, 200003249, 200003285,
+  200003314, 200003327, 200003328, 200003345, 200003383, 200003397, 200003444, 200003636, 200003645, 200003668, 200003671, 200003686,
+  200003696, 200003725, 200003728, 200003736, 200003743, 200003764, 200003820, 200003862, 200003863, 200003898, 200003970, 200004008,
+  200004013, 200004138, 200004185, 200004202, 200004211, 200004269, 200004303, 200004347, 200004352, 200004373, 200004383, 200004394,
+  200004421, 200004431, 200004444, 200004445, 200004453, 200004465, 200004525, 200004554, 200004595, 200004647, 200004653, 200004738,
+  200004744, 200004794, 200004797, 200004813, 200004849, 200004911, 200004922, 200004945, 200004999, 200005000, 200005016, 200005189,
+  200005203, 200005218, 200005293, 200005318, 200005473, 200005487, 200005500, 200005515, 200005533, 200005541, 200005542, 200005582,
+  200005591, 200005610, 200005785, 200005802, 200005815, 200005856, 200005867, 200005882, 200005920, 200005951, 200005955, 200006028,
+  200006035, 200006039, 200006147, 200006264, 200006290, 200006297, 200006308, 200006322, 200006364, 200006397, 200006446, 200006509,
+  200006517, 200006522, 200006559, 200006591, 200006611, 200006643, 200006703, 200006712, 200006719, 200006721, 200006758, 200006765,
+  200006826, 200006833, 200006854, 200006970, 200007024, 200007026, 200007027, 200007030, 200007054, 200007095, 200007159, 200007168,
+  200007211, 200007217, 200007256, 200007281, 200007301, 200007321, 200007366, 200007385, 200007396, 200007410, 200007497, 200007501,
+  200007541, 200007557, 200007559, 200007575, 200007626, 200007690, 300000249, 300000274, 300000315, 300000348, 300000553, 300000564,
+  300000645, 300000660, 300000740, 300000842, 300000956, 300000966, 300000972, 300001021, 300001045, 300001064, 300001100, 300001152,
+  300001158, 300001168, 300001172, 300001236, 300001254, 300001262, 300001301, 300001302, 300001309, 300001311, 300001360, 300001373,
+  300001376, 300001393, 300001398, 300001400, 300001403, 300001424, 300001463, 300001478, 300001528, 300001548, 300001583, 300001593,
+  300001599, 300001601, 300001669, 300001684, 300001797, 300001801, 300001830, 300001856, 300002005, 300002018, 300002027, 300002049,
+  300002112, 300002146, 300002155, 300002209, 300002271, 300002282, 300002297, 300002328, 300002330, 300002335, 300002378, 300002403,
+  300002438, 300002464, 300002504, 300002591, 300002674, 300002703, 300002716, 300002736, 300002739, 300002749, 300002777, 300002789,
+  300002803, 300002886, 300003169, 300003177, 300003247, 300003267, 300003272, 300003329, 300003330, 300003339, 300003360, 300003369,
+  300003415, 300003419, 300003423, 300003435, 300003470, 300003514, 300003565, 300003572, 300003580, 300003605, 300003619, 300003639,
+  300003684, 300003689, 300003731, 300003770, 300003807, 300003809, 300003863, 300003944, 300003952, 300003962, 300003990, 300004093,
+  300004107, 300004130, 300004185, 300004266, 300004345, 300004387, 300004496, 300004567, 300004595, 300004609, 300004629, 300004633,
+  300004638, 300004775, 300004784, 300004839, 300004876, 300004884, 300004946, 300004970, 300004974, 300004998, 300005055, 300005060,
+  300005070, 300005091, 300005138, 300005203, 300005227, 300005277, 300005301, 300005344, 300005412, 300005437, 300005442, 300005540,
+  300005553, 300005662, 300005740, 300005798, 300005867, 300005936, 300005941, 300005966, 300006033, 300006080, 300006086, 300006133,
+  300006179, 300006223, 300006268, 300006306, 300006341, 300006370, 300006440, 300006467, 300006606, 300006761, 300006794, 300006852,
+  300006856, 300006860, 300006876, 300006928, 300006934, 300006963, 300006975, 300007009, 300007046, 300007065, 300007111, 300007131,
+  300007146, 300007168, 300007200, 300007203, 300007222, 300007240, 300007324, 300007332, 300007337, 300007349, 300007456, 300007465,
+  300007489, 300007503, 300007509, 300007515, 300007571, 300007658, 300007689, 300007693, 300007737, 300007750, 300007754, 300007779,
+  300007868, 300007926, 300008006, 300008036, 300008054, 300008080, 300008110, 300008147, 300008150, 300008233, 300008240, 300008271,
+  300008292, 300008296, 300008344, 300008355, 300008432, 300008462, 300008473, 300008512, 300008521, 300008529, 300008567, 300008604,
+  300008648, 300008656, 300008690, 300008711, 300008718, 300008736, 300008779, 300008795, 300008901, 300008932, 300009055, 300009058,
+  300009090, 300009165, 300009232, 300009236
+];
+// DICE_SEEDS: end
+export function pickDiceSeed(r) {
+  return DICE_SEEDS.length ? DICE_SEEDS[Math.min(DICE_SEEDS.length - 1, Math.floor(r * DICE_SEEDS.length))] : Math.floor(r * 4294967296);
+}
 // makePlan works the throw out in one go (the lab and the checks use it);
 // makePlanAsync is the same plan, searched without holding the main thread.
 export function makePlan(tier, seed) {
@@ -980,7 +1143,11 @@ export async function createIntro(opts) {
 }
 
 async function buildIntro(opts, undo, teardown) {
-  const o = Object.assign({ host: null, controlsHost: null, tier: 'standard', seed: 1, game: 'dice', onReveal: null, onEnd: null, sound: true, onSoundChange: null, quality: 'auto', signal: null, motionOff: null, felt: 'black', trim: 'gold' }, opts);
+  perfMark('start');
+  // (still: the finished frame is all that will be shown - a muted skin,
+  // or motion off - so nothing is made ready for a shot that never plays:
+  // no sound, no frames drawn unseen at each of its turns)
+  const o = Object.assign({ host: null, controlsHost: null, tier: 'standard', seed: 1, game: 'dice', onReveal: null, onEnd: null, sound: true, onSoundChange: null, quality: 'auto', signal: null, motionOff: null, felt: 'black', trim: 'gold', robot: null, still: false }, opts);
   const checkAbort = () => { if (o.signal && o.signal.aborted) throw new Error('intro cancelled'); };
   checkAbort();
   const host = o.host;
@@ -998,7 +1165,22 @@ async function buildIntro(opts, undo, teardown) {
   // Rare assets start loading now, while the throw is worked out; nothing
   // waits on them for long, and nothing is fetched for a tier not drawn.
   const loader = new THREE.TextureLoader();
+  // The surface maps (the felt's weave, the walnut, the carpet...) come in
+  // as bitmaps where the browser makes them: decoded off the main thread,
+  // flipped as they are made and uploaded as they are, no flip and no
+  // colour conversion on the way to the GPU - a texture from an <img> is
+  // decoded and turned over on the main thread at upload, the better part
+  // of the wait before the shot's first frame on a phone. Artwork that is
+  // drawn again onto a canvas (the badge, the gold band) stays an <img>:
+  // a bitmap made flipped would draw upside down.
   const tex = (f, srgb, rep) => loader.loadAsync(asset(f)).then(t => {
+    if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+    if (rep) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rep[0], rep[1]); }
+    t.anisotropy = 4;
+    return t;
+  });
+  const bitmaps = bitmapsFlip().then(ok => (ok ? new THREE.ImageBitmapLoader().setOptions({ imageOrientation: 'flipY', premultiplyAlpha: 'none', colorSpaceConversion: 'none' }) : null));
+  const map = (f, srgb, rep) => bitmaps.then(bl => (bl ? bl.loadAsync(asset(f)).then(b => { const t = new THREE.Texture(b); t.flipY = false; t.needsUpdate = true; return t; }) : loader.loadAsync(asset(f)))).catch(() => loader.loadAsync(asset(f))).then(t => {
     if (srgb) t.colorSpace = THREE.SRGBColorSpace;
     if (rep) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rep[0], rep[1]); }
     t.anisotropy = 4;
@@ -1035,26 +1217,28 @@ async function buildIntro(opts, undo, teardown) {
   });
 
   const [feltN, rubberN, leatherN, walnut, gunmetal, badge, goldC, goldA, goldN, walnutN, cushionN, carpetC, carpetN] = await Promise.all([
-    tex('felt-normal.jpg', false, [13, 20]),
-    tex('rubber-normal.jpg', false, [14.4, 2.36]),
-    tex('leather-normal.jpg', false, [5, 2]),
-    tex('walnut.jpg', true, [1, 1]),
-    tex('gunmetal.jpg', true),
+    map('felt-normal.jpg', false, [13, 20]),
+    map('rubber-normal.jpg', false, [14.4, 2.36]),
+    map('leather-normal.jpg', false, [5, 2]),
+    map('walnut.jpg', true, [1, 1]),
+    map('gunmetal.jpg', true),
     tex('badge.png', true),
     tex('gold-trim-color.jpg', true, [1, 1]),
     tex('gold-trim-alpha.png', false, [1, 1]),
     tex('gold-trim-normal.jpg', false, [1, 1]),
-    tex('walnut-normal.jpg', false, [1, 1]),
-    tex('cushion-normal.jpg', false, [1, 1]),
-    tex('carpet-color.jpg', true, [1, 1]),
-    tex('carpet-normal.jpg', false, [1, 1])
+    map('walnut-normal.jpg', false, [1, 1]),
+    map('cushion-normal.jpg', false, [1, 1]),
+    map('carpet-color.jpg', true, [1, 1]),
+    map('carpet-normal.jpg', false, [1, 1])
   ]);
   // (the filigree band repeats along its length only)
   [goldC, goldA, goldN].forEach(t => { t.wrapT = THREE.ClampToEdgeWrapping; t.anisotropy = 8; });
   feltN.anisotropy = 8;
+  perfMark('textures');
   checkAbort();
   // (another game's plan comes with its pieces, once the room stands)
   let plan = gameLoad ? null : await makePlanAsync(tier, o.seed, o.signal);
+  perfMark('plan');
   checkAbort();
   let W = plan ? plan.warp : null;
 
@@ -1233,12 +1417,14 @@ async function buildIntro(opts, undo, teardown) {
   const aspect = (host.clientWidth || window.innerWidth) / (host.clientHeight || window.innerHeight);
   if (gameLoad) {
     const mod = await gameLoad;
+    perfMark('game module');
     checkAbort();
     game = await mod.makeGame({
-      THREE, scene, set: scene.userData.set, lights, tier, seed: o.seed, trim: o.trim, aspect, host, signal: o.signal,
+      THREE, scene, set: scene.userData.set, lights, tier, seed: o.seed, trim: o.trim, felt: o.felt, robot: o.robot, aspect, host, signal: o.signal,
       room: { floor: ROOM.floor, lamp: ROOM.lamp, backdropZ: ROOM.backdropZ, FLOAT, CEIL, PENDANT, ENV_LEVEL, RIM }, asset,
-      helpers: { makeWarp, spline, smoother, easeOut, lerp, mix3, clamp01, canvasTexture, radial, finished, embossTex, scaleUV, boxUV }
+      helpers: { makeWarp, spline, glide, smoother, easeOut, lerp, mix3, clamp01, canvasTexture, radial, finished, embossTex, scaleUV, boxUV }
     });
+    perfMark('game built');
     checkAbort();
     plan = game.plan;
     W = plan.warp;
@@ -1944,36 +2130,106 @@ async function buildIntro(opts, undo, teardown) {
   // buffer is the one drawing into all of them)
   const probe = new THREE.WebGLRenderTarget(1, 1);
   undo.push(() => probe.dispose());
-  // The scene's shaders compiled (in parallel where the driver can) for the
-  // way it is drawn now - into the post's buffer; or to the screen and, for
-  // the glass dice, into a buffer - and its textures uploaded. `show`: parts
-  // still hidden that are compiled as they will be once shown (the lights
-  // they bring count), then hidden again; `spread`: the uploads a frame
-  // apiece, for a scene that is playing meanwhile. (The whole scene, always:
-  // a part of it compiled on its own would count its lights twice.)
-  const warm = async ({ show = [], spread = false } = {}) => {
-    const was = renderer.getRenderTarget(), hidden = show.filter(x => !x.visible);
-    hidden.forEach(x => { x.visible = true; });
-    const jobs = [];
-    // (with the post, the screen's shaders too, not waited on: should a slow
-    // device drop the post mid-shot - applyQuality - the frame that drops it
-    // compiles nothing)
-    for (const target of composer ? [probe, null] : [null, probe]) {
+  // The programs a state of the renderer needs, compiled (in parallel where
+  // the driver can) without a frame drawn: `targets` are the buffers the
+  // scene is drawn into in that state - the post's, or the screen, and a
+  // buffer when the glass dice see the room through one; a shader drawing
+  // into one buffer is the one drawing into all of them (the probe stands
+  // in). Resolves once every program is ready.
+  const compileInto = targets => {
+    const was = renderer.getRenderTarget(), jobs = [];
+    for (const target of targets) {
       renderer.setRenderTarget(target);
-      try {
-        const job = renderer.compileAsync(scene, camera).catch(() => {});
-        if (target === probe || !composer) jobs.push(job);
-      } catch (e) { /* compiled on first draw */ }
+      try { jobs.push(renderer.compileAsync(scene, camera).catch(() => {})); } catch (e) { /* compiled on first draw */ }
     }
     renderer.setRenderTarget(was);
+    return Promise.all(jobs);
+  };
+  const glassOn = () => dice.some(d => d.mat.transmission > 0);
+  const targetsNow = () => (composer ? [probe] : glassOn() ? [null, probe] : [null]);
+  // The scene's shaders compiled for the way it is drawn NOW - into the
+  // post's buffer; or to the screen and, for the glass dice, into a buffer
+  // - and its textures uploaded. `show`: parts still hidden that are
+  // compiled as they will be once shown (the lights they bring count), then
+  // hidden again; `spread`: the uploads a frame apiece, for a scene that is
+  // playing meanwhile. (The whole scene, always: a part of it compiled on
+  // its own would count its lights twice.)
+  // (Only the state the first frame draws in: the quality steps' programs
+  // - the screen's without the post, the shadows-off set, the glass off -
+  // were built here too, before the first frame, and were half the programs
+  // the loading screen waited for; they are built in the background while
+  // the shot plays instead, from the moment frames start to run slow, and a
+  // step is taken once its programs are ready: see prepStep / loop.)
+  // (what the last warm was shown - a home's seat, still hidden while the
+  // shot floats - is shown to the steps' compiles too: its lights count)
+  let warmShow = [];
+  const warm = async ({ show = [], spread = false } = {}) => {
+    const hidden = show.filter(x => !x.visible);
+    hidden.forEach(x => { x.visible = true; });
+    warmShow = show.slice();
+    stepsAgain();
+    const job = compileInto(targetsNow());
     const texs = new Set();
     scene.traverse(m => { if (m.material) [].concat(m.material).forEach(mat => Object.values(mat).forEach(v => { if (v && v.isTexture && !v.isRenderTargetTexture) texs.add(v); })); });
     hidden.forEach(x => { x.visible = false; });
-    await Promise.all(jobs);
+    await job;
+    perfMark('shaders');
     for (const t of texs) {
       try { renderer.initTexture(t); } catch (e) { /* on first draw */ }
       if (spread) await breath();
     }
+  };
+  // The programs a quality step needs (applyQuality: q2 draws to the screen
+  // without the post, q1 without shadows, q0 without the glass dice's
+  // transmission - each step keeps the ones before it), built in the
+  // background while the shot plays: the state is set, the programs made
+  // (compile: nothing drawn) and the state put back, the materials told to
+  // look again (a material keeps the program it was last compiled for
+  // until it is told), and the programs just made are polled until the
+  // driver has them linked. The step is taken once they are (see loop): a
+  // step that compiled on the main thread mid-shot was the hitch.
+  // (compileAsync would not do: it polls each material's current program,
+  // and once the materials have looked again that is the old one, ready)
+  // (the scene grows while the shot floats - a home builds its set into it
+  // and warms it: the steps are prepared again from there, the programs
+  // already made found in the cache)
+  const stepPrep = {}, stepReady = {};
+  let stepGen = 0;
+  const stepsAgain = () => { stepGen++; Object.keys(stepPrep).forEach(k => { delete stepPrep[k]; delete stepReady[k]; }); };
+  const prepStep = q => {
+    if (stepPrep[q]) return stepPrep[q];
+    const gen = stepGen;
+    const was = renderer.getRenderTarget(), post = composer, shadows = renderer.shadowMap.enabled, glass = dice.map(d => d.mat.transmission);
+    const programs = [];
+    const hidden = warmShow.filter(x => !x.visible);
+    hidden.forEach(x => { x.visible = true; });
+    try {
+      if (q <= 2) composer = null;
+      if (q <= 1) renderer.shadowMap.enabled = false;
+      if (q <= 0) dice.forEach(d => { d.mat.transmission = 0; });
+      for (const target of targetsNow()) {
+        renderer.setRenderTarget(target);
+        renderer.compile(scene, camera).forEach(m => { const pr = renderer.properties.get(m).currentProgram; if (pr && !programs.includes(pr)) programs.push(pr); });
+      }
+    } catch (e) { /* compiled on the step */ }
+    finally {
+      hidden.forEach(x => { x.visible = false; });
+      renderer.setRenderTarget(was);
+      composer = post; renderer.shadowMap.enabled = shadows;
+      dice.forEach((d, i) => { d.mat.transmission = glass[i]; });
+      scene.traverse(m => { if (m.material) [].concat(m.material).forEach(x => { x.needsUpdate = true; }); });
+    }
+    stepPrep[q] = new Promise(res => {
+      const poll = () => {
+        if (gen !== stepGen) { res(); return; }
+        let left = 0;
+        for (const pr of programs) { let ok = true; try { ok = pr.isReady() !== false; } catch (e) { /* ready as far as we can tell */ } if (!ok) left++; }
+        if (!left) { stepReady[q] = true; res(); return; }
+        setTimeout(poll, 50);
+      };
+      poll();
+    });
+    return stepPrep[q];
   };
 
   // ---- One frame at real time t.
@@ -1983,12 +2239,16 @@ async function buildIntro(opts, undo, teardown) {
   const gleamAt = game ? (t => game.gleamAt(t)) : (t => smoother((t - (Rwall - 0.2)) / 0.35) * (1 - smoother((t - W.slowHold[1]) / 0.7)));
   // (it sits up and off to the lens's left, not on its axis: a light on the
   // axis comes straight back off any face square to the lens, a white flash)
+  // (how bright: the dice's, unless the game asks for less - the wheel's
+  // lacquered face, square to the lens, gives this light straight back as
+  // a wash over its numbers: see lens in wheel.mjs)
+  const lensLevel = Object.assign({ base: 0.35, peak: 1 }, game && game.lens);
   const aimLens = (eye, aim, gleam) => {
     const back = new THREE.Vector3(eye[0] - aim[0], eye[1] - aim[1], eye[2] - aim[2]).normalize();
     const right = new THREE.Vector3(back.z, 0, -back.x).normalize();
     lensLight.position.set(eye[0] + back.x * 10 - right.x * 26, eye[1] + back.y * 10 + 30, eye[2] + back.z * 10 - right.z * 26);
     lensLight.target.position.set(aim[0], aim[1], aim[2]);
-    lensLight.intensity = 0.35 + 0.65 * gleam;
+    lensLight.intensity = lensLevel.base + (lensLevel.peak - lensLevel.base) * gleam;
   };
   // The camera at real time t, from the path worked out above.
   const cameraAt = t => {
@@ -2229,6 +2489,30 @@ async function buildIntro(opts, undo, teardown) {
 
   // ---- Playback.
   let raf = 0, t = 0, last = 0, playing = false, sfxIndex = 0, silenced = false;
+  // ?perf: a small readout of the frame times and the quality steps, for
+  // recording the shot on a phone (off unless the URL asks for it).
+  const perfWin = [], perfLog = [];
+  let perfEl = null, perfFirst = null;
+  const perfTick = (raw, at) => {
+    if (perfFirst === null) perfFirst = (performance.now() - PERF_T0) / 1000;
+    if (!perfEl) {
+      perfEl = document.createElement('pre');
+      perfEl.style.cssText = 'position:fixed;left:4px;top:4px;z-index:99999;margin:0;padding:4px 6px;font:11px/1.3 monospace;color:#9f9;background:rgba(0,0,0,.65);pointer-events:none;white-space:pre-wrap;max-width:94vw';
+      document.body.appendChild(perfEl);
+    }
+    perfWin.push(raw); if (perfWin.length > 60) perfWin.shift();
+    if (perfWin.length < 10 || frames % 10 !== 0) return;
+    const s = perfWin.slice().sort((x, y) => x - y), med = s[s.length >> 1] * 1000;
+    const avg = perfWin.reduce((a, b) => a + b, 0) / perfWin.length;
+    const over = perfWin.filter(x => x > 0.1).length;
+    perfEl.textContent = `${o.game} ${o.tier} q${quality} t${at.toFixed(1)}s\n` +
+      `first frame ${perfFirst.toFixed(1)}s after load\n` +
+      `build: ${perfMarks.join(' | ') || '-'}\n` +
+      `programs ${renderer.info.programs.length}  textures ${renderer.info.memory.textures}\n` +
+      `median ${med.toFixed(1)}ms  ${(1 / avg).toFixed(0)}fps\n` +
+      `worst ${(s[s.length - 1] * 1000).toFixed(0)}ms  >100ms: ${over}/${perfWin.length}\n` +
+      `steps: ${perfLog.length ? perfLog.join(' ') : 'none'}`;
+  };
   // Quality steps down while frames run slow (averaged over 24 frames):
   // 3 full; 2 no bloom, lower resolution; 1 no shadows, 1x resolution;
   // 0 the dice lose their glass (transmission renders the scene twice).
@@ -2251,7 +2535,7 @@ async function buildIntro(opts, undo, teardown) {
       scene.traverse(m => { if (m.material) [].concat(m.material).forEach(x => { x.needsUpdate = true; }); });
     }
     if (q <= 0) dice.forEach(d => { d.mat.transmission = 0; d.mat.color.set(0x9a1224); d.mat.clearcoat = 1; d.mat.needsUpdate = true; });
-    if (game && game.quality) game.quality(q);
+    if (game && game.quality) { const tg = performance.now(); game.quality(q); if (PERF) perfLog.push(`game ${Math.round(performance.now() - tg)}ms`); }
     size();
   };
   // The table's moving frames, timed by its loop: the resolution the
@@ -2313,6 +2597,7 @@ async function buildIntro(opts, undo, teardown) {
     cue();
   };
   const pacer = makePacer();
+  let afterStep = 0;
   const loop = now => {
     if (!playing) return;
     // Reduced motion switched on mid-shot (in the app or the system): the
@@ -2321,6 +2606,8 @@ async function buildIntro(opts, undo, teardown) {
     // (a frame between the ones drawn, on a fast screen: see makePacer)
     if (!pacer.due(now)) { raf = requestAnimationFrame(loop); return; }
     const raw = last ? (now - last) / 1000 : 1 / 60;
+    // (?perf: the frame that follows a quality step, the one a step can stall)
+    if (PERF && afterStep) { perfLog.push(`next ${Math.round(raw * 1000)}ms`); afterStep = 0; }
     last = now;
     // Time runs with the clock (a slow device drops frames rather than
     // stretching the shot); only a stall - a hidden tab - is held back.
@@ -2330,13 +2617,21 @@ async function buildIntro(opts, undo, teardown) {
     // (the first frames are skipped: they carry texture uploads and the
     // app's own start-up)
     frames++;
+    if (PERF) perfTick(raw, t);
     // (nor the frame after the tab was hidden: that gap is the tab, not the
     // device, and must not cost quality or end the shot)
     const stall = resumed; resumed = false;
     if (frames > 12 && o.quality !== 'full' && !stall) { win.push(raw); if (win.length > 10) win.shift(); }
     if (win.length >= 10) {
       const med = median(win);
-      if (med > 0.036 && quality > 0) { applyQuality(--quality); win.length = 0; }
+      // (frames drifting toward slow: the next step's programs are built
+      // now, in the background, so the step finds them ready - see prepStep)
+      if (med > 0.026 && quality > 0 && !stepPrep[quality - 1]) { if (PERF) perfLog.push(`prep q${quality - 1}@${t.toFixed(1)}s`); prepStep(quality - 1); }
+      if (med > 0.036 && quality > 0) {
+        if (stepReady[quality - 1]) { if (PERF) perfLog.push(`q${quality - 1}@${t.toFixed(1)}s`); const ta = performance.now(); applyQuality(--quality); if (PERF) { perfLog.push(`apply ${Math.round(performance.now() - ta)}ms`); afterStep = performance.now(); } win.length = 0; }
+        // (not ready yet: the shot runs on at this quality until they are)
+        else if (PERF && !perfLog.includes(`wait q${quality - 1}`)) perfLog.push(`wait q${quality - 1}`);
+      }
       // Still a slideshow at the lowest setting: show the finished frame
       // instead (as with motion off) rather than stutter through the shot.
       else if (med > 0.12 && quality === 0) { still(); return; }
@@ -2358,6 +2653,8 @@ async function buildIntro(opts, undo, teardown) {
   // redraws its own through onRestore).
   const restored = [];
   const onRestored = () => {
+    // (a step being prepared on the lost context would never be ready)
+    stepsAgain();
     const old = scene.environment;
     scene.environment = studioEnvironment(renderer);
     if (old) old.dispose();
@@ -2447,8 +2744,11 @@ async function buildIntro(opts, undo, teardown) {
   // shows. Nothing after this changes what a shader is: no light comes or
   // goes, and no coat reaches none.
   await warm();
+  perfMark('compiled');
   checkAbort();
-  {
+  // (a still: the one frame it shows is drawn by finish(), and that is the
+  // frame that readies whatever only it brings in)
+  if (!o.still) {
     const at = game ? game.warmAt.concat([plan.totalReal + 1, floatEnd - 0.5]) : [Rrel + 0.04, Rwall + 0.06, W.slowHold[1], Rrest + 0.3, plan.totalReal + 1, floatEnd - 0.5];
     if (!game && plan.stick) at.push(R2(plan.stick.hp.T.approach[1]), R2(plan.stick.hp.T.pull[1]));
     if (!game && plan.vault) at.push(R2(plan.vault.boom) + 0.05, R2(plan.vault.boom) + 0.7);
@@ -2456,8 +2756,9 @@ async function buildIntro(opts, undo, teardown) {
     canvas.style.visibility = 'hidden';
     for (const tt of at) { render(Math.min(floatEnd, Math.max(0, tt))); await breath(); checkAbort(); }
     canvas.style.visibility = '';
+    perfMark('warm frames');
+    render(0);
   }
-  render(0);
   return {
     plan: { game: gameId, tier, seed: o.seed, revealReal: plan.revealReal, totalReal: plan.totalReal, floatEnd, restReal: plan.restReal, wallReal: plan.wallReal, values: plan.values, call: plan.call, throwOk: plan.throwOk, why: plan.why, moments: game ? game.moments : null },
     play() { playing = true; last = 0; pacer.reset(); move(); raf = requestAnimationFrame(loop); },
