@@ -2480,8 +2480,9 @@ function phoneHTML(asset) {
 export async function prepareTable(opts) {
   // (o.showWhen: a promise - the table is built and warmed at once, but
   // shown, its lamp coming up, only once this resolves: started under the
-  // landing's gate, it must not light the shot's frames)
-  const o = Object.assign({ scene: null, dest: 'card', hooks: {}, showWhen: null }, opts);
+  // landing's gate, it must not light the shot's frames. o.onBuilt: called
+  // once all of that work is done, before showWhen is waited for.)
+  const o = Object.assign({ scene: null, dest: 'card', hooks: {}, showWhen: null, onBuilt: null, gl: null }, opts);
   const scene = o.scene;
   if (!scene.userData.set) throw new Error('table: the intro set is missing');
   const set = fineSet(scene.userData.set);
@@ -4731,6 +4732,10 @@ export async function prepareTable(opts) {
     try { await o.warm({ show: [seat], spread: true }); } catch (e) { /* compiled on first draw */ }
   }
   if (primed) { try { await primed; } catch (e) { /* drawn on the tap, then */ } }
+  // (built, warmed and primed - all the work there is to do before the
+  // shot: the landing holds its seal until this, so none of it lands in
+  // the shot's frames; see rollGate in index.html)
+  if (o.onBuilt) { try { o.onBuilt(); } catch (e) { /* theirs */ } }
   if (o.showWhen) { try { await o.showWhen; } catch (e) { /* shown anyway */ } }
   // (the lamp comes up from here, not from the build)
   lampT0 = performance.now();
