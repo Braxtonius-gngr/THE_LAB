@@ -2120,7 +2120,14 @@ async function buildIntro(opts, undo, teardown) {
     composer.addPass(bloom);
     composer.addPass(new OutputPass());
   };
-  if (o.quality !== 'low') makeComposer();
+  // o.quality: 'auto' (the full picture, stepping down while frames run
+  // slow), 'full' (no steps), 'low' (no post), or a step 0..3 to start at -
+  // what this device settled on last time (index.html remembers it per
+  // game: ROLL_QUALITY_KEY), so a phone that stepped down through the shot
+  // once starts there, and never steps mid-shot again. The steps run down
+  // from wherever it starts as before.
+  const startQ = Number.isInteger(o.quality) ? Math.max(0, Math.min(3, o.quality)) : o.quality === 'low' ? 2 : 3;
+  if (startQ >= 3) makeComposer();
   size();
 
   // (a frame's breath: the next frame, or a moment when frames aren't
@@ -2198,7 +2205,7 @@ async function buildIntro(opts, undo, teardown) {
   const stepsAgain = () => { stepGen++; Object.keys(stepPrep).forEach(k => { delete stepPrep[k]; delete stepReady[k]; }); };
   const prepStep = q => {
     if (stepPrep[q]) return stepPrep[q];
-    const gen = stepGen;
+    const gen = stepGen, tp = performance.now();
     const was = renderer.getRenderTarget(), post = composer, shadows = renderer.shadowMap.enabled, glass = dice.map(d => d.mat.transmission);
     const programs = [];
     const hidden = warmShow.filter(x => !x.visible);
@@ -2218,6 +2225,7 @@ async function buildIntro(opts, undo, teardown) {
       composer = post; renderer.shadowMap.enabled = shadows;
       dice.forEach((d, i) => { d.mat.transmission = glass[i]; });
       scene.traverse(m => { if (m.material) [].concat(m.material).forEach(x => { x.needsUpdate = true; }); });
+      if (PERF) perfLog.push(`compile ${Math.round(performance.now() - tp)}ms`);
     }
     stepPrep[q] = new Promise(res => {
       const poll = () => {
@@ -2538,6 +2546,9 @@ async function buildIntro(opts, undo, teardown) {
     if (game && game.quality) { const tg = performance.now(); game.quality(q); if (PERF) perfLog.push(`game ${Math.round(performance.now() - tg)}ms`); }
     size();
   };
+  // (a start below full: set now, before a shader is compiled, so the warm
+  // compiles the programs of the picture that will be drawn)
+  if (startQ < quality) { quality = startQ; applyQuality(startQ); if (PERF) perfLog.push(`start q${startQ}`); }
   // The table's moving frames, timed by its loop: the resolution the
   // shot's steps left (they may have been taken while the app was still
   // starting up under it) comes back, half a step at a time, while frames
@@ -2784,6 +2795,18 @@ async function buildIntro(opts, undo, teardown) {
     // What is added to the scene (the table, while the intro floats) made
     // ready before it is drawn: see warm().
     warm,
+    // The next `n` steps down made ready now (their programs compiled and
+    // linked) rather than when frames first run slow: called under the
+    // landing's seal, once the table is built into the scene, so a step
+    // taken in the shot costs its apply alone. Resolves once they are
+    // linked (or at once, with nothing below to prepare).
+    async prepSteps(n = 1) {
+      for (let k = 1; k <= n && quality - k >= 0; k++) {
+        if (PERF) perfLog.push(`prep q${quality - k}@seal`);
+        await prepStep(quality - k);
+      }
+    },
+    get quality() { return quality; },
     // (a felt picked while the shot is up: dressed, and the frame redrawn)
     setFelt(id) { dressFelt(felt.material, id); if (redraw) redraw(); else if (!playing) render(t); },
     // (the same for the trim: see TRIMS)
