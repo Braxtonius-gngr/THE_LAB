@@ -1147,7 +1147,7 @@ async function buildIntro(opts, undo, teardown) {
   // (still: the finished frame is all that will be shown - a muted skin,
   // or motion off - so nothing is made ready for a shot that never plays:
   // no sound, no frames drawn unseen at each of its turns)
-  const o = Object.assign({ host: null, controlsHost: null, tier: 'standard', seed: 1, game: 'dice', onReveal: null, onEnd: null, sound: true, onSoundChange: null, quality: 'auto', signal: null, motionOff: null, felt: 'black', trim: 'gold', robot: null, still: false }, opts);
+  const o = Object.assign({ host: null, controlsHost: null, tier: 'standard', seed: 1, game: 'dice', onReveal: null, onEnd: null, sound: true, onSoundChange: null, quality: 'auto', signal: null, motionOff: null, felt: 'black', trim: 'gold', robot: null, still: false, onScene: null }, opts);
   const checkAbort = () => { if (o.signal && o.signal.aborted) throw new Error('intro cancelled'); };
   checkAbort();
   const host = o.host;
@@ -2754,6 +2754,10 @@ async function buildIntro(opts, undo, teardown) {
   // the room) is compiled and uploaded now rather than the first time it
   // shows. Nothing after this changes what a shader is: no light comes or
   // goes, and no coat reaches none.
+  // (o.onScene: the scene as it stands - built, nothing compiled yet -
+  // handed to the landing, which builds the table into it while the
+  // shaders below compile; what it adds is warmed through api.warm after)
+  if (o.onScene) { try { o.onScene({ scene, renderer, camera, quality }); } catch (e) { /* theirs */ } }
   await warm();
   perfMark('compiled');
   checkAbort();
