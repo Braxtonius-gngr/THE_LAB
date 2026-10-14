@@ -2780,7 +2780,7 @@ async function buildIntro(opts, undo, teardown) {
     finish: still,
     // A look at the running scene (the table builds into it while the
     // intro floats), without stopping anything.
-    peek() { return { scene, renderer, camera, composer, bloom, game, dbg: { camEye, camAim, CAM_DT, W, plan, dicePose } }; },
+    peek() { return { scene, renderer, camera, composer, bloom, game, quality, dbg: { camEye, camAim, CAM_DT, W, plan, dicePose } }; },
     // What is added to the scene (the table, while the intro floats) made
     // ready before it is drawn: see warm().
     warm,

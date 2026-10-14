@@ -2569,37 +2569,22 @@ export async function prepareTable(opts) {
   // dealt and nothing moving after - the readable take of the same table;
   // `duration` is a fly of its own length (the short sit-down when the
   // seat is taken without the shot).
-  async function fly(world, flyOpts = {}) {
-    const fo = Object.assign({ manual: false, reduced: false, duration: 0, onArrive: null, host: null, seatView: null, dealStyle: null, cards: 0 }, flyOpts);
-    const { renderer, camera } = world;
-    if (fo.reduced) lampT0 = -Infinity;   // (the lamp is simply on)
-    const stageEl = fo.host || document.body;
-    world.overlays.forEach(el => { el.style.visibility = 'hidden'; });
-    // CSS3D layer, over the canvas, same camera.
-    const css = new CSS3DRenderer();
-    css.domElement.className = 'r3t-css';
-    const cssScene = new THREE.Scene();
-    const cssSeat = new THREE.Group();
-    cssSeat.position.copy(seat.position); cssSeat.quaternion.copy(seat.quaternion);
-    cssScene.add(cssSeat);
-    let sizeHand = null;
-    const size = () => {
-      world.size();
-      // (the stage's box: after the arrival the landing, world.host, is
-      // hidden, and a pinched-in page's window is only the part in view)
-      const box = world.canvas.parentElement || world.host;
-      const w = box.clientWidth || window.innerWidth, h = box.clientHeight || window.innerHeight;
-      css.setSize(w, h);
-      return w / h;
-    };
+  // ---- The dealer's rig: its own canvas and context, scene, lights,
+  // materials and parts - built under the gate with the table (see armsRig
+  // below) rather than on the tap: a second WebGL context, its studio, its
+  // shaders and a 2048 shadow map are the better part of the seat's wait.
+  // gl: { renderer, quality } - the table's renderer, whose colour and tone
+  // settings the dealer's canvas copies, and the quality it draws at now.
+  const buildRig = gl => {
     // The dealer has a canvas of its own over the cards (the cards are page
     // elements, always painted over the table's canvas, and a hand is on
     // top of the cards it deals), under the phone in yours.
     // (a stencil buffer: each card's shadow is kept off the card itself -
     // see the cards' masks below)
     const handGL = new THREE.WebGLRenderer({ alpha: true, antialias: true, stencil: true, powerPreference: 'low-power' });
-    handGL.toneMapping = renderer.toneMapping; handGL.toneMappingExposure = renderer.toneMappingExposure;
-    handGL.outputColorSpace = renderer.outputColorSpace;
+    handGL.toneMapping = gl.renderer.toneMapping; handGL.toneMappingExposure = gl.renderer.toneMappingExposure;
+    handGL.outputColorSpace = gl.renderer.outputColorSpace;
+    // (the quality the table draws at as it is built: see fly for a step down since)
     handGL.domElement.className = 'r3t-hand';
     const handScene = new THREE.Scene();
     // (the same studio the table's own brass mirrors, made again in this
@@ -2619,9 +2604,9 @@ export async function prepareTable(opts) {
     const mimicQ = (/[?&]mimic=(a|b|off)/.exec(location.search) || [])[1];
     const robotIds = () => (mimicQ ? { a: { skin: 'felt', vein: 'trim' }, b: { skin: 'trim', vein: 'felt' }, off: { skin: 'house', vein: 'house' } }[mimicQ]
       : Object.assign({ skin: 'felt', vein: 'trim' }, hooks.robot ? hooks.robot() : {}));
-    let feltNow = table.felt.userData.felt || Object.keys(FELTS).find(k => FELTS[k].color === table.felt.color.getHex()) || 'black', trimNow = (table.trim && table.trim.band[0] && table.trim.band[0].userData.trim) || 'gold';
-    const robotPal = () => { const r = robotIds(); return robotPalette(r.skin, r.vein, feltNow, trimNow); };
-    const dealerMats = dealerMaterials(robotPal());
+    const feltNow = table.felt.userData.felt || Object.keys(FELTS).find(k => FELTS[k].color === table.felt.color.getHex()) || 'black', trimNow = (table.trim && table.trim.band[0] && table.trim.band[0].userData.trim) || 'gold';
+    const r0 = robotIds();
+    const dealerMats = dealerMaterials(robotPalette(r0.skin, r0.vein, feltNow, trimNow));
     // (below the well's floor nothing of it is ever seen)
     const underFelt = [new THREE.Plane(V(0, 1, 0), 8.6)];
     Object.values(dealerMats).forEach(mat => { if (mat.isMaterial) mat.clippingPlanes = underFelt; });
@@ -2668,7 +2653,7 @@ export async function prepareTable(opts) {
     // otherwise clear, so the table's own canvas shows through them. (None
     // once the device has stepped down to no shadows: the table has none
     // of its own by then either.)
-    handGL.shadowMap.enabled = world.quality > 1; handGL.shadowMap.type = THREE.PCFShadowMap;
+    handGL.shadowMap.enabled = gl.quality > 1; handGL.shadowMap.type = THREE.PCFShadowMap;
     // (kept, for the house lights going down: see houseAt)
     const handLights = {};
     {
@@ -2709,6 +2694,44 @@ export async function prepareTable(opts) {
       geo.boundingBox.getSize(extent).multiply(m.scale);
       m.castShadow = Math.min(Math.abs(extent.x), Math.abs(extent.y), Math.abs(extent.z)) >= 0.35;
     }));
+    return { handGL, handScene, HAND_ENV, handSeat, dealerMats, torso, arms, maskIris, handLights, robotIds, feltNow, trimNow, disposed: false, primed: null,
+      dispose() { if (this.disposed) return; this.disposed = true; try { if (handScene.environment) handScene.environment.dispose(); } catch (e) { /* gone */ } try { handGL.dispose(); } catch (e) { /* gone */ } handGL.domElement.remove(); } };
+  };
+  let rig = null;
+  const armsRig = gl => rig || (rig = buildRig(gl));
+
+  async function fly(world, flyOpts = {}) {
+    const fo = Object.assign({ manual: false, reduced: false, duration: 0, onArrive: null, host: null, seatView: null, dealStyle: null, cards: 0 }, flyOpts);
+    const { renderer, camera } = world;
+    if (fo.reduced) lampT0 = -Infinity;   // (the lamp is simply on)
+    const stageEl = fo.host || document.body;
+    world.overlays.forEach(el => { el.style.visibility = 'hidden'; });
+    // CSS3D layer, over the canvas, same camera.
+    const css = new CSS3DRenderer();
+    css.domElement.className = 'r3t-css';
+    const cssScene = new THREE.Scene();
+    const cssSeat = new THREE.Group();
+    cssSeat.position.copy(seat.position); cssSeat.quaternion.copy(seat.quaternion);
+    cssScene.add(cssSeat);
+    let sizeHand = null;
+    const size = () => {
+      world.size();
+      // (the stage's box: after the arrival the landing, world.host, is
+      // hidden, and a pinched-in page's window is only the part in view)
+      const box = world.canvas.parentElement || world.host;
+      const w = box.clientWidth || window.innerWidth, h = box.clientHeight || window.innerHeight;
+      css.setSize(w, h);
+      return w / h;
+    };
+    // (the rig, built under the gate when the renderer was known then;
+    // otherwise now)
+    const rig = armsRig(world);
+    const { handGL, handScene, HAND_ENV, handSeat, dealerMats, torso, arms, maskIris, handLights, robotIds } = rig;
+    let feltNow = rig.feltNow, trimNow = rig.trimNow;
+    const robotPal = () => { const r = robotIds(); return robotPalette(r.skin, r.vein, feltNow, trimNow); };
+    // (the quality may have stepped down since it was built: no shadows then,
+    // and its programs made again for it on its next frame)
+    if (handGL.shadowMap.enabled && !(world.quality > 1)) { handGL.shadowMap.enabled = false; handScene.traverse(m => { if (m.isMesh) (Array.isArray(m.material) ? m.material : [m.material]).forEach(x => { x.needsUpdate = true; }); }); }
     world.layer(handGL);
     let aspect = size();
     stageEl.appendChild(css.domElement);
@@ -3912,9 +3935,19 @@ export async function prepareTable(opts) {
       if (Math.abs(a.arm.steered) > Math.abs(steered.psi)) steered.psi = +a.arm.steered.toFixed(3), steered.at = { t: +tt.toFixed(3), arm: k };
       if (a.arm.sunk > steered.sunk) steered.sunk = +a.arm.sunk.toFixed(3), steered.sunkAt = { t: +tt.toFixed(3), arm: k };
     };
+    // The machine at rest: the deal done, no gesture under way, no lift of
+    // the port (its fold settled), the house lights still. Nothing of it
+    // moves then but the life in its fingers and its lights - which holds
+    // its breath too (liveT stays), so a frame of it at rest IS the frame
+    // before, and its canvas can be left as it is: see drawArms.
+    const armsStill = tt => tt >= settleAt && tt >= gestureEnd && !lifts.some(l => tt < l.t1 + FOLD.out + 0.1) && !house.some(h => tt < h[1]);
+    let liveT = 0, stillNow = false, shownNow = false;
     const poseHand = tt => {
       const { y, open, fold } = rising(tt);
       const shown = y > ARM.down + 1;
+      stillNow = armsStill(tt);
+      if (!stillNow) liveT = tt;
+      shownNow = shown;
       const hs = arms.map((a, k) => planned(k, tt, y, fold));
       // (the torso turns a little toward where its hands are: the middle of
       // the two, away from the player's side of the port)
@@ -3965,14 +3998,14 @@ export async function prepareTable(opts) {
         const shp = shapeAt(k, tt);
         const per = [0, 1, 2, 3].map(i => {
           const fi = i ? fingersNow(k, tt - i * 0.028) : f;
-          const live = shown ? 0.03 * Math.sin(tt * 2.6 + i * 1.3 + k) + 0.015 * Math.sin(tt * 7.1 + i * 2.1 + k * 2) : 0;
+          const live = shown ? 0.03 * Math.sin(liveT * 2.6 + i * 1.3 + k) + 0.015 * Math.sin(liveT * 7.1 + i * 2.1 + k * 2) : 0;
           const c = fi[0] * (1 + 0.08 * i) + live;
           return shp ? [lerp(c, shp.per[i][0], shp.w), lerp(fi[1], shp.per[i][1], shp.w)] : [c, fi[1]];
         });
         let ft = fingersNow(k, tt + 0.02);
         if (shp) ft = [lerp(ft[0], shp.thumb[0], shp.w), lerp(ft[1], shp.thumb[1], shp.w)];
         a.hand.userData.fingers(per, ft[0], ft[1]);
-        a.hand.userData.leds(shown ? 1 : 0, tt + k * 0.4);
+        a.hand.userData.leds(shown ? 1 : 0, liveT + k * 0.4);
         // the light in its circuits: up while it works, brighter as it moves
         const palm = V(0, 1.2, -9.8).applyQuaternion(hp.q).add(hp.p);
         const dt = tt - prevT;
@@ -3989,7 +4022,7 @@ export async function prepareTable(opts) {
       const dark = fo.reduced ? 0 : 1 - houseAt(tt);
       dealerMats.ceramic.emissiveIntensity = glow + 0.5 * dark;
       dealerMats.circuit.emissiveIntensity = Math.max(0, glow - 0.3) * 2.5 + 1.2 * dark;
-      dealerMats.pulse.value = tt;
+      dealerMats.pulse.value = liveT;
       prevT = tt;
     };
     let tNow = 0, raf = 0, last = 0, running = false, arrived = false, disposed = false;
@@ -4053,22 +4086,51 @@ export async function prepareTable(opts) {
     // (and once compiled, that frame at once - then the frame on screen again
     // over it, in the same task - rather than on the next frame the table
     // draws, which may be the one you tapped for)
-    try { handGL.compileAsync(handScene, camera).catch(() => {}).then(() => { armsCompiled = true; if (!disposed && !armsWarmed) { warmArms(); drawArms(); } }); } catch (e) { armsCompiled = true; }
+    try { handGL.compileAsync(handScene, camera).catch(() => {}).then(() => { armsCompiled = true; if (!disposed && !armsWarmed) { warmArms(); drawArms(true); } }); } catch (e) { armsCompiled = true; }
     const warmArms = () => {
       armsWarmed = true;
       if (fo.reduced) return;
       poseHand(settleAt + 1);
       world.lens(() => handGL.render(handScene, camera));
       poseHand(tNow);
+      armsSig = ''; armsHad = null;
     };
-    const drawArms = () => { if (!armsWarmed && armsCompiled) warmArms(); world.lens(() => handGL.render(handScene, camera)); };
-    const draw = () => {
+    // The machine's canvas is drawn again only for a frame that would differ
+    // from the one on it: the machine moving (see armsStill), the camera
+    // moved, the canvas placed again (placing clears it: see layer in
+    // intro.mjs) - or when asked (force: a repaint, the sharp frame of a
+    // rest). The table's own loop runs for a card you lift, turn or spin
+    // while he waits beside it: his frame then stays, and the frame's work
+    // is the table's alone. With nothing of him in view - down in his port
+    // before the deal - the canvas is cleared once and left, and hidden,
+    // so the compositor has no full-screen layer to blend over the cards.
+    let armsSig = '', armsHad = null;
+    const sigArms = () => {
+      const el = handGL.domElement, st = el.style;
+      return camera.matrixWorld.elements.join() + '|' + camera.projectionMatrix.elements.join() + '|' + el.width + ',' + el.height + ',' + st.left + ',' + st.top + ',' + st.width + ',' + st.height;
+    };
+    const drawArms = force => {
+      if (!armsWarmed && armsCompiled) warmArms();
+      const el = handGL.domElement;
+      if (!shownNow) {
+        if (armsHad !== false) { handGL.clear(); el.style.visibility = 'hidden'; armsHad = false; armsSig = ''; }
+        return;
+      }
+      const sig = sigArms();
+      if (!force && stillNow && armsHad && sig === armsSig) return;
+      armsSig = sig; armsHad = true;
+      world.lens(() => handGL.render(handScene, camera));
+      if (el.style.visibility) el.style.visibility = '';
+    };
+    const draw = force => {
       world.paint();
       css.render(cssScene, camera);
-      drawArms();
+      drawArms(force);
     };
+    // (a rest's frame, the one that stays: drawn whole)
+    const drawRest = () => draw(true);
     // The frame on screen, drawn: at rest it is held, and drawn sharp.
-    const show = () => { if (running) draw(); else world.rest(draw); };
+    const show = () => { if (running) draw(true); else world.rest(drawRest); };
     // (busy: the deal, a card lifting or going down, or one still spinning
     // from a flick)
     const busyUntil = () => Math.max(settleAt, ...[...lift.values()].map(L => L[3] + 0.5), ...[...hover.values()].map(H => H[3] + 0.3), spinning() ? tNow + 1 : 0, gestureEnd);
@@ -4088,11 +4150,11 @@ export async function prepareTable(opts) {
       last = now;
       update(tNow + dt);
       // (the last of the moves: its frame is the one that stays)
-      if (tNow > busyUntil()) { running = false; world.rest(draw); return; }
+      if (tNow > busyUntil()) { running = false; world.rest(drawRest); return; }
       draw();
       raf = requestAnimationFrame(loop);
     };
-    const wake = () => { if (disposed || fo.manual) { if (fo.manual) { update(tNow); world.rest(draw); } return; } if (!running) { running = true; last = 0; woke = 0; if (pacer) pacer.reset(); world.move(); raf = requestAnimationFrame(loop); } };
+    const wake = () => { if (disposed || fo.manual) { if (fo.manual) { update(tNow); world.rest(drawRest); } return; } if (!running) { running = true; last = 0; woke = 0; if (pacer) pacer.reset(); world.move(); raf = requestAnimationFrame(loop); } };
     // (a lost context back: its frame drawn again - the table's world first
     // makes the studio its surfaces mirror again, see intro.mjs)
     if (world.onRestore) world.onRestore(() => { if (!disposed) show(); });
@@ -4336,7 +4398,8 @@ export async function prepareTable(opts) {
       poseHand(tNow);
       const done = tNow >= gestureEnd;
       world.layer(handGL, !done);
-      drawArms();
+      // (the last frame, the one that stays: drawn whole)
+      drawArms(done);
       armsRaf = done ? 0 : requestAnimationFrame(armsLoop);
     };
     const playArms = () => { if (fo.manual || running || armsRaf) return; armsLast = 0; if (armsPacer) armsPacer.reset(); armsRaf = requestAnimationFrame(armsLoop); };
@@ -4541,7 +4604,7 @@ export async function prepareTable(opts) {
     window.addEventListener('resize', onResize);
 
     update(0);
-    if (fo.manual) world.rest(draw);
+    if (fo.manual) world.rest(drawRest);
     else { draw(); running = true; raf = requestAnimationFrame(loop); }
 
     return {
@@ -4558,6 +4621,9 @@ export async function prepareTable(opts) {
       // (lab and tests: how many shaders each canvas has compiled - a count
       // that grows mid-move is a frame that waits on the GPU)
       get programs() { return { table: world.renderer.info.programs.length, hand: handGL.info.programs.length }; },
+      // (lab and tests: how many frames each canvas has drawn - the dealer's
+      // should stand still while he waits and you work the cards)
+      get frames() { return { table: world.renderer.info.render.frame, hand: handGL.info.render.frame }; },
       // (lab and tests: each card's moments - drawn, flicked and caught,
       // pitched, laid, turned - in the table's clock)
       get timing() { return deal.cards.map(c => ({ pull: c.pull, toss: c.toss ? [c.toss.t0, c.toss.t1] : null, pitch: c.pitch ? [c.pitch.t0, c.lay] : null, lay: c.lay, turn: c.turn, turned: turnEnd(c) })); },
@@ -4591,7 +4657,7 @@ export async function prepareTable(opts) {
         if (table.group.userData.printTrim) table.group.userData.printTrim(trimNow, feltNow);
         else if (table.group.userData.printFor) table.group.userData.printFor(table.felt.userData.feltLight || 0);
         // (a dealer matched to the felt changes with it)
-        repaintDealer(dealerMats, robotPal()); drawArms();
+        repaintDealer(dealerMats, robotPal()); drawArms(true);
         show();
       },
       // The trim picked in Settings, laid now: the table's band and lines,
@@ -4602,11 +4668,11 @@ export async function prepareTable(opts) {
         if (table.trim) dressTrim(table.trim, id);
         trimNow = TRIMS[id] ? id : 'gold';
         if (table.group.userData.printTrim) table.group.userData.printTrim(trimNow, feltNow);
-        repaintDealer(dealerMats, robotPal()); drawArms();
+        repaintDealer(dealerMats, robotPal()); drawArms(true);
         show();
       },
       // The dealer's colours picked in Settings (hooks.robot()), laid now.
-      setRobot() { repaintDealer(dealerMats, robotPal()); drawArms(); show(); },
+      setRobot() { repaintDealer(dealerMats, robotPal()); drawArms(true); show(); },
       // (lab: a gesture now - point, wave, spirit, drum, knock, sulk, peek,
       // pop - at the cards given by index, or the ready ones, and when it
       // runs, in the table's clock)
@@ -4621,8 +4687,7 @@ export async function prepareTable(opts) {
         window.removeEventListener('resize', onResize);
         document.removeEventListener('keydown', skipAhead);
         world.canvas.removeEventListener('pointerdown', skipAhead);
-        if (handScene.environment) handScene.environment.dispose();
-        handGL.dispose();
+        rig.dispose();
         css.domElement.remove();
       }
     };
@@ -4634,10 +4699,38 @@ export async function prepareTable(opts) {
   // would compile every one of them again in the frame it came on; the
   // table's own shaders and textures, left to its first frame, would all
   // land in the first frames of the fly-in.
+  // The dealer's rig with it (o.gl: the table's renderer, camera and
+  // quality - see buildRig): its context and its studio made now, its
+  // shaders compiled while the table warms, and then one frame of it drawn
+  // unseen, from the seat - what only a frame makes (its shadow map, its
+  // textures on the GPU) made here, under the gate and the shot, rather
+  // than in the first frames you see him in. Without o.gl, fly() builds it
+  // on the tap, as before.
+  let primed = null;
+  if (o.gl && o.gl.renderer && o.gl.camera) {
+    const r = armsRig(o.gl);
+    let compiled;
+    try { compiled = r.handGL.compileAsync(r.handScene, o.gl.camera).catch(() => {}); } catch (e) { compiled = Promise.resolve(); }
+    // (a compile that never answers must not hold the seat: 4 s, then on)
+    primed = Promise.race([compiled, new Promise(res => setTimeout(res, 4000))]).then(() => {
+      if (r.disposed) return;
+      const aspect = window.innerWidth / Math.max(1, window.innerHeight);
+      const v = L.view[aspect < 0.62 ? 0 : 1];
+      const cam = new THREE.PerspectiveCamera(v.fov, aspect, o.gl.camera.near, o.gl.camera.far);
+      seat.updateMatrixWorld(true);
+      cam.position.copy(seat.localToWorld(V(...v.eye))); cam.lookAt(seat.localToWorld(V(...v.aim))); cam.updateMatrixWorld(true);
+      // (a small buffer: the frame is for what it makes, not for looking at;
+      // fly() sizes the canvas to the view)
+      r.handGL.setSize(64, 64, false);
+      try { r.handGL.render(r.handScene, cam); } catch (e) { /* on its first frame, then */ }
+    });
+    r.primed = primed;
+  }
   if (o.warm) {
     await Promise.race([Promise.all(chipLoads), new Promise(res => setTimeout(res, 1500))]);
     try { await o.warm({ show: [seat], spread: true }); } catch (e) { /* compiled on first draw */ }
   }
+  if (primed) { try { await primed; } catch (e) { /* drawn on the tap, then */ } }
   if (o.showWhen) { try { await o.showWhen; } catch (e) { /* shown anyway */ } }
   // (the lamp comes up from here, not from the build)
   lampT0 = performance.now();
@@ -4648,7 +4741,7 @@ export async function prepareTable(opts) {
     fly,
     // (out of the room, and its GPU resources given back - a drift away
     // from the table must not leave it on the card)
-    dispose() { made.forEach(m => { scene.remove(m); freeTree(m, scene.userData.set); }); }
+    dispose() { made.forEach(m => { scene.remove(m); freeTree(m, scene.userData.set); }); if (rig) rig.dispose(); }
   };
 }
 
