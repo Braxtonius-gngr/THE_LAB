@@ -24,6 +24,8 @@
 //     stipples a highlight he will not leave blank;
 //   - when the lines would fall under a pixel (far away, a steep face)
 //     they dissolve into their mean tone, so there is no moire;
+//   - a white-line plate (opts.invert): the ground is the ink and the lines
+//     swell in the light instead - Bewick's way, the valley's;
 //   - the ink is one colour (opts.ink) on one paper (opts.paper): the
 //     iron-gall black of the valley, or the arterial red of what bleeds
 //     (opts.blood blends the two by a mask, so blood can run down a form);
@@ -99,6 +101,8 @@ const FRAG = /* glsl */`
   uniform float uTime;
   uniform float uOpacity;
   uniform vec3 uCamPos;
+  uniform float uWobble;   // the hand's drift along a line (0 ruled .. 3 loose)
+  uniform float uInvert;   // 1: a white-line plate - the lines swell in the LIGHT (the ground is the ink)
   uniform float uUvMode;   // 1: the lines follow the mesh's own UVs (a lathe's rings, a sphere's meridians), scaled by uUvScale
   uniform vec2 uUvScale;
 
@@ -151,10 +155,11 @@ const FRAG = /* glsl */`
     float sky = 0.5 + 0.5 * n.y;
     float lit = clamp(lam * uKeyI + sky * uSky, 0.0, 1.0);
     float t = clamp(pow(1.0 - lit, 0.85) + uTone, 0.0, 1.0);
+    if (uInvert > 0.5) t = 1.0 - t;
     // a rim toward the lens stays light (the plate's bevel of light)
     vec3 v = normalize(uCamPos - vWorld);
     float rim = pow(1.0 - max(dot(n, v), 0.0), 3.0);
-    t = clamp(t - rim * 0.18, 0.0, 1.0);
+    t = clamp(t + (uInvert > 0.5 ? -rim * 0.3 : -rim * 0.18), 0.0, 1.0);
     // triplanar: the face's dominant axis picks the plane the lines lie on
     vec3 an = abs(n);
     vec2 p = an.y > max(an.x, an.z) ? vWorld.xz : (an.x > an.z ? vWorld.zy : vWorld.xy);
@@ -173,14 +178,15 @@ const FRAG = /* glsl */`
     // the wet pass: fresh ink spreads a little wider and the tone deepens
     // (blood is always a darker passage than the skin it runs on)
     float tt = clamp(t + bm * 0.3 + uWet * 0.12 * max(bm, 0.3), 0.0, 1.0);
-    float ink = hatch(p, tt, 0.6);
+    float ink = hatch(p, tt, uWobble);
     // ember: in the darks, the ink glows from under (the valley burning)
     vec3 inkCol = mix(uInk, uBlood, bm);
     vec3 ember = vec3(0.82, 0.27, 0.12);
-    inkCol = mix(inkCol, ember, uEmber * smoothstep(0.55, 1.0, t) * (0.5 + 0.5 * sin(uTime * 1.7 + vWorld.x * 0.3 + vWorld.z * 0.2)));
+    float dark = uInvert > 0.5 ? 1.0 - t : t;
+    inkCol = mix(inkCol, ember, uEmber * smoothstep(0.55, 1.0, dark) * (0.5 + 0.5 * sin(uTime * 1.7 + vWorld.x * 0.3 + vWorld.z * 0.2)));
     // the paper: a hair darker where the form turns from the light, the
     // plate tone an engraver leaves in the shadows
-    vec3 paper = mix(uPaper, uPaper * 0.86, smoothstep(0.5, 1.0, t) * 0.6);
+    vec3 paper = mix(uPaper, uPaper * 0.86, smoothstep(0.5, 1.0, dark) * 0.6);
     vec3 col = mix(paper, inkCol, ink);
     // wet blood: a sheen across it, toward the lens
     float sheen = uWet * bm * pow(max(dot(reflect(-normalize(uKey), n), v), 0.0), 18.0) * 0.5;
@@ -194,7 +200,7 @@ const FRAG = /* glsl */`
 // A sharable set of uniforms (uTime, uCamPos are driven per frame by
 // burinTick(); the rest are the material's own).
 export function engravingMaterial(opts = {}) {
-  const o = Object.assign({ paper: BONE, ink: INK, blood: BLOOD, freq: 1.1, angle: -0.6, tone: 0.0, wet: 0, bloodOn: false, bloodLo: 0, bloodHi: 1, spill: 0, ember: 0, sky: 0.28, keyI: 1.0, transparent: false, opacity: 1, side: THREE.FrontSide, uv: null }, opts);
+  const o = Object.assign({ paper: BONE, ink: INK, blood: BLOOD, freq: 1.1, angle: -0.6, tone: 0.0, wet: 0, bloodOn: false, bloodLo: 0, bloodHi: 1, spill: 0, ember: 0, sky: 0.28, keyI: 1.0, transparent: false, opacity: 1, side: THREE.FrontSide, uv: null, invert: false, wobble: 0.6 }, opts);
   const m = new THREE.ShaderMaterial({
     vertexShader: VERT, fragmentShader: FRAG,
     uniforms: {
@@ -203,7 +209,7 @@ export function engravingMaterial(opts = {}) {
       uFreq: { value: o.freq }, uAngle: { value: o.angle }, uTone: { value: o.tone }, uWet: { value: o.wet },
       uBloodLo: { value: o.bloodLo }, uBloodHi: { value: o.bloodHi }, uBloodOn: { value: o.bloodOn ? 1 : 0 }, uBloodSpill: { value: o.spill },
       uEmber: { value: o.ember }, uTime: { value: 0 }, uOpacity: { value: o.opacity }, uCamPos: { value: new THREE.Vector3() },
-      uUvMode: { value: o.uv ? 1 : 0 }, uUvScale: { value: new THREE.Vector2(o.uv ? o.uv[0] : 1, o.uv ? o.uv[1] : 1) }
+      uInvert: { value: o.invert ? 1 : 0 }, uWobble: { value: o.wobble }, uUvMode: { value: o.uv ? 1 : 0 }, uUvScale: { value: new THREE.Vector2(o.uv ? o.uv[0] : 1, o.uv ? o.uv[1] : 1) }
     },
     transparent: o.transparent, side: o.side, lights: false, fog: false
   });
@@ -257,12 +263,14 @@ export function outlineOf(mesh, px = 2.2, ink = INK) {
 // Each frame: the camera's place and the clock into every burin material
 // under root, the viewport into every outline.
 const _v2 = new THREE.Vector2();
-export function burinTick(root, camera, renderer, t) {
+// key: the light's direction in world space (a room passes its own, turned
+// with its seat; by default KEY as it stands).
+export function burinTick(root, camera, renderer, t, key = null) {
   renderer.getDrawingBufferSize(_v2);
   root.traverse(obj => {
     const mats = obj.material ? [].concat(obj.material) : [];
     for (const m of mats) {
-      if (m.userData && m.userData.burin) { m.uniforms.uTime.value = t; m.uniforms.uCamPos.value.copy(camera.position); }
+      if (m.userData && m.userData.burin) { m.uniforms.uTime.value = t; m.uniforms.uCamPos.value.copy(camera.position); if (key) m.uniforms.uKey.value.copy(key); }
       else if (m.uniforms && m.uniforms.uViewport) m.uniforms.uViewport.value.copy(_v2);
     }
   });
