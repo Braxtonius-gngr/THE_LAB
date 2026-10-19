@@ -267,7 +267,7 @@ function buildBody(kit, rnd, flayed = false) {
   const torso = mesh(lathe([[0.01, -9], [12, -8.6], [15.5, -8], [16, 0], [14.6, 9], [13.4, 18], [14.2, 27], [16.8, 37], [18.6, 45], [17.2, 51], [9, 55], [0.01, 55.5]], 22), skinUV, hips, 2);
   torso.scale.set(1, 1, 0.66);
   // a loincloth, unless flayed (they took it with the skin)
-  if (!flayed) { const lc = mesh(lathe([[0.01, 2.2], [16.4, 2], [17.5, -4], [17, -12], [15, -20], [16, -23], [0.01, -23.2]], 18), kit.linen, hips, 1.4); lc.scale.set(1, 1, 0.7); }
+  if (!flayed) { const lc = mesh(lathe([[0.01, -23.2], [16, -23], [15, -20], [17, -12], [17.5, -4], [16.4, 2], [0.01, 2.2]], 18), kit.linen, hips, 1.4); lc.scale.set(1, 1, 0.7); }
   const neck = G(hips, 0, 55, 0);
   limb(4, 3.4, skinUV, neck, 1.2).position.y = 4;
   const head = G(neck, 0, 9, 0);
