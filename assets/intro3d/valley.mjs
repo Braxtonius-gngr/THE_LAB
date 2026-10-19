@@ -105,7 +105,7 @@ const SKY = 1100;
 // your thumb (at: its middle; 60 x 38 cm, 30 page px to the cm).
 const SHEET = { at: [20, 19, 56], lean: 0.6, w: 60, h: 38, px: 30, tilt: 0.9 * DEG };
 // The views: the seat, portrait and landscape.
-const VIEW = [{ eye: [0, 130, -112], aim: [0, 70, 140], fov: 68 }, { eye: [0, 108, -96], aim: [0, 72, 140], fov: 48 }];
+const VIEW = [{ eye: [0, 130, -112], aim: [0, 70, 140], fov: 68 }, { eye: [0, 118, -112], aim: [0, 62, 140], fov: 48 }];
 const T = { fly: 4.8, uiIn: 0.6, lift: 0.55 };
 const SND = { drone: 0.11, choir: 0.05, drum: 0.5, wind: 0.06, bell: 0.35, saw: 0.05, crow: 0.09 };
 // The key: Holbein's light, high from the left and a little in front.
@@ -999,9 +999,9 @@ export async function prepareTable(opts) {
     skull: mat({ uv: [36, 18], angle: HALF, tone: 0.02, keyI: 1.2, sky: 0.24, wobble: 0.8 }),
     // (flesh: the paper, hatched along the limb; the face in its rings;
     // hair a dark passage; the raw of a wound or a flayed man is blood)
-    flesh: mat({ freq: 1.2, angle: -0.55, tone: 0.14, keyI: 1.25, sky: 0.22, wobble: 1.1 }),
-    fleshUV: mat({ uv: [12, 5], angle: 0.08, tone: 0.14, keyI: 1.25, sky: 0.22, wobble: 1.1 }),
-    face: mat({ uv: [30, 14], angle: HALF, tone: 0.1, keyI: 1.25, sky: 0.22, wobble: 0.9 }),
+    flesh: mat({ freq: 1.2, angle: -0.55, tone: 0.02, keyI: 1.25, sky: 0.34, wobble: 1.1 }),
+    fleshUV: mat({ uv: [12, 5], angle: 0.08, tone: 0.02, keyI: 1.25, sky: 0.34, wobble: 1.1 }),
+    face: mat({ uv: [30, 14], angle: HALF, tone: 0.0, keyI: 1.25, sky: 0.34, wobble: 0.9 }),
     hair: mat({ uv: [24, 8], angle: 0.2, tone: 0.58, freq: 1.6, wobble: 2 }),
     raw: mat({ paper: BLOOD, tone: 0.16, freq: 1.4, angle: -0.4, keyI: 1.2 }),
     rawUV: mat({ paper: BLOOD, uv: [12, 5], angle: 0.3, tone: 0.16, freq: 1.3, keyI: 1.2 }),
