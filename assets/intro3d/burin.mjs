@@ -156,8 +156,10 @@ const FRAG = /* glsl */`
     // form turns in three or four clear steps as an engraver cuts it
     float lam = max(dot(n, normalize(uKey)), 0.0);
     float sky = 0.5 + 0.5 * n.y;
-    float lit = clamp(lam * uKeyI + sky * uSky, 0.0, 1.0);
-    float t = clamp(pow(1.0 - lit, 0.85) + uTone, 0.0, 1.0);
+    // (a floor of light under everything, and a ceiling on the dark: a
+    // woodcutter's deepest passage is still crossed lines, never a solid)
+    float lit = clamp(lam * uKeyI + sky * uSky + 0.1, 0.0, 1.0);
+    float t = clamp(pow(1.0 - lit, 0.85) + uTone, 0.0, 0.86);
     if (uInvert > 0.5) t = 1.0 - t;
     // a rim toward the lens stays light (the plate's bevel of light)
     vec3 v = normalize(uCamPos - vWorld);
