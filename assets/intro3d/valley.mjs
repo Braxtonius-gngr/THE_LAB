@@ -103,7 +103,7 @@ const RIVER = { z: 152, w: 56 };
 const SKY = 1100;
 // The broadside: a printed sheet nailed to the table's back rail, under
 // your thumb (at: its middle; 60 x 38 cm, 30 page px to the cm).
-const SHEET = { at: [20, 19, 56], lean: 0.6, w: 60, h: 38, px: 30, tilt: 0.9 * DEG };
+const SHEET = { at: [20, 17, 55.5], lean: 0.22, w: 60, h: 38, px: 30, tilt: 0.9 * DEG };
 // The views: the seat, portrait and landscape.
 const VIEW = [{ eye: [0, 130, -112], aim: [0, 70, 140], fov: 68 }, { eye: [0, 118, -112], aim: [0, 90, 140], fov: 54 }];
 const T = { fly: 4.8, uiIn: 0.6, lift: 0.55 };
@@ -114,7 +114,7 @@ const KEY_SEAT = new THREE.Vector3(0.82, 0.5, -0.22).normalize();
 // ------------------------------------------------------------ helpers
 // (every surface here is the block's: paper left where the light falls,
 // the turn hatched, the dark crossed; tone + is darker)
-const mat = (opts) => engravingMaterial(Object.assign({ freq: 1.05, sky: 0.22, keyI: 1.2, tone: 0.0, wobble: 1.0, steps: 4 }, opts));
+const mat = (opts) => engravingMaterial(Object.assign({ freq: 1.05, sky: 0.16, keyI: 1.5, tone: -0.04, wobble: 1.0, steps: 3 }, opts));
 const mesh = (geo, m, parent, outline = 1.8) => { const x = new THREE.Mesh(geo, m); parent.add(x); if (outline) outlineOf(x, outline); return x; };
 const G = (parent, x = 0, y = 0, z = 0) => { const g = new THREE.Group(); g.position.set(x, y, z); if (parent) parent.add(g); return g; };
 // a limb: a capsule hanging from its joint at the origin, down -y
@@ -151,9 +151,12 @@ function buildSkull(kit) {
   [-3.3, 3.3].forEach(x => { const s = new THREE.Mesh(sock, mOut); s.position.set(x, 3.4, -6.2); s.scale.set(1, 1.15, 0.6); g.add(s); });
   const nose = new THREE.Mesh(new THREE.ConeGeometry(1.5, 3.2, 4), mOut); nose.position.set(0, 0.2, -7.6); nose.rotation.x = PI; g.add(nose);
   const jawU = new THREE.TorusGeometry(4.6, 1.3, 8, 18, PI); const ju = mesh(jawU, kit.rib, g, 1.4); ju.position.set(0, -2.6, -3.2); ju.rotation.set(HALF, 0, PI);
-  const jaw = new THREE.TorusGeometry(4.4, 1.2, 8, 18, PI); const jl = mesh(jaw, kit.rib, g, 1.4); jl.position.set(0, -6, -2.6); jl.rotation.set(HALF, 0, PI);
+  const jaw = new THREE.TorusGeometry(4.4, 1.2, 8, 18, PI); const jl = mesh(jaw, kit.rib, g, 1.4); jl.position.set(0, -7.4, -2.2); jl.rotation.set(HALF + 0.25, 0, PI);   // (dropped a little open: the grin)
+  // the brow over the sockets, the cheekbones under them
+  const brow = mesh(new THREE.TorusGeometry(7.2, 1.3, 6, 16, PI * 0.9), kit.bone, g, 1.2); brow.position.set(0, 5.6, -5.4); brow.rotation.set(0.25, 0, PI * 1.05);
+  [-1, 1].forEach(sx => { const z = mesh(new THREE.BoxGeometry(3.2, 1.6, 4), kit.bone, g, 1.1); z.position.set(sx * 6.2, 0.8, -4.6); z.rotation.y = sx * 0.6; });
   // the teeth: a row of small blocks in each arc
-  for (let i = -3; i <= 3; i++) { const a = i / 3.6 * HALF; [ju, jl].forEach((J, k) => { const t = mesh(new THREE.BoxGeometry(1, 1.6, 0.8), kit.bone, g, 0); t.position.set(Math.sin(a) * 4.4, k ? -4.6 : -3.8, -2.8 - Math.cos(a) * 4.4); }); }
+  for (let i = -3; i <= 3; i++) { const a = i / 3.6 * HALF; [ju, jl].forEach((J, k) => { const t = mesh(new THREE.BoxGeometry(1, 1.6, 0.8), kit.bone, g, 0.5); t.position.set(Math.sin(a) * 4.4, k ? -5.8 : -3.8, -2.8 - Math.cos(a) * 4.4); }); }
   g.userData.jaw = jl;
   return g;
 }
@@ -327,7 +330,7 @@ function gutGeo(path, r = 2.1) {
 // a pool on the ground, and spatter round it
 function pool(kit, rnd, r, sx = 1) {
   const g = new THREE.Group();
-  const p = mesh(splat(r, rnd, sx), kit.pool, g, 0); p.position.y = 0.6; p.renderOrder = 1;
+  const p = mesh(splat(r, rnd, sx), kit.pool, g, 1.2); p.position.y = 0.6; p.renderOrder = 1;
   for (let i = 0; i < 7; i++) { const s = mesh(splat(1.2 + rnd() * 2.4, rnd, 1, 10), kit.pool, g, 0); const a = rnd() * PI * 2, d = r * (0.9 + rnd() * 0.9); s.position.set(Math.cos(a) * d * sx, 0.7, Math.sin(a) * d); s.renderOrder = 1; }
   return g;
 }
@@ -523,6 +526,14 @@ function vFlaying(kit, rnd) {
   };
   return { g, death, act, bands, drips: [[V(-4, 120, -20), V(0, 2, -16)]], crows: [[-20, 212, 2], [26, 198, -8]], width: 120 };
 }
+// a dead tree: a trunk with a lean, two or three bare branches
+function buildTree(kit, rnd) {
+  const g = new THREE.Group();
+  mesh(lathe([[12 + rnd() * 4, 0], [9, 30], [7.5, 80], [6, 130], [4.5, 170], [2.5, 210], [0.01, 212]], 10), kit.bark, g, 2);
+  const n = 2 + Math.floor(rnd() * 2);
+  for (let i = 0; i < n; i++) { const b = mesh(new THREE.CylinderGeometry(1.5 + rnd(), 3.5 + rnd(), 50 + rnd() * 40, 7), kit.bark, g, 1.5); const a = rnd() * 6, y = 120 + rnd() * 70; b.position.set(Math.cos(a) * 20, y, Math.sin(a) * 20); b.rotation.set(Math.sin(a) * 1.0, 0, -Math.cos(a) * 1.0); }
+  return g;
+}
 // IV. THE WHEEL. The breaking wheel on its pole, a man across it with his
 // limbs through the spokes, broken; Death below it with the bar, raised.
 function vWheel(kit, rnd) {
@@ -655,7 +666,7 @@ function vDragging(kit, rnd) {
   wound(d.hips, 16, 9, 12, 2, 32, -8, kit);
   wound(d.hips, 6, 14, 8, -8, 10, -9, kit);
   // the smear behind him, long
-  const sm = mesh(splat(30, rnd, 2.6, 30), kit.pool, g, 0); sm.position.set(74, 0.6, 6); sm.renderOrder = 1;
+  const sm = mesh(splat(30, rnd, 2.6, 30), kit.pool, g, 1.2); sm.position.set(74, 0.6, 6); sm.renderOrder = 1;
   g.add(pool(kit, rnd, 12)).position.set(26, 0, 4);
   bleed(man, 0.6); bands.push([man, 26, 0]);
   const act = (tt, dt, w, still) => {
@@ -682,7 +693,7 @@ function buildDealer(kit, rnd) {
   g.add(sk);
   const a = sk.userData.arms, l = sk.userData.legs;
   l.l.hip.rotation.x = -1.45; l.r.hip.rotation.x = -1.45; l.l.kn.rotation.x = 1.5; l.r.kn.rotation.x = 1.5;
-  a.l.sh.rotation.set(0.55, 0, 0.3); a.r.sh.rotation.set(0.5, 0, -0.35); a.l.el.rotation.x = 1.0; a.r.el.rotation.x = 1.05;
+  a.l.sh.rotation.set(0.55, 0, 0.1); a.r.sh.rotation.set(0.5, 0, -0.2); a.l.el.rotation.x = 1.0; a.r.el.rotation.x = 1.05;
   // the stool
   const st = mesh(new THREE.CylinderGeometry(14, 12, 4, 12), kit.wood, g, 1.6); st.position.set(0, 42, 8);
   for (let i = 0; i < 3; i++) { const lg = mesh(new THREE.CylinderGeometry(1.8, 2.2, 44, 8), kit.wood, g, 1.3); const an = i / 3 * PI * 2 + 0.5; lg.position.set(Math.cos(an) * 10, 20, 8 + Math.sin(an) * 10); lg.rotation.z = -Math.cos(an) * 0.12; lg.rotation.x = Math.sin(an) * 0.12; }
@@ -789,7 +800,7 @@ function buildTable(kit) {
   for (let i = 0; i < 3; i++) { const pl = mesh(new THREE.BoxGeometry(TABLE.w, TABLE.slab, TABLE.d / 3 - 0.8), kit.wood, g, 2); pl.position.set(0, -TABLE.slab / 2, TABLE.z0 + (i + 0.5) * TABLE.d / 3); }
   [-1, 1].forEach(s => { const leg = mesh(new THREE.BoxGeometry(6, 76, 40), kit.wood, g, 1.6); leg.position.set(s * (TABLE.w / 2 - 12), -TABLE.slab - 38, TABLE.z0 + TABLE.d / 2); leg.rotation.z = s * 0.1; });
   mesh(new THREE.BoxGeometry(TABLE.w - 30, 5, 5), kit.wood, g, 1.4).position.set(0, -50, TABLE.z0 + TABLE.d / 2);
-  const rail = mesh(new THREE.BoxGeometry(TABLE.w, 13, 4), kit.wood, g, 1.6); rail.position.set(0, 4.5, TABLE.z0 + TABLE.d - 2);
+  const rail = mesh(new THREE.BoxGeometry(TABLE.w, 18, 4), kit.wood, g, 1.6); rail.position.set(0, 7, TABLE.z0 + TABLE.d - 2);
   const glass = buildHourglass(kit, 22); glass.position.set(-40, 0, 44); g.add(glass);
   const sk = buildSkull(kit); sk.scale.setScalar(1.15); sk.position.set(38, 7, 26); sk.rotation.set(0.25, 0.45, 0.1); g.add(sk);
   const dm = mat({ freq: 2.6, angle: 0.7, tone: -0.1 });
@@ -1006,10 +1017,10 @@ export async function prepareTable(opts) {
     hair: mat({ uv: [24, 8], angle: 0.2, tone: 0.58, freq: 1.6, wobble: 2 }),
     raw: mat({ paper: BLOOD, tone: 0.16, freq: 1.4, angle: -0.4, keyI: 1.2 }),
     rawUV: mat({ paper: BLOOD, uv: [12, 5], angle: 0.3, tone: 0.16, freq: 1.3, keyI: 1.2 }),
-    gut: mat({ paper: BLOOD, uv: [40, 5], angle: HALF, tone: 0.18, freq: 1.0 }),
-    pool: mat({ paper: BLOOD, tone: 0.08, freq: 0.9, angle: 0.1, side: THREE.DoubleSide }),
+    gut: mat({ paper: BLOOD, uv: [40, 5], angle: HALF, tone: 0.3, freq: 1.0 }),
+    pool: mat({ paper: BLOOD, tone: 0.5, freq: 0.9, angle: 0.1, keyI: 0.3, sky: 0.1, side: THREE.DoubleSide }),
     skin: mat({ freq: 1.0, angle: 1.2, tone: -0.02, wobble: 1.4, side: THREE.DoubleSide }),
-    river: mat({ paper: BLOOD, uv: [8, 60], angle: 0.1, tone: 0.06, freq: 1.0, wobble: 1.8, scroll: [0, 6], steps: 0 }),
+    river: mat({ paper: BLOOD, uv: [8, 60], angle: 0.1, tone: 0.5, freq: 1.0, keyI: 0.3, sky: 0.1, wobble: 1.8, scroll: [0, 6], steps: 0 }),
     cloth: mat({ freq: 0.9, angle: 1.3, tone: 0.3, wobble: 1.6, side: THREE.DoubleSide }),
     linen: mat({ uv: [18, 4], angle: 1.4, tone: 0.06, wobble: 1.4 }),
     wood: mat({ freq: 0.8, angle: HALF, tone: 0.36, wobble: 1.2 }),
@@ -1071,6 +1082,8 @@ export async function prepareTable(opts) {
   }
   for (let i = 0; i < 14; i++) { const ti = Math.floor(rnd() * 3), x = (rnd() - 0.5) * 480, z = TIER[ti].z + (rnd() - 0.5) * 80; if (Math.hypot(x * 0.8, z - 20) < ROCK.lip + 30) continue; const b = mesh(boneGeo(18 + rnd() * 20, 1.6), kit.shaft, dress, 1.2); b.rotation.set(HALF + (rnd() - 0.5) * 0.2, 0, rnd() * 6); b.position.set(x, height(x, z) + 1.5, z); }
   for (let i = 0; i < 5; i++) { const ti = Math.floor(rnd() * 3), x = (rnd() - 0.5) * 440, z = TIER[ti].z + (rnd() - 0.5) * 70; if (Math.hypot(x * 0.8, z - 20) < ROCK.lip + 30) continue; const sk = buildSkull(kit); sk.rotation.set(rnd() * 0.8 - 0.2, rnd() * 6, rnd() * 0.6 - 0.3); sk.position.set(x, height(x, z) + 7, z); dress.add(sk); }
+  // dead trees on the flanks of the terraces, as a woodcutter fills to the border
+  [[-300, 1, 1.0], [300, 1, 0.85], [-360, 2, 1.1], [330, 2, 0.95], [-230, 2, 0.7], [250, 0, 0.8]].forEach(([x, ti, sc]) => { const z = TIER[ti].z + 30, t = buildTree(kit, rnd); t.scale.setScalar(sc); t.position.set(x, height(x, z) - 2, z); t.rotation.y = rnd() * 6; dress.add(t); });
   // the drops and the crows
   const drops = dropMesh(drips.length * 3); seat.add(drops);
   const dropP = Array.from({ length: drips.length * 3 }, (_, i) => ({ e: Math.floor(i / 3), t: Math.random() }));
