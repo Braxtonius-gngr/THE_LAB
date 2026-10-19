@@ -95,26 +95,26 @@ const TABLE = { w: 120, d: 64, z0: -4, slab: 4 };
 // The shelf: flat round the table, falling to the first terrace beyond its lip.
 const ROCK = { lip: 95 };
 // The dealer, across the table to your right.
-const DEALER = { at: [-36, 0, 104], yaw: -0.18 };
+const DEALER = { at: [-22, 0, 104], yaw: -0.38 };
 // The terraces (their floors) and the river's trough between the first and
 // the second; the far hills beyond the third.
 const TIER = [{ z: 300, y: -34 }, { z: 480, y: 70 }, { z: 700, y: 150 }];
-const RIVER = { z: 190, w: 62 };
+const RIVER = { z: 152, w: 56 };
 const SKY = 1100;
 // The broadside: a printed sheet nailed to the table's back rail, under
 // your thumb (at: its middle; 60 x 38 cm, 30 page px to the cm).
-const SHEET = { at: [20, 24, 57], lean: 0.42, w: 60, h: 38, px: 30, tilt: 0.9 * DEG };
+const SHEET = { at: [20, 19, 56], lean: 0.6, w: 60, h: 38, px: 30, tilt: 0.9 * DEG };
 // The views: the seat, portrait and landscape.
-const VIEW = [{ eye: [0, 130, -112], aim: [0, 70, 140], fov: 68 }, { eye: [0, 112, -140], aim: [0, 70, 140], fov: 50 }];
+const VIEW = [{ eye: [0, 130, -112], aim: [0, 70, 140], fov: 68 }, { eye: [0, 108, -96], aim: [0, 72, 140], fov: 48 }];
 const T = { fly: 4.8, uiIn: 0.6, lift: 0.55 };
 const SND = { drone: 0.11, choir: 0.05, drum: 0.5, wind: 0.06, bell: 0.35, saw: 0.05, crow: 0.09 };
 // The key: Holbein's light, high from the left and a little in front.
-const KEY_SEAT = new THREE.Vector3(0.55, 0.72, -0.42).normalize();
+const KEY_SEAT = new THREE.Vector3(0.82, 0.5, -0.22).normalize();
 
 // ------------------------------------------------------------ helpers
 // (every surface here is the block's: paper left where the light falls,
 // the turn hatched, the dark crossed; tone + is darker)
-const mat = (opts) => engravingMaterial(Object.assign({ freq: 1.05, sky: 0.3, keyI: 1.05, tone: 0.0, wobble: 1.0, steps: 4 }, opts));
+const mat = (opts) => engravingMaterial(Object.assign({ freq: 1.05, sky: 0.22, keyI: 1.2, tone: 0.0, wobble: 1.0, steps: 4 }, opts));
 const mesh = (geo, m, parent, outline = 1.8) => { const x = new THREE.Mesh(geo, m); parent.add(x); if (outline) outlineOf(x, outline); return x; };
 const G = (parent, x = 0, y = 0, z = 0) => { const g = new THREE.Group(); g.position.set(x, y, z); if (parent) parent.add(g); return g; };
 // a limb: a capsule hanging from its joint at the origin, down -y
@@ -164,15 +164,15 @@ function buildSkeleton(kit, rnd) {
   const root = new THREE.Group();
   const hips = G(root, 0, 92, 0);
   const pelvis = G(hips);
-  [-1, 1].forEach(s => { const w = mesh(new THREE.SphereGeometry(6, 14, 10), kit.ball, pelvis, 1.6); w.position.set(s * 7, 0, 0); w.scale.set(0.9, 1.2, 0.5); });
+  [-1, 1].forEach(s => { const w = mesh(new THREE.SphereGeometry(6, 14, 10), kit.ball, pelvis, 1.4); w.position.set(s * 7.5, 1, 0); w.scale.set(1.15, 1.0, 0.32); w.rotation.y = -s * 0.5; });
   mesh(new THREE.ConeGeometry(4, 9, 8), m, pelvis, 1.4).position.set(0, -4, 2);
   const spine = G(hips, 0, 4, 0);
   for (let i = 0; i < 8; i++) { const v = mesh(new THREE.CylinderGeometry(2.4, 2.6, 2.6, 10), kit.ball, spine, 1.2); v.position.set(0, i * 3.6, 1.5 + Math.sin(i / 8 * 2) * 1.2); }
   const chest = G(spine, 0, 30, 0);
   for (let i = 0; i < 9; i++) {
     const t = i / 8, r = 10 * Math.sin(0.4 + t * 2.3) + 4;
-    const rib = mesh(new THREE.TorusGeometry(r, 0.75, 6, 24, PI * 1.55), kit.rib, chest, 0.9);
-    rib.position.set(0, -i * 3.3 + 8, 0); rib.rotation.set(HALF + 0.18, 0, -PI * 0.775); rib.scale.set(1, 0.8, 1);
+    const rib = mesh(new THREE.TorusGeometry(r, 0.75, 6, 24, PI * 1.4), kit.rib, chest, 0.9);
+    rib.position.set(0, -i * 3.3 + 8, 0); rib.rotation.set(HALF + 0.42, 0, -PI * 0.7); rib.scale.set(1, 0.8, 1);
   }
   mesh(new THREE.BoxGeometry(3, 18, 1.6), m, chest, 1.3).position.set(0, 2, -11.5);
   const neck = G(chest, 0, 14, 0);
@@ -266,7 +266,7 @@ function buildBody(kit, rnd, flayed = false) {
   const torso = mesh(lathe([[15.5, -8], [16, 0], [14.6, 9], [13.4, 18], [14.2, 27], [16.8, 37], [18.6, 45], [17.2, 51], [9, 55]], 22), skinUV, hips, 2);
   torso.scale.set(1, 1, 0.66);
   // a loincloth, unless flayed (they took it with the skin)
-  if (!flayed) { const lc = mesh(lathe([[16.4, 2], [17.5, -4], [17, -12], [15, -20], [16, -23]], 18), kit.cloth, hips, 1.4); lc.scale.set(1, 1, 0.7); }
+  if (!flayed) { const lc = mesh(lathe([[16.4, 2], [17.5, -4], [17, -12], [15, -20], [16, -23]], 18), kit.linen, hips, 1.4); lc.scale.set(1, 1, 0.7); }
   const neck = G(hips, 0, 55, 0);
   limb(4, 3.4, skinUV, neck, 1.2).position.y = 4;
   const head = G(neck, 0, 9, 0);
@@ -390,8 +390,8 @@ function vSawyer(kit, rnd) {
   // the rope round each ankle to the beam
   ['l', 'r'].forEach(s => { const r = mesh(new THREE.TorusGeometry(6.4, 0.9, 6, 12), kit.rope, d.legs[s].foot, 0.9); r.position.y = 2; r.rotation.x = HALF; });
   // the cut: the raw from the fork down the belly, the bowels out of it
-  wound(d.hips, 7, 30, 12, 0, 14, -6, kit);
-  wound(d.hips, 5, 10, 10, 0, -4, -7, kit);
+  wound(d.hips, 3.2, 30, 10, 0, 14, -8, kit);
+  wound(d.hips, 3, 10, 9, 0, -4, -8, kit);
   const gut = mesh(gutGeo([[0, 90, -9], [6, 74, -16], [-4, 66, -20], [7, 60, -13], [-3, 50, -17], [8, 42, -18], [-2, 26, -12], [5, 12, -16], [-3, 4, -14], [6, 2, -20]]), kit.gut, g, 1.3);
   const bag = mesh(new THREE.SphereGeometry(5.5, 12, 9), kit.raw, g, 1.3); bag.position.set(3, 82, -12); bag.scale.set(1, 1.4, 0.8);
   // the pool under his head, and the one under the bowels' end
@@ -567,7 +567,7 @@ function vWheel(kit, rnd) {
 // - crows on the beam; Death under them with the drum, dancing.
 function vGallows(kit, rnd) {
   const g = new THREE.Group(), bands = [];
-  const H = 200, W = 120;
+  const H = 230, W = 120;
   [-1, 1].forEach(s => mesh(new THREE.BoxGeometry(8, H, 8), kit.wood, g, 2).position.set(s * W / 2, H / 2, 0));
   mesh(new THREE.BoxGeometry(W + 30, 8, 8), kit.wood, g, 2).position.y = H;
   [-1, 1].forEach(s => { const b = mesh(new THREE.BoxGeometry(6, 6, 36), kit.wood, g, 1.3); b.position.set(s * (W / 2 - 14), H - 14, 0); b.rotation.z = s * 0.78; });
@@ -575,13 +575,13 @@ function vGallows(kit, rnd) {
   const hanged = [];
   [[-30, 0], [30, 1]].forEach(([x, k]) => {
     const piv = G(g, x, H - 4, 0);
-    mesh(new THREE.CylinderGeometry(0.9, 0.9, 30, 6), kit.rope, piv, 0.9).position.y = -15;
-    const b = k ? buildSkeleton(kit, rnd) : buildBody(kit, rnd);
-    (k ? restSkeleton : restBody)(b);
-    b.position.y = -30 - 160; b.rotation.y = (rnd() - 0.5) * 1.2; piv.add(b);
+    mesh(new THREE.CylinderGeometry(0.9, 0.9, 44, 6), kit.rope, piv, 0.9).position.y = -22;
+    const b = buildBody(kit, rnd); restBody(b);
+    b.position.y = -44 - 150; b.rotation.y = (rnd() - 0.5) * 1.2 + (k ? 0.5 : -0.4); piv.add(b);
     const d = b.userData;
     d.neck.rotation.set(0.5, 0, 0.6); d.arms.l.sh.rotation.z = 0.12; d.arms.r.sh.rotation.z = -0.12; d.legs.l.hip.rotation.x = 0.05; d.legs.r.hip.rotation.x = -0.05;
-    if (!k) { d.mouth.scale.set(1.2, 1.6, 0.5); d.arms.l.sh.rotation.x = 0.1; }
+    d.mouth.scale.set(1.2, 1.6, 0.5); d.arms.l.sh.rotation.x = 0.1; d.arms.l.el.rotation.z = 0.3; d.arms.r.el.rotation.z = -0.3;   // (the hands bound before him)
+    if (k) { d.legs.l.kn.rotation.x = 0.3; d.neck.rotation.z = -0.6; }
     hanged.push({ piv, b, k, ph: rnd() * 6 });
   });
   // Death the drummer: the drum slung at his hip, a stick in each hand
@@ -604,7 +604,7 @@ function vGallows(kit, rnd) {
     dd.neck.rotation.set(0.25, still ? 0 : Math.sin(wv * 0.5) * 0.4, still ? 0 : Math.sin(wv) * 0.15);
     hanged.forEach((h, i) => { h.piv.rotation.z = (still ? 0 : Math.sin(tt * 0.8 + h.ph) * 0.05) + w * 0.22 * (i ? 0.7 : 1); h.piv.rotation.x = (still ? 0 : Math.sin(tt * 0.6 + h.ph) * 0.03) + w * 0.06; h.b.rotation.y += (still ? 0 : (0.12 + w * 0.5) * dt) * (i ? -1 : 1); });
   };
-  return { g, death, act, bands, drips: [[V(-30, H - 150, -4), V(-30, 2, 2)]], crows: [[-50, H + 6, 0], [0, H + 6, 0], [44, H + 6, 0], [-W / 2, H + 5, 0]], width: 160 };
+  return { g, death, act, bands, drips: [[V(-30, H - 170, -4), V(-30, 2, 2)]], crows: [[-50, H + 6, 0], [0, H + 6, 0], [44, H + 6, 0], [-W / 2, H + 5, 0]], width: 160 };
 }
 // VI. THE STAKE. A man on the stake, run through; Death at its foot
 // holding his glass up to him.
@@ -670,7 +670,7 @@ function vDragging(kit, rnd) {
 }
 const VIGNETTES = [vSawyer, vFlaying, vWheel, vDragging, vGallows, vWindlass, vStake];
 // where each stands: [x, tier, placard x offset, placard height]
-const SPOTS = [[50, 0, 74, 96], [150, 1, -60, 104], [-140, 1, -56, 104], [-30, 1, -50, 104], [0, 2, -104, 116], [170, 2, -80, 116], [-170, 2, 76, 116]];
+const SPOTS = [[50, 0, 74, 96], [150, 1, -92, 104], [-140, 1, -56, 104], [-30, 1, -50, 104], [0, 2, -104, 116], [170, 2, -80, 116], [-170, 2, 76, 116]];
 
 // Death at the table: seated on a stool across from you, bare, the rag over
 // his shoulder, the hourglass under his right hand, the left on the cloth.
@@ -755,18 +755,18 @@ function skyTex() {
     for (let y = H * 0.7; y < H; y += 7 + rnd() * 5) { let x = 0; while (x < W) { const l = 60 + rnd() * 260; g.lineWidth = 1.2 + rnd() * 1.4 * (y / H); g.globalAlpha = 0.45 + 0.5 * (y / H); g.beginPath(); g.moveTo(x, y + (rnd() - 0.5) * 3); g.lineTo(x + l, y + (rnd() - 0.5) * 3); g.stroke(); x += l + 20 + rnd() * 120; } }
     g.globalAlpha = 1;
     // the clouds: each a row of billows (arcs) outlined, hatched beneath
-    for (let c = 0; c < 14; c++) {
-      const cx = rnd() * W, cy = H * (0.4 + rnd() * 0.3), n = 3 + Math.floor(rnd() * 5), R = 40 + rnd() * 50;
+    for (let c = 0; c < 34; c++) {
+      const cx = rnd() * W, cy = H * (0.42 + rnd() * 0.26), n = 3 + Math.floor(rnd() * 5), R = 12 + rnd() * 16;
       let x = cx - n * R * 0.45;
       const tops = [];
-      for (let i = 0; i < n; i++) { const r = R * (0.6 + rnd() * 0.7), y = cy + (rnd() - 0.5) * R * 0.5; g.lineWidth = 2.2 + rnd(); g.beginPath(); g.arc(x, y, r, PI * 1.05, PI * 1.95); g.stroke(); tops.push([x, y, r]); x += r * 1.1; }
+      for (let i = 0; i < n; i++) { const r = R * (0.6 + rnd() * 0.7), y = cy + (rnd() - 0.5) * R * 0.5; g.lineWidth = 1.4 + rnd() * 0.6; g.beginPath(); g.arc(x, y, r, PI * 1.05, PI * 1.95); g.stroke(); tops.push([x, y, r]); x += r * 1.1; }
       // the flat base and the hatch under the billows
       const x0 = tops[0][0] - tops[0][2] * 0.9, x1 = tops[tops.length - 1][0] + tops[tops.length - 1][2] * 0.9, by = cy + R * 0.3;
-      g.lineWidth = 2.6; g.beginPath(); g.moveTo(x0, by); g.lineTo(x1, by + (rnd() - 0.5) * 6); g.stroke();
-      for (let k = 0; k < 7; k++) { const yy = by - k * 4 - 3; g.lineWidth = 1 + (7 - k) * 0.14; g.globalAlpha = 0.4 + (7 - k) * 0.08; g.beginPath(); g.moveTo(x0 + k * 9 + rnd() * 10, yy); g.lineTo(x1 - k * 9 - rnd() * 10, yy + (rnd() - 0.5) * 2); g.stroke(); }
+      g.lineWidth = 1.6; g.beginPath(); g.moveTo(x0, by); g.lineTo(x1, by + (rnd() - 0.5) * 3); g.stroke();
+      for (let k = 0; k < 5; k++) { const yy = by - k * 2.2 - 2; g.lineWidth = 0.8 + (5 - k) * 0.12; g.globalAlpha = 0.4 + (5 - k) * 0.1; g.beginPath(); g.moveTo(x0 + k * 4 + rnd() * 5, yy); g.lineTo(x1 - k * 4 - rnd() * 5, yy + (rnd() - 0.5) * 1.5); g.stroke(); }
       g.globalAlpha = 1;
       // the billows' shade: short hatch inside each arc's right side
-      tops.forEach(([tx, ty, tr]) => { for (let k = 0; k < 6; k++) { const a0 = PI * 1.55 + k * 0.07, aa = a0 + 0.35; g.lineWidth = 1; g.globalAlpha = 0.5; g.beginPath(); g.arc(tx, ty, tr - 4 - k * 5, a0, aa); g.stroke(); } });
+      tops.forEach(([tx, ty, tr]) => { for (let k = 0; k < 4; k++) { const a0 = PI * 1.55 + k * 0.07, aa = a0 + 0.35; g.lineWidth = 0.8; g.globalAlpha = 0.5; const rr = tr - 2.5 - k * 2.6; if (rr > 2) { g.beginPath(); g.arc(tx, ty, rr, a0, aa); g.stroke(); } } });
       g.globalAlpha = 1;
     }
     // birds: a few 'v's
@@ -774,7 +774,7 @@ function skyTex() {
   });
 }
 function buildSky() {
-  const tex = skyTex(); tex.wrapS = THREE.RepeatWrapping; tex.repeat.set(3, 1);
+  const tex = skyTex(); tex.wrapS = THREE.RepeatWrapping; tex.repeat.set(4, 1);
   const m = new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, toneMapped: false, fog: false });
   const dome = new THREE.Mesh(new THREE.SphereGeometry(SKY, 48, 24, 0, PI * 2, 0, PI * 0.6), m);
   dome.position.y = -260;
@@ -789,8 +789,8 @@ function buildTable(kit) {
   [-1, 1].forEach(s => { const leg = mesh(new THREE.BoxGeometry(6, 76, 40), kit.wood, g, 1.6); leg.position.set(s * (TABLE.w / 2 - 12), -TABLE.slab - 38, TABLE.z0 + TABLE.d / 2); leg.rotation.z = s * 0.1; });
   mesh(new THREE.BoxGeometry(TABLE.w - 30, 5, 5), kit.wood, g, 1.4).position.set(0, -50, TABLE.z0 + TABLE.d / 2);
   const rail = mesh(new THREE.BoxGeometry(TABLE.w, 13, 4), kit.wood, g, 1.6); rail.position.set(0, 4.5, TABLE.z0 + TABLE.d - 2);
-  const glass = buildHourglass(kit, 16); glass.position.set(-50, 0, 44); g.add(glass);
-  const sk = buildSkull(kit); sk.scale.setScalar(1.15); sk.position.set(36, 6, 30); sk.rotation.set(-0.5, -0.6, 0.3); g.add(sk);
+  const glass = buildHourglass(kit, 22); glass.position.set(-40, 0, 44); g.add(glass);
+  const sk = buildSkull(kit); sk.scale.setScalar(1.15); sk.position.set(38, 7, 26); sk.rotation.set(0.25, 0.45, 0.1); g.add(sk);
   const dm = mat({ freq: 2.6, angle: 0.7, tone: -0.1 });
   for (let i = 0; i < 3; i++) { const d = mesh(new THREE.BoxGeometry(4, 4, 4), dm, g, 1.2); d.position.set(-10 + i * 7, 2, 16 + (i % 2) * 6); d.rotation.y = i * 0.7; for (let k = 0; k < [3, 5, 2][i]; k++) { const pip = new THREE.Mesh(new THREE.SphereGeometry(0.42, 6, 5), kit.ink); const [px, pz] = [[-1, -1], [1, 1], [0, 0], [-1, 1], [1, -1]][k]; pip.position.set(px * 1.1, 2.05, pz * 1.1); d.add(pip); } }
   const coinM = mat({ freq: 3.2, angle: 0.9, tone: 0.1 });
@@ -1000,20 +1000,22 @@ export async function prepareTable(opts) {
     // (flesh: the paper, hatched along the limb; the face in its rings;
     // hair a dark passage; the raw of a wound or a flayed man is blood)
     flesh: mat({ freq: 1.2, angle: -0.55, tone: 0.14, keyI: 1.25, sky: 0.22, wobble: 1.1 }),
-    fleshUV: mat({ uv: [12, 5], angle: 0.3, tone: 0.14, keyI: 1.25, sky: 0.22, wobble: 1.1 }),
+    fleshUV: mat({ uv: [12, 5], angle: 0.08, tone: 0.14, keyI: 1.25, sky: 0.22, wobble: 1.1 }),
     face: mat({ uv: [30, 14], angle: HALF, tone: 0.1, keyI: 1.25, sky: 0.22, wobble: 0.9 }),
     hair: mat({ uv: [24, 8], angle: 0.2, tone: 0.58, freq: 1.6, wobble: 2 }),
-    raw: mat({ paper: BLOOD, tone: 0.3, freq: 1.4, angle: -0.4, keyI: 1.2 }),
-    rawUV: mat({ paper: BLOOD, uv: [12, 5], angle: 0.3, tone: 0.3, freq: 1.3, keyI: 1.2 }),
+    raw: mat({ paper: BLOOD, tone: 0.16, freq: 1.4, angle: -0.4, keyI: 1.2 }),
+    rawUV: mat({ paper: BLOOD, uv: [12, 5], angle: 0.3, tone: 0.16, freq: 1.3, keyI: 1.2 }),
     gut: mat({ paper: BLOOD, uv: [40, 5], angle: HALF, tone: 0.18, freq: 1.0 }),
     pool: mat({ paper: BLOOD, tone: 0.08, freq: 0.9, angle: 0.1, side: THREE.DoubleSide }),
     skin: mat({ freq: 1.0, angle: 1.2, tone: -0.02, wobble: 1.4, side: THREE.DoubleSide }),
     river: mat({ paper: BLOOD, uv: [8, 60], angle: 0.1, tone: 0.06, freq: 1.0, wobble: 1.8, scroll: [0, 6], steps: 0 }),
     cloth: mat({ freq: 0.9, angle: 1.3, tone: 0.3, wobble: 1.6, side: THREE.DoubleSide }),
+    linen: mat({ uv: [18, 4], angle: 1.4, tone: 0.06, wobble: 1.4 }),
     wood: mat({ freq: 0.8, angle: HALF, tone: 0.36, wobble: 1.2 }),
     bark: mat({ uv: [12, 4], angle: HALF - 0.2, tone: 0.44, freq: 1.4, wobble: 2.2 }),
     iron: mat({ freq: 1.6, angle: 0.3, tone: 0.5 }),
     rope: mat({ uv: [6, 1], angle: 0.9, tone: 0.3, freq: 2 }),
+    stone: mat({ freq: 1.3, angle: 0.5, tone: 0.1, wobble: 1.6, steps: 3 }),
     ink: new THREE.MeshBasicMaterial({ color: INK })
   };
   const rnd = seeded(23);
@@ -1057,6 +1059,16 @@ export async function prepareTable(opts) {
   // far off on the hills: more gallows, in silhouette
   const far = new THREE.Group(); seat.add(far);
   [[-320, 900], [-140, 980], [260, 930], [420, 880], [60, 1040]].forEach(([x, z]) => { const h = height(x, z), g = new THREE.Group(); g.position.set(x, h - 2, z); g.rotation.y = rnd() * 6; far.add(g); mesh(new THREE.BoxGeometry(6, 150, 6), kit.wood, g, 1.6).position.y = 75; mesh(new THREE.BoxGeometry(70, 6, 6), kit.wood, g, 1.4).position.set(20, 148, 0); const sk = buildSkeleton(kit, rnd); restSkeleton(sk); sk.position.set(40, 142 - 165, 0); sk.scale.setScalar(0.9); sk.userData.neck.rotation.z = 0.5; g.add(sk); });
+  // the ground dressed, as a woodcutter fills it: stones, bones, a skull or two
+  const dress = new THREE.Group(); seat.add(dress);
+  const stoneGeo = new THREE.IcosahedronGeometry(1, 1);
+  for (let i = 0; i < 70; i++) {
+    const ti = Math.floor(rnd() * 3), x = (rnd() - 0.5) * 520, z = TIER[ti].z + (rnd() - 0.5) * 90 + (ti === 0 ? -20 : 0);
+    if (Math.hypot(x * 0.8, z - 20) < ROCK.lip + 30) continue;
+    const st = mesh(stoneGeo, kit.stone, dress, 1.2); const sc = 3 + rnd() * 7; st.scale.set(sc * (0.8 + rnd() * 0.6), sc * 0.55, sc * (0.8 + rnd() * 0.6)); st.rotation.set(rnd(), rnd() * 6, rnd()); st.position.set(x, height(x, z) + sc * 0.2, z);
+  }
+  for (let i = 0; i < 14; i++) { const ti = Math.floor(rnd() * 3), x = (rnd() - 0.5) * 480, z = TIER[ti].z + (rnd() - 0.5) * 80; if (Math.hypot(x * 0.8, z - 20) < ROCK.lip + 30) continue; const b = mesh(boneGeo(18 + rnd() * 20, 1.6), kit.shaft, dress, 1.2); b.rotation.set(HALF + (rnd() - 0.5) * 0.2, 0, rnd() * 6); b.position.set(x, height(x, z) + 1.5, z); }
+  for (let i = 0; i < 5; i++) { const ti = Math.floor(rnd() * 3), x = (rnd() - 0.5) * 440, z = TIER[ti].z + (rnd() - 0.5) * 70; if (Math.hypot(x * 0.8, z - 20) < ROCK.lip + 30) continue; const sk = buildSkull(kit); sk.rotation.set(rnd() * 0.8 - 0.2, rnd() * 6, rnd() * 0.6 - 0.3); sk.position.set(x, height(x, z) + 7, z); dress.add(sk); }
   // the drops and the crows
   const drops = dropMesh(drips.length * 3); seat.add(drops);
   const dropP = Array.from({ length: drips.length * 3 }, (_, i) => ({ e: Math.floor(i / 3), t: Math.random() }));
