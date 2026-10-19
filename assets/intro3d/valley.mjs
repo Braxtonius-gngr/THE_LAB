@@ -114,7 +114,7 @@ const KEY_SEAT = new THREE.Vector3(0.82, 0.5, -0.22).normalize();
 // ------------------------------------------------------------ helpers
 // (every surface here is the block's: paper left where the light falls,
 // the turn hatched, the dark crossed; tone + is darker)
-const mat = (opts) => engravingMaterial(Object.assign({ freq: 1.05, sky: 0.16, keyI: 1.5, tone: -0.04, wobble: 1.0, steps: 3 }, opts));
+const mat = (opts) => engravingMaterial(Object.assign({ freq: 1.6, sky: 0.16, keyI: 1.5, tone: -0.04, wobble: 0.55, steps: 3 }, opts));
 const mesh = (geo, m, parent, outline = 1.8) => { const x = new THREE.Mesh(geo, m); parent.add(x); if (outline) outlineOf(x, outline); return x; };
 const G = (parent, x = 0, y = 0, z = 0) => { const g = new THREE.Group(); g.position.set(x, y, z); if (parent) parent.add(g); return g; };
 // a limb: a capsule hanging from its joint at the origin, down -y
@@ -443,8 +443,8 @@ function vSawyer(kit, rnd) {
   const g = new THREE.Group(), bands = [];
   const H = 190;
   // the frame: two pairs of legs crossed, a beam between the forks
-  [-1, 1].forEach(s => { [-1, 1].forEach(k => { const leg = mesh(new THREE.CylinderGeometry(3, 3.6, H + 10, 8), kit.wood, g, 1.8); leg.position.set(s * 38 + k * 10, H / 2, k * 12); leg.rotation.x = k * 0.14; leg.rotation.z = -s * 0.05; }); });
-  const beam = mesh(new THREE.CylinderGeometry(3.6, 3.6, 110, 8), kit.wood, g, 1.8); beam.position.y = H; beam.rotation.z = HALF;
+  [-1, 1].forEach(s => { [-1, 1].forEach(k => { const leg = mesh(new THREE.CylinderGeometry(3, 3.6, H + 10, 8), kit.wood, g, 1.8); leg.position.set(s * 60 + k * 10, H / 2, k * 12); leg.rotation.x = k * 0.14; leg.rotation.z = -s * 0.05; }); });
+  const beam = mesh(new THREE.CylinderGeometry(3.6, 3.6, 150, 8), kit.wood, g, 1.8); beam.position.y = H; beam.rotation.z = HALF;
   // the man: upside down, hips at the beam, the legs out to the forks
   const man = buildBody(kit, rnd, { split: true, beard: true }); g.add(man);
   const d = man.userData;
@@ -460,11 +460,11 @@ function vSawyer(kit, rnd) {
   const bag = mesh(new THREE.SphereGeometry(5.5, 12, 9), kit.raw, g, 1.3); bag.position.set(3, 82, -12); bag.scale.set(1, 1.4, 0.8);
   // the pool under his head, and the one under the bowels' end
   g.add(pool(kit, rnd, 30, 1.2)).position.set(0, 0, -6);
-  [-1, 1].forEach(sx => [-1, 1].forEach(k => shade(g, sx * 38 + k * 10, k * 12, 6, 5, 20)));
-  shade(g, -24, -62, 22, 12);
+  [-1, 1].forEach(sx => [-1, 1].forEach(k => shade(g, sx * 60 + k * 10, k * 12, 6, 5, 20)));
+  shade(g, -40, -10, 22, 12);
   // Death at the saw: standing to the man's right, both hands on the saw
   const death = buildSkeleton(kit, rnd); g.add(death); restSkeleton(death);
-  death.position.set(-24, 0, -62); death.rotation.y = PI - 0.45;   // (at the saw's near end, his back half to you, turned to the man)
+  death.position.set(-40, 0, -10); death.rotation.y = -HALF + 0.3;   // (inside the frame's span, facing the man, turned a little to you)
   const dd = death.userData;
   dd.legs.l.hip.rotation.x = -0.35; dd.legs.r.hip.rotation.x = 0.3; dd.legs.r.kn.rotation.x = 0.4; dd.spine.rotation.x = 0.18;
   dd.arms.l.sh.rotation.set(-0.75, 0, 0.35); dd.arms.r.sh.rotation.set(-0.75, 0, -0.35); dd.arms.l.el.rotation.x = -0.7; dd.arms.r.el.rotation.x = -0.7;
@@ -474,14 +474,14 @@ function vSawyer(kit, rnd) {
   const blade = mesh(new THREE.BoxGeometry(0.8, 9, 84), kit.steel, saw, 1.6);
   for (let i = -19; i <= 19; i++) { const t = mesh(new THREE.ConeGeometry(1.1, 2.4, 4), kit.steel, saw, 0); t.position.set(0, -5.6, i * 2.1); t.rotation.x = PI; }
   [-1, 1].forEach(s => { const h = mesh(new THREE.CylinderGeometry(1.6, 1.6, 12, 8), kit.wood, saw, 1.2); h.position.set(0, 2, s * 42); h.rotation.z = HALF; });
-  saw.position.set(-2, 104, -28); saw.rotation.y = 0; saw.rotation.x = 0.08;   // (the blade runs toward you, between the frame's legs)
+  saw.position.set(-14, 104, -9); saw.rotation.y = HALF; saw.rotation.z = -0.1;
   bleed(man, 0.5); bands.push([man, 110, 24]);
   bleed(saw); bands.push([saw, 108, 92]);
   const hi = 100;
   const act = (tt, dt, w, still) => {
     // the stroke: a slow draw back, a bite forward, the frame giving
     const s = still ? 0 : Math.sin(tt * 2.6), c = still ? 0 : Math.cos(tt * 2.6);
-    saw.position.z = -28 + s * 14;
+    saw.position.x = -14 + s * 14;
     dd.spine.rotation.x = 0.18 + c * 0.12; dd.arms.l.el.rotation.x = -0.7 + c * 0.4; dd.arms.r.el.rotation.x = -0.7 + c * 0.4; dd.arms.l.sh.rotation.x = -0.75 - c * 0.2; dd.arms.r.sh.rotation.x = -0.75 - c * 0.2;
     dd.hips.position.y = 92 - Math.abs(c) * 1.5;
     man.rotation.y = (still ? 0 : Math.sin(tt * 0.7) * 0.05) + w * 0.12;
@@ -756,7 +756,7 @@ function vDragging(kit, rnd) {
 }
 const VIGNETTES = [vSawyer, vFlaying, vWheel, vDragging, vGallows, vWindlass, vStake];
 // where each stands: [x, tier, placard x offset, placard height]
-const SPOTS = [[50, 0, 60, 96], [150, 1, -92, 104], [-140, 1, -56, 104], [-62, 1, 58, 104], [0, 2, -104, 116], [170, 2, -80, 116], [-170, 2, 76, 116]];
+const SPOTS = [[50, 0, 82, 96], [150, 1, -92, 104], [-140, 1, -56, 104], [-62, 1, 58, 104], [0, 2, -104, 116], [170, 2, -80, 116], [-170, 2, 76, 116]];
 
 // Death at the table: seated on a stool across from you, bare, the rag over
 // his shoulder, the hourglass under his right hand, the left on the cloth.
