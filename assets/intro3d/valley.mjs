@@ -153,11 +153,11 @@ function buildSkull(kit) {
   // the temples: a hollow either side, hatched darker (a flattened disc sunk in)
   [-1, 1].forEach(sx => { const t = mesh(new THREE.SphereGeometry(3.6, 12, 8), kit.hollow, g, 0); t.position.set(sx * 7.2, 3.8, -1.5); t.scale.set(0.5, 1, 1.1); });
   // the sockets, and the brow over them
-  const sock = new THREE.SphereGeometry(3.2, 12, 8);
-  [-3.4, 3.4].forEach(x => { const sk = new THREE.Mesh(sock, mOut); sk.position.set(x, 3.2, -6.3); sk.scale.set(1, 1.1, 0.6); g.add(sk); });
+  const sock = new THREE.SphereGeometry(3.5, 12, 8);
+  [-3.5, 3.5].forEach(x => { const sk = new THREE.Mesh(sock, mOut); sk.position.set(x, 3.0, -6.1); sk.scale.set(1, 1.15, 0.6); g.add(sk); });
   const brow = mesh(new THREE.TorusGeometry(7.4, 1.4, 6, 16, PI * 0.95), kit.bone, g, 1.2); brow.position.set(0, 6.2, -5.2); brow.rotation.set(0.3, 0, PI * 1.025);
   // the nose: a dark triangle, and the bridge above it
-  const nose = new THREE.Mesh(new THREE.ConeGeometry(1.7, 3.6, 3), mOut); nose.position.set(0, -0.4, -7.7); nose.rotation.set(PI, 0, 0); g.add(nose);
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(2.1, 4.2, 3), mOut); nose.position.set(0, -0.8, -7.6); nose.rotation.set(PI, 0, 0); g.add(nose);
   mesh(new THREE.BoxGeometry(1.6, 3, 1.4), kit.bone, g, 0.8).position.set(0, 3.2, -8.2);
   // the cheekbones: an arch either side from under the socket back to the ear
   [-1, 1].forEach(sx => { const z = mesh(new THREE.TorusGeometry(3.2, 0.9, 6, 12, PI * 0.8), kit.bone, g, 1); z.position.set(sx * 6.4, 0.4, -3.4); z.rotation.set(HALF, 0, sx > 0 ? -0.3 : PI + 0.3); });
@@ -421,7 +421,7 @@ function placardArt(card, i, spent) {
 function buildPlacard(kit, card, i, h = 96, bw = 30) {
   const g = new THREE.Group();
   const bh = bw * 0.69;
-  mesh(new THREE.CylinderGeometry(1.8, 2.4, h, 8), kit.wood, g, 1.6).position.y = h / 2;
+  mesh(new THREE.CylinderGeometry(1.8, 2.4, h, 8), kit.post, g, 1.6).position.y = h / 2;
   shade(g, 0, 0, 5, 4, 30);
   const board = mesh(new THREE.BoxGeometry(bw, bh, 1.6), kit.wood, g, 1.8); board.position.set(0, h - bh / 2 + 2, -1.4);
   const art = placardArt(card, i, false);
@@ -443,7 +443,7 @@ function vSawyer(kit, rnd) {
   const g = new THREE.Group(), bands = [];
   const H = 190;
   // the frame: two pairs of legs crossed, a beam between the forks
-  [-1, 1].forEach(s => { [-1, 1].forEach(k => { const leg = mesh(new THREE.CylinderGeometry(3, 3.6, H + 10, 8), kit.wood, g, 1.8); leg.position.set(s * 60 + k * 10, H / 2, k * 12); leg.rotation.x = k * 0.14; leg.rotation.z = -s * 0.05; }); });
+  [-1, 1].forEach(s => { [-1, 1].forEach(k => { const leg = mesh(new THREE.CylinderGeometry(3, 3.6, H + 10, 8), kit.post, g, 1.8); leg.position.set(s * 60 + k * 10, H / 2, k * 12); leg.rotation.x = k * 0.14; leg.rotation.z = -s * 0.05; }); });
   const beam = mesh(new THREE.CylinderGeometry(3.6, 3.6, 150, 8), kit.wood, g, 1.8); beam.position.y = H; beam.rotation.z = HALF;
   // the man: upside down, hips at the beam, the legs out to the forks
   const man = buildBody(kit, rnd, { split: true, beard: true }); g.add(man);
@@ -497,7 +497,7 @@ function vWindlass(kit, rnd) {
   const g = new THREE.Group(), bands = [];
   const TH = 56;
   const top = mesh(new THREE.BoxGeometry(98, 5, 42), kit.wood, g, 1.8); top.position.set(0, TH, 0);
-  [-1, 1].forEach(s => { const tr = mesh(new THREE.BoxGeometry(5, TH, 34), kit.wood, g, 1.6); tr.position.set(s * 40, TH / 2 - 2.5, 0); tr.rotation.y = 0.12 * s; });
+  [-1, 1].forEach(s => { const tr = mesh(new THREE.BoxGeometry(5, TH, 34), kit.post, g, 1.6); tr.position.set(s * 40, TH / 2 - 2.5, 0); tr.rotation.y = 0.12 * s; });
   const lie = G(g, 0, TH + 10, 4); lie.rotation.y = -HALF;                 // (lying along x, head to the right, face up)
   const man = buildBody(kit, rnd, { beard: rnd() < 0.5 }); lie.add(man); restBody(man);
   shade(g, 0, 0, 56, 26, 40); shade(g, 50, -70, 22, 12); shade(g, 44, -34, 10, 20, 30);
@@ -511,7 +511,7 @@ function vWindlass(kit, rnd) {
   // the windlass: a frame of two uprights with the drum between, the
   // crank at the near end
   const wl = G(g, 44, 0, -34);
-  [-1, 1].forEach(s => { const u = mesh(new THREE.BoxGeometry(6, 92, 6), kit.wood, wl, 1.6); u.position.set(0, 46, s * 16); });
+  [-1, 1].forEach(s => { const u = mesh(new THREE.BoxGeometry(6, 92, 6), kit.post, wl, 1.6); u.position.set(0, 46, s * 16); });
   const drum = G(wl, 0, 90, 0);
   const dr = mesh(new THREE.CylinderGeometry(7, 7, 30, 14), kit.wood, drum, 1.6); dr.rotation.x = HALF;
   // the bowels wound on the drum: a spiral tube
@@ -609,7 +609,7 @@ function buildTree(kit, rnd) {
 function vWheel(kit, rnd) {
   const g = new THREE.Group(), bands = [];
   const P = 118, R = 42;
-  mesh(new THREE.CylinderGeometry(4, 5.5, P, 10), kit.wood, g, 2).position.y = P / 2;
+  mesh(new THREE.CylinderGeometry(4, 5.5, P, 10), kit.post, g, 2).position.y = P / 2;
   const wh = G(g, 0, P + 2, 0); wh.rotation.x = 2.6;   // (its face tilted down toward you)
   mesh(new THREE.TorusGeometry(R, 3.2, 8, 36), kit.wood, wh, 1.8);
   for (let k = 0; k < 8; k++) { const sp = mesh(new THREE.CylinderGeometry(1.6, 2, R - 4, 8), kit.wood, wh, 1.3); const a = k / 8 * PI * 2; sp.position.set(Math.cos(a) * R / 2, Math.sin(a) * R / 2, 0); sp.rotation.z = a + HALF; }
@@ -651,7 +651,7 @@ function vWheel(kit, rnd) {
 function vGallows(kit, rnd) {
   const g = new THREE.Group(), bands = [];
   const H = 230, W = 120;
-  [-1, 1].forEach(s => mesh(new THREE.BoxGeometry(8, H, 8), kit.wood, g, 2).position.set(s * W / 2, H / 2, 0));
+  [-1, 1].forEach(s => mesh(new THREE.BoxGeometry(8, H, 8), kit.post, g, 2).position.set(s * W / 2, H / 2, 0));
   mesh(new THREE.BoxGeometry(W + 30, 8, 8), kit.wood, g, 2).position.y = H;
   [-1, 1].forEach(s => { const b = mesh(new THREE.BoxGeometry(6, 6, 36), kit.wood, g, 1.3); b.position.set(s * (W / 2 - 14), H - 14, 0); b.rotation.z = s * 0.78; });
   // the hanged: a man, fresh, and a skeleton in rags; each on its rope
@@ -695,7 +695,7 @@ function vGallows(kit, rnd) {
 function vStake(kit, rnd) {
   const g = new THREE.Group(), bands = [];
   const H = 230;
-  const stake = mesh(new THREE.CylinderGeometry(2.6, 5, H, 9), kit.wood, g, 2); stake.position.y = H / 2; stake.rotation.z = 0.06;
+  const stake = mesh(new THREE.CylinderGeometry(2.6, 5, H, 9), kit.post, g, 2); stake.position.y = H / 2; stake.rotation.z = 0.06;
   mesh(new THREE.ConeGeometry(2.6, 12, 9), kit.wood, g, 1.5).position.set(-H * 0.06 * 0.5 - 6.5, H + 5, 0);
   const man = buildBody(kit, rnd, { hose: true, beard: true }); g.add(man); restBody(man);
   man.position.set(-8, H - 170, 2); man.rotation.set(0.35, 0.3, 0.1);
@@ -770,7 +770,7 @@ function buildDealer(kit, rnd) {
   a.l.sh.rotation.set(0.55, 0, 0.1); a.r.sh.rotation.set(0.5, 0, -0.2); a.l.el.rotation.x = 1.0; a.r.el.rotation.x = 1.05;
   // the stool
   const st = mesh(new THREE.CylinderGeometry(14, 12, 4, 12), kit.wood, g, 1.6); st.position.set(0, 42, 8);
-  for (let i = 0; i < 3; i++) { const lg = mesh(new THREE.CylinderGeometry(1.8, 2.2, 44, 8), kit.wood, g, 1.3); const an = i / 3 * PI * 2 + 0.5; lg.position.set(Math.cos(an) * 10, 20, 8 + Math.sin(an) * 10); lg.rotation.z = -Math.cos(an) * 0.12; lg.rotation.x = Math.sin(an) * 0.12; }
+  for (let i = 0; i < 3; i++) { const lg = mesh(new THREE.CylinderGeometry(1.8, 2.2, 44, 8), kit.post, g, 1.3); const an = i / 3 * PI * 2 + 0.5; lg.position.set(Math.cos(an) * 10, 20, 8 + Math.sin(an) * 10); lg.rotation.z = -Math.cos(an) * 0.12; lg.rotation.x = Math.sin(an) * 0.12; }
   shade(g, 0, 8, 26, 18); shade(g, -8, -4, 6, 5, 20);
   g.userData = { sk, phase: rnd() * 6 };
   return g;
@@ -873,7 +873,7 @@ function buildSky() {
 function buildTable(kit) {
   const g = new THREE.Group();
   for (let i = 0; i < 3; i++) { const pl = mesh(new THREE.BoxGeometry(TABLE.w, TABLE.slab, TABLE.d / 3 - 0.8), kit.wood, g, 2); pl.position.set(0, -TABLE.slab / 2, TABLE.z0 + (i + 0.5) * TABLE.d / 3); }
-  [-1, 1].forEach(s => { const leg = mesh(new THREE.BoxGeometry(6, 76, 40), kit.wood, g, 1.6); leg.position.set(s * (TABLE.w / 2 - 12), -TABLE.slab - 38, TABLE.z0 + TABLE.d / 2); leg.rotation.z = s * 0.1; });
+  [-1, 1].forEach(s => { const leg = mesh(new THREE.BoxGeometry(6, 76, 40), kit.post, g, 1.6); leg.position.set(s * (TABLE.w / 2 - 12), -TABLE.slab - 38, TABLE.z0 + TABLE.d / 2); leg.rotation.z = s * 0.1; });
   mesh(new THREE.BoxGeometry(TABLE.w - 30, 5, 5), kit.wood, g, 1.4).position.set(0, -50, TABLE.z0 + TABLE.d / 2);
   const rail = mesh(new THREE.BoxGeometry(TABLE.w, 30, 4), kit.wood, g, 1.6); rail.position.set(0, 13, TABLE.z0 + TABLE.d - 2);
   const glass = buildHourglass(kit, 22); glass.position.set(-40, 0, 44); g.add(glass);
@@ -1083,7 +1083,7 @@ export async function prepareTable(opts) {
     shaft: mat({ uv: [14, 1], angle: 0, tone: -0.12, wobble: 1.4 }),
     ball: mat({ freq: 1.3, angle: 1.0, tone: -0.12 }),
     rib: mat({ uv: [1, 9], angle: HALF, tone: -0.1, wobble: 1.2 }),
-    skull: mat({ freq: 1.25, angle: 1.1, tone: 0.0, keyI: 1.3, sky: 0.24, wobble: 0.8 }),
+    skull: mat({ freq: 1.25, angle: 1.1, tone: -0.14, keyI: 1.3, sky: 0.24, wobble: 0.8 }),
     // (flesh: the paper, hatched along the limb; the face in its rings;
     // hair a dark passage; the raw of a wound or a flayed man is blood)
     flesh: mat({ freq: 1.2, angle: -0.55, tone: 0.02, keyI: 1.25, sky: 0.34, wobble: 1.1 }),
@@ -1093,13 +1093,15 @@ export async function prepareTable(opts) {
     raw: mat({ paper: BLOOD, tone: 0.16, freq: 1.4, angle: -0.4, keyI: 1.2 }),
     rawUV: mat({ paper: BLOOD, uv: [12, 5], angle: 0.3, tone: 0.16, freq: 1.3, keyI: 1.2 }),
     gut: mat({ paper: BLOOD, uv: [40, 5], angle: HALF, tone: 0.3, freq: 1.0 }),
-    pool: mat({ paper: BLOOD, tone: 0.2, freq: 0.9, angle: 0.1, side: THREE.DoubleSide }),
+    pool: mat({ paper: BLOOD, tone: 0.32, freq: 1.0, angle: 0.1, side: THREE.DoubleSide }),
     skin: mat({ freq: 1.0, angle: 1.2, tone: -0.02, wobble: 1.4, side: THREE.DoubleSide }),
     river: mat({ paper: BLOOD, uv: [8, 60], angle: 0.1, tone: 0.22, freq: 1.0, wobble: 1.8, scroll: [0, 6], steps: 0 }),
     cloth: mat({ freq: 0.9, angle: 1.3, tone: 0.3, wobble: 1.6, side: THREE.DoubleSide }),
     linen: mat({ uv: [18, 4], angle: 1.4, tone: 0.06, wobble: 1.4 }),
     wood: mat({ freq: 0.8, angle: HALF, tone: 0.36, wobble: 1.2 }),
-    bark: mat({ uv: [12, 4], angle: HALF - 0.2, tone: 0.44, freq: 1.4, wobble: 2.2 }),
+    // (a standing timber: the grain runs up it, not round it)
+    post: mat({ freq: 0.8, angle: 0, tone: 0.36, wobble: 1.2 }),
+    bark: mat({ uv: [12, 4], angle: 0.12, tone: 0.44, freq: 1.4, wobble: 2.2 }),
     iron: mat({ freq: 1.6, angle: 0.3, tone: 0.5 }),
     steel: mat({ freq: 1.8, angle: 0.02, tone: 0.1, wobble: 0.3 }),
     rope: mat({ uv: [6, 1], angle: 0.9, tone: 0.3, freq: 2 }),
@@ -1110,7 +1112,7 @@ export async function prepareTable(opts) {
     muscle: mat({ paper: BLOOD, freq: 2.4, angle: -0.4, tone: 0.34, wobble: 0.5 }),
     muscleUV: mat({ paper: BLOOD, uv: [12, 5], angle: 0.1, tone: 0.34, freq: 2.4, wobble: 0.5 }),
     // (a cast shadow: parallel cuts on the ground, no light to it)
-    shadow: mat({ tone: -0.2, keyI: 0, sky: 0, angle: -0.55, freq: 0.5, wobble: 0.6, steps: 0 }),
+    shadow: mat({ tone: 0.02, keyI: 0, sky: 0, angle: -0.55, freq: 0.7, wobble: 0.5, steps: 0 }),
     ink: new THREE.MeshBasicMaterial({ color: INK })
   };
   shade.mat = kit.shadow;
@@ -1154,11 +1156,11 @@ export async function prepareTable(opts) {
   pivots.forEach(p => { const d = p.userData.v.death; const wp = d.getWorldPosition(V(0, 0, 0)); seat.worldToLocal(wp); const want = Math.atan2(wp.x, wp.z + 116); p.userData.toSeat = ((want - p.userData.deathYaw + PI) % (2 * PI) + 2 * PI) % (2 * PI) - PI; });
   // far off on the hills: more gallows, in silhouette
   const far = new THREE.Group(); seat.add(far);
-  [[-320, 900], [-140, 980], [260, 930], [420, 880], [60, 1040]].forEach(([x, z]) => { const h = height(x, z), g = new THREE.Group(); g.position.set(x, h - 2, z); g.rotation.y = rnd() * 6; far.add(g); mesh(new THREE.BoxGeometry(6, 150, 6), kit.wood, g, 1.6).position.y = 75; mesh(new THREE.BoxGeometry(70, 6, 6), kit.wood, g, 1.4).position.set(20, 148, 0); const sk = buildSkeleton(kit, rnd); restSkeleton(sk); sk.position.set(40, 142 - 165, 0); sk.scale.setScalar(0.9); sk.userData.neck.rotation.z = 0.5; g.add(sk); });
+  [[-320, 900], [-140, 980], [260, 930], [420, 880], [60, 1040]].forEach(([x, z]) => { const h = height(x, z), g = new THREE.Group(); g.position.set(x, h - 2, z); g.rotation.y = rnd() * 6; far.add(g); mesh(new THREE.BoxGeometry(6, 150, 6), kit.post, g, 1.6).position.y = 75; mesh(new THREE.BoxGeometry(70, 6, 6), kit.wood, g, 1.4).position.set(20, 148, 0); const sk = buildSkeleton(kit, rnd); restSkeleton(sk); sk.position.set(40, 142 - 165, 0); sk.scale.setScalar(0.9); sk.userData.neck.rotation.z = 0.5; g.add(sk); });
   // the ground dressed, as a woodcutter fills it: stones, bones, a skull or two
   const dress = new THREE.Group(); seat.add(dress);
   const stoneGeo = new THREE.IcosahedronGeometry(1, 1);
-  for (let i = 0; i < 70; i++) {
+  for (let i = 0; i < 26; i++) {
     const ti = Math.floor(rnd() * 3), x = (rnd() - 0.5) * 520, z = TIER[ti].z + (rnd() - 0.5) * 90 + (ti === 0 ? -20 : 0);
     if (Math.hypot(x * 0.8, z - 20) < ROCK.lip + 30) continue;
     const st = mesh(stoneGeo, kit.stone, dress, 1.2); const sc = 3 + rnd() * 7; st.scale.set(sc * (0.8 + rnd() * 0.6), sc * 0.55, sc * (0.8 + rnd() * 0.6)); st.rotation.set(rnd(), rnd() * 6, rnd()); st.position.set(x, height(x, z) + sc * 0.2, z);
@@ -1166,7 +1168,7 @@ export async function prepareTable(opts) {
   for (let i = 0; i < 14; i++) { const ti = Math.floor(rnd() * 3), x = (rnd() - 0.5) * 480, z = TIER[ti].z + (rnd() - 0.5) * 80; if (Math.hypot(x * 0.8, z - 20) < ROCK.lip + 30) continue; const b = mesh(boneGeo(18 + rnd() * 20, 1.6), kit.shaft, dress, 1.2); b.rotation.set(HALF + (rnd() - 0.5) * 0.2, 0, rnd() * 6); b.position.set(x, height(x, z) + 1.5, z); }
   for (let i = 0; i < 5; i++) { const ti = Math.floor(rnd() * 3), x = (rnd() - 0.5) * 440, z = TIER[ti].z + (rnd() - 0.5) * 70; if (Math.hypot(x * 0.8, z - 20) < ROCK.lip + 30) continue; const sk = buildSkull(kit); sk.rotation.set(rnd() * 0.8 - 0.2, rnd() * 6, rnd() * 0.6 - 0.3); sk.position.set(x, height(x, z) + 7, z); dress.add(sk); }
   // the scarps: boulders along the risers of the second and third terraces
-  [[392, 44], [600, 52]].forEach(([rz, sz]) => { for (let x = -560; x <= 560; x += 26 + rnd() * 30) { if (rnd() < 0.3) continue; const z = rz + (rnd() - 0.5) * 24; const st = mesh(stoneGeo, kit.stone, dress, 1.4); const sc = 9 + rnd() * 11; st.scale.set(sc * (1 + rnd() * 0.8), sc * (0.6 + rnd() * 0.5), sc * 0.8); st.rotation.set(rnd() * 0.6, rnd() * 6, rnd() * 0.6); st.position.set(x, height(x, z) + sc * 0.1, z); } });
+  [[392, 44], [600, 52]].forEach(([rz, sz]) => { for (let x = -560; x <= 560; x += 40 + rnd() * 50) { if (rnd() < 0.35) continue; const z = rz + (rnd() - 0.5) * 24; const st = mesh(stoneGeo, kit.stone, dress, 1.4); const sc = 9 + rnd() * 11; st.scale.set(sc * (1 + rnd() * 0.8), sc * (0.6 + rnd() * 0.5), sc * 0.8); st.rotation.set(rnd() * 0.6, rnd() * 6, rnd() * 0.6); st.position.set(x, height(x, z) + sc * 0.1, z); } });
   // dead trees on the flanks of the terraces, as a woodcutter fills to the border
   [[-300, 1, 1.0], [300, 1, 0.85], [-360, 2, 1.1], [330, 2, 0.95], [-230, 2, 0.7], [250, 0, 0.8]].forEach(([x, ti, sc]) => { const z = TIER[ti].z + 30, t = buildTree(kit, rnd); t.scale.setScalar(sc); t.position.set(x, height(x, z) - 2, z); t.rotation.y = rnd() * 6; dress.add(t); });
   // the drops and the crows
