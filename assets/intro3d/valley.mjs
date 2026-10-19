@@ -103,7 +103,7 @@ const RIVER = { z: 152, w: 56 };
 const SKY = 1100;
 // The broadside: a printed sheet nailed to the table's back rail, under
 // your thumb (at: its middle; 60 x 38 cm, 30 page px to the cm).
-const SHEET = { at: [20, 17, 55.5], lean: 0.22, w: 60, h: 38, px: 30, tilt: 0.9 * DEG };
+const SHEET = { at: [20, 20, 55.4], lean: 0.12, w: 60, h: 38, px: 30, tilt: 0.9 * DEG };
 // The views: the seat, portrait and landscape.
 const VIEW = [{ eye: [0, 130, -112], aim: [0, 70, 140], fov: 68 }, { eye: [0, 118, -112], aim: [0, 90, 140], fov: 54 }];
 const T = { fly: 4.8, uiIn: 0.6, lift: 0.55 };
@@ -461,10 +461,10 @@ function vSawyer(kit, rnd) {
   // the pool under his head, and the one under the bowels' end
   g.add(pool(kit, rnd, 30, 1.2)).position.set(0, 0, -6);
   [-1, 1].forEach(sx => [-1, 1].forEach(k => shade(g, sx * 38 + k * 10, k * 12, 6, 5, 20)));
-  shade(g, -52, -8, 22, 12);
+  shade(g, -24, -62, 22, 12);
   // Death at the saw: standing to the man's right, both hands on the saw
   const death = buildSkeleton(kit, rnd); g.add(death); restSkeleton(death);
-  death.position.set(-52, 0, -8); death.rotation.y = -HALF + 0.3;   // (facing the man, turned a little to you)
+  death.position.set(-24, 0, -62); death.rotation.y = PI - 0.45;   // (at the saw's near end, his back half to you, turned to the man)
   const dd = death.userData;
   dd.legs.l.hip.rotation.x = -0.35; dd.legs.r.hip.rotation.x = 0.3; dd.legs.r.kn.rotation.x = 0.4; dd.spine.rotation.x = 0.18;
   dd.arms.l.sh.rotation.set(-0.75, 0, 0.35); dd.arms.r.sh.rotation.set(-0.75, 0, -0.35); dd.arms.l.el.rotation.x = -0.7; dd.arms.r.el.rotation.x = -0.7;
@@ -474,14 +474,14 @@ function vSawyer(kit, rnd) {
   const blade = mesh(new THREE.BoxGeometry(0.8, 9, 84), kit.steel, saw, 1.6);
   for (let i = -19; i <= 19; i++) { const t = mesh(new THREE.ConeGeometry(1.1, 2.4, 4), kit.steel, saw, 0); t.position.set(0, -5.6, i * 2.1); t.rotation.x = PI; }
   [-1, 1].forEach(s => { const h = mesh(new THREE.CylinderGeometry(1.6, 1.6, 12, 8), kit.wood, saw, 1.2); h.position.set(0, 2, s * 42); h.rotation.z = HALF; });
-  saw.position.set(-20, 104, -9); saw.rotation.y = HALF; saw.rotation.z = -0.1;
+  saw.position.set(-2, 104, -28); saw.rotation.y = 0; saw.rotation.x = 0.08;   // (the blade runs toward you, between the frame's legs)
   bleed(man, 0.5); bands.push([man, 110, 24]);
   bleed(saw); bands.push([saw, 108, 92]);
   const hi = 100;
   const act = (tt, dt, w, still) => {
     // the stroke: a slow draw back, a bite forward, the frame giving
     const s = still ? 0 : Math.sin(tt * 2.6), c = still ? 0 : Math.cos(tt * 2.6);
-    saw.position.x = -20 + s * 14;
+    saw.position.z = -28 + s * 14;
     dd.spine.rotation.x = 0.18 + c * 0.12; dd.arms.l.el.rotation.x = -0.7 + c * 0.4; dd.arms.r.el.rotation.x = -0.7 + c * 0.4; dd.arms.l.sh.rotation.x = -0.75 - c * 0.2; dd.arms.r.sh.rotation.x = -0.75 - c * 0.2;
     dd.hips.position.y = 92 - Math.abs(c) * 1.5;
     man.rotation.y = (still ? 0 : Math.sin(tt * 0.7) * 0.05) + w * 0.12;
@@ -596,7 +596,12 @@ function buildTree(kit, rnd) {
   mesh(lathe([[12 + rnd() * 4, 0], [9, 30], [7.5, 80], [6, 130], [4.5, 170], [2.5, 210], [0.01, 212]], 10), kit.bark, g, 2);
   shade(g, 0, 0, 20, 14, 120);
   const n = 2 + Math.floor(rnd() * 2);
-  for (let i = 0; i < n; i++) { const b = mesh(new THREE.CylinderGeometry(1.5 + rnd(), 3.5 + rnd(), 50 + rnd() * 40, 7), kit.bark, g, 1.5); const a = rnd() * 6, y = 120 + rnd() * 70; b.position.set(Math.cos(a) * 20, y, Math.sin(a) * 20); b.rotation.set(Math.sin(a) * 1.0, 0, -Math.cos(a) * 1.0); }
+  for (let i = 0; i < n; i++) {
+    const a = rnd() * 6, y = 90 + i * 40 + rnd() * 30, len = 50 + rnd() * 40, tilt = 0.45 + rnd() * 0.4;
+    const br = G(g, Math.cos(a) * 6, y, Math.sin(a) * 6); br.rotation.set(Math.sin(a) * tilt, 0, -Math.cos(a) * tilt);
+    mesh(new THREE.CylinderGeometry(1.4 + rnd(), 3.2 + rnd(), len, 7), kit.bark, br, 1.5).position.y = len / 2;
+    for (let k = 0; k < 2; k++) { const tw = G(br, 0, len * (0.55 + k * 0.35), 0); tw.rotation.set((rnd() - 0.5) * 1.2, 0, (rnd() - 0.5) * 1.2); mesh(new THREE.CylinderGeometry(0.5, 1.3, 18 + rnd() * 14, 6), kit.bark, tw, 1.1).position.y = 12; }
+  }
   return g;
 }
 // IV. THE WHEEL. The breaking wheel on its pole, a man across it with his
@@ -751,7 +756,7 @@ function vDragging(kit, rnd) {
 }
 const VIGNETTES = [vSawyer, vFlaying, vWheel, vDragging, vGallows, vWindlass, vStake];
 // where each stands: [x, tier, placard x offset, placard height]
-const SPOTS = [[50, 0, 74, 96], [150, 1, -92, 104], [-140, 1, -56, 104], [-62, 1, 58, 104], [0, 2, -104, 116], [170, 2, -80, 116], [-170, 2, 76, 116]];
+const SPOTS = [[50, 0, 60, 96], [150, 1, -92, 104], [-140, 1, -56, 104], [-62, 1, 58, 104], [0, 2, -104, 116], [170, 2, -80, 116], [-170, 2, 76, 116]];
 
 // Death at the table: seated on a stool across from you, bare, the rag over
 // his shoulder, the hourglass under his right hand, the left on the cloth.
@@ -870,7 +875,7 @@ function buildTable(kit) {
   for (let i = 0; i < 3; i++) { const pl = mesh(new THREE.BoxGeometry(TABLE.w, TABLE.slab, TABLE.d / 3 - 0.8), kit.wood, g, 2); pl.position.set(0, -TABLE.slab / 2, TABLE.z0 + (i + 0.5) * TABLE.d / 3); }
   [-1, 1].forEach(s => { const leg = mesh(new THREE.BoxGeometry(6, 76, 40), kit.wood, g, 1.6); leg.position.set(s * (TABLE.w / 2 - 12), -TABLE.slab - 38, TABLE.z0 + TABLE.d / 2); leg.rotation.z = s * 0.1; });
   mesh(new THREE.BoxGeometry(TABLE.w - 30, 5, 5), kit.wood, g, 1.4).position.set(0, -50, TABLE.z0 + TABLE.d / 2);
-  const rail = mesh(new THREE.BoxGeometry(TABLE.w, 18, 4), kit.wood, g, 1.6); rail.position.set(0, 7, TABLE.z0 + TABLE.d - 2);
+  const rail = mesh(new THREE.BoxGeometry(TABLE.w, 30, 4), kit.wood, g, 1.6); rail.position.set(0, 13, TABLE.z0 + TABLE.d - 2);
   const glass = buildHourglass(kit, 22); glass.position.set(-40, 0, 44); g.add(glass);
   const sk = buildSkull(kit); sk.scale.setScalar(1.15); sk.position.set(38, 7, 26); sk.rotation.set(0.25, 0.45, 0.1); g.add(sk);
   const dm = mat({ freq: 2.6, angle: 0.7, tone: -0.1 });
@@ -1076,14 +1081,14 @@ export async function prepareTable(opts) {
     // (a long bone: strokes down its length; a joint or a skull: its
     // rings; a rib: strokes along the rib)
     shaft: mat({ uv: [14, 1], angle: 0, tone: -0.12, wobble: 1.4 }),
-    ball: mat({ uv: [22, 10], angle: HALF, tone: -0.12 }),
+    ball: mat({ freq: 1.3, angle: 1.0, tone: -0.12 }),
     rib: mat({ uv: [1, 9], angle: HALF, tone: -0.1, wobble: 1.2 }),
-    skull: mat({ uv: [36, 18], angle: HALF, tone: 0.02, keyI: 1.2, sky: 0.24, wobble: 0.8 }),
+    skull: mat({ freq: 1.25, angle: 1.1, tone: 0.0, keyI: 1.3, sky: 0.24, wobble: 0.8 }),
     // (flesh: the paper, hatched along the limb; the face in its rings;
     // hair a dark passage; the raw of a wound or a flayed man is blood)
     flesh: mat({ freq: 1.2, angle: -0.55, tone: 0.02, keyI: 1.25, sky: 0.34, wobble: 1.1 }),
     fleshUV: mat({ uv: [12, 5], angle: 0.08, tone: 0.02, keyI: 1.25, sky: 0.34, wobble: 1.1 }),
-    face: mat({ uv: [30, 14], angle: HALF, tone: 0.0, keyI: 1.25, sky: 0.34, wobble: 0.9 }),
+    face: mat({ freq: 1.25, angle: 1.1, tone: 0.0, keyI: 1.25, sky: 0.34, wobble: 0.9 }),
     hair: mat({ uv: [24, 8], angle: 0.2, tone: 0.58, freq: 1.6, wobble: 2 }),
     raw: mat({ paper: BLOOD, tone: 0.16, freq: 1.4, angle: -0.4, keyI: 1.2 }),
     rawUV: mat({ paper: BLOOD, uv: [12, 5], angle: 0.3, tone: 0.16, freq: 1.3, keyI: 1.2 }),
@@ -1105,7 +1110,7 @@ export async function prepareTable(opts) {
     muscle: mat({ paper: BLOOD, freq: 2.4, angle: -0.4, tone: 0.34, wobble: 0.5 }),
     muscleUV: mat({ paper: BLOOD, uv: [12, 5], angle: 0.1, tone: 0.34, freq: 2.4, wobble: 0.5 }),
     // (a cast shadow: parallel cuts on the ground, no light to it)
-    shadow: mat({ tone: -0.34, keyI: 0, sky: 0, angle: -0.55, freq: 1.3, wobble: 0.8, steps: 0 }),
+    shadow: mat({ tone: -0.2, keyI: 0, sky: 0, angle: -0.55, freq: 0.5, wobble: 0.6, steps: 0 }),
     ink: new THREE.MeshBasicMaterial({ color: INK })
   };
   shade.mat = kit.shadow;
