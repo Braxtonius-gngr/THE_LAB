@@ -99,11 +99,11 @@ const DEALER = { at: [-22, 0, 104], yaw: -0.38 };
 // The terraces (their floors) and the river's trough between the first and
 // the second; the far hills beyond the third.
 const TIER = [{ z: 300, y: -34 }, { z: 480, y: 70 }, { z: 700, y: 150 }];
-const RIVER = { z: 152, w: 56 };
+const RIVER = { z: 206, w: 56 };
 const SKY = 1100;
 // The broadside: a printed sheet nailed to the table's back rail, under
 // your thumb (at: its middle; 60 x 38 cm, 30 page px to the cm).
-const SHEET = { at: [20, 20, 55.4], lean: 0.12, w: 60, h: 38, px: 30, tilt: 0.9 * DEG };
+const SHEET = { at: [20, 17, 55.4], lean: 0.1, w: 60, h: 38, px: 30, tilt: 0.9 * DEG };
 // The views: the seat, portrait and landscape.
 const VIEW = [{ eye: [0, 130, -112], aim: [0, 70, 140], fov: 68 }, { eye: [0, 118, -112], aim: [0, 90, 140], fov: 54 }];
 const T = { fly: 4.8, uiIn: 0.6, lift: 0.55 };
@@ -114,7 +114,7 @@ const KEY_SEAT = new THREE.Vector3(0.82, 0.5, -0.22).normalize();
 // ------------------------------------------------------------ helpers
 // (every surface here is the block's: paper left where the light falls,
 // the turn hatched, the dark crossed; tone + is darker)
-const mat = (opts) => engravingMaterial(Object.assign({ freq: 1.6, sky: 0.16, keyI: 1.5, tone: -0.04, wobble: 0.55, steps: 3 }, opts));
+const mat = (opts) => engravingMaterial(Object.assign({ freq: 1.3, sky: 0.16, keyI: 1.5, tone: -0.04, wobble: 0.55, steps: 0 }, opts));
 const mesh = (geo, m, parent, outline = 1.8) => { const x = new THREE.Mesh(geo, m); parent.add(x); if (outline) outlineOf(x, outline); return x; };
 const G = (parent, x = 0, y = 0, z = 0) => { const g = new THREE.Group(); g.position.set(x, y, z); if (parent) parent.add(g); return g; };
 // a limb: a capsule hanging from its joint at the origin, down -y
@@ -167,8 +167,8 @@ function buildSkull(kit) {
   const jaw = G(g, 0, -1.2, 1.4);
   const jl = mesh(new THREE.TorusGeometry(4.4, 1.3, 8, 18, PI), kit.rib, jaw, 1.4); jl.position.set(0, -6.6, -3.8); jl.rotation.set(HALF, 0, PI);
   [-1, 1].forEach(sx => { const r = mesh(new THREE.BoxGeometry(1.4, 7, 2), kit.bone, jaw, 1); r.position.set(sx * 5.8, -3.4, -0.4); r.rotation.x = -0.3; });
-  jaw.rotation.x = 0.32;
-  for (let i = -3; i <= 3; i++) { const a = i / 3.6 * HALF; const tu = mesh(new THREE.BoxGeometry(1, 1.7, 0.8), kit.bone, g, 0.5); tu.position.set(Math.sin(a) * 4.4, -4.2, -3.2 - Math.cos(a) * 4.4); const tl = mesh(new THREE.BoxGeometry(1, 1.5, 0.8), kit.bone, jaw, 0.5); tl.position.set(Math.sin(a) * 4.2, -5.2, -3.6 - Math.cos(a) * 4.2); }
+  jaw.rotation.x = 0.5;
+  for (let i = -3; i <= 3; i++) { const a = i / 3.6 * HALF; const tu = mesh(new THREE.BoxGeometry(1.1, 2.2, 0.9), kit.bone, g, 0.6); tu.position.set(Math.sin(a) * 4.4, -4.4, -3.2 - Math.cos(a) * 4.4); const tl = mesh(new THREE.BoxGeometry(1.1, 2, 0.9), kit.bone, jaw, 0.6); tl.position.set(Math.sin(a) * 4.2, -5.2, -3.6 - Math.cos(a) * 4.2); }
   g.userData.jaw = jaw;
   return g;
 }
@@ -875,7 +875,7 @@ function buildTable(kit) {
   for (let i = 0; i < 3; i++) { const pl = mesh(new THREE.BoxGeometry(TABLE.w, TABLE.slab, TABLE.d / 3 - 0.8), kit.wood, g, 2); pl.position.set(0, -TABLE.slab / 2, TABLE.z0 + (i + 0.5) * TABLE.d / 3); }
   [-1, 1].forEach(s => { const leg = mesh(new THREE.BoxGeometry(6, 76, 40), kit.post, g, 1.6); leg.position.set(s * (TABLE.w / 2 - 12), -TABLE.slab - 38, TABLE.z0 + TABLE.d / 2); leg.rotation.z = s * 0.1; });
   mesh(new THREE.BoxGeometry(TABLE.w - 30, 5, 5), kit.wood, g, 1.4).position.set(0, -50, TABLE.z0 + TABLE.d / 2);
-  const rail = mesh(new THREE.BoxGeometry(TABLE.w, 30, 4), kit.wood, g, 1.6); rail.position.set(0, 13, TABLE.z0 + TABLE.d - 2);
+  const rail = mesh(new THREE.BoxGeometry(TABLE.w, 40, 4), kit.wood, g, 1.6); rail.position.set(0, 18, TABLE.z0 + TABLE.d - 2);
   const glass = buildHourglass(kit, 22); glass.position.set(-40, 0, 44); g.add(glass);
   const sk = buildSkull(kit); sk.scale.setScalar(1.15); sk.position.set(38, 7, 26); sk.rotation.set(0.25, 0.45, 0.1); g.add(sk);
   const dm = mat({ freq: 2.6, angle: 0.7, tone: -0.1 });
@@ -1106,7 +1106,7 @@ export async function prepareTable(opts) {
     steel: mat({ freq: 1.8, angle: 0.02, tone: 0.1, wobble: 0.3 }),
     rope: mat({ uv: [6, 1], angle: 0.9, tone: 0.3, freq: 2 }),
     stone: mat({ freq: 1.3, angle: 0.5, tone: 0.1, wobble: 1.6, steps: 3 }),
-    hollow: mat({ freq: 1.8, angle: 0.9, tone: 0.42, keyI: 0.4 }),
+    hollow: mat({ freq: 1.8, angle: 0.9, tone: 0.56, keyI: 0.3 }),
     // (a flayed man: the muscle in its fibres, fine lines along the limb over the red)
     rawCap: mat({ paper: BLOOD, tone: 0.22, freq: 1.6, angle: 0.4, side: THREE.DoubleSide }),
     muscle: mat({ paper: BLOOD, freq: 2.4, angle: -0.4, tone: 0.34, wobble: 0.5 }),
