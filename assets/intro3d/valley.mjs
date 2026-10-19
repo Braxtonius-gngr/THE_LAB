@@ -141,23 +141,35 @@ function splat(r, rnd, sx = 1, n = 26) {
 }
 
 // ------------------------------------------------------------ the skeleton
-// the skull: a dome, the sockets sunk, the jaw hung under
+// the skull, as the block-cutter cut it: the dome (long from brow to
+// back), the brow ridge, the temples hollowed, the sockets dark, the nasal
+// triangle, the cheekbones' arches, the maxilla with its teeth, and the
+// mandible hinged at the sides, dropped a little open - the grin
 function buildSkull(kit) {
   const mOut = kit.ink;
   const g = new THREE.Group();
-  const dome = new THREE.SphereGeometry(8.2, 24, 16); dome.scale(1, 1.12, 1.08);
-  const d = mesh(dome, kit.skull, g, 2); d.position.y = 3;
-  const sock = new THREE.SphereGeometry(3.3, 12, 8);
-  [-3.3, 3.3].forEach(x => { const s = new THREE.Mesh(sock, mOut); s.position.set(x, 3.4, -6.2); s.scale.set(1, 1.15, 0.6); g.add(s); });
-  const nose = new THREE.Mesh(new THREE.ConeGeometry(1.5, 3.2, 4), mOut); nose.position.set(0, 0.2, -7.6); nose.rotation.x = PI; g.add(nose);
-  const jawU = new THREE.TorusGeometry(4.6, 1.3, 8, 18, PI); const ju = mesh(jawU, kit.rib, g, 1.4); ju.position.set(0, -2.6, -3.2); ju.rotation.set(HALF, 0, PI);
-  const jaw = new THREE.TorusGeometry(4.4, 1.2, 8, 18, PI); const jl = mesh(jaw, kit.rib, g, 1.4); jl.position.set(0, -7.4, -2.2); jl.rotation.set(HALF + 0.25, 0, PI);   // (dropped a little open: the grin)
-  // the brow over the sockets, the cheekbones under them
-  const brow = mesh(new THREE.TorusGeometry(7.2, 1.3, 6, 16, PI * 0.9), kit.bone, g, 1.2); brow.position.set(0, 5.6, -5.4); brow.rotation.set(0.25, 0, PI * 1.05);
-  [-1, 1].forEach(sx => { const z = mesh(new THREE.BoxGeometry(3.2, 1.6, 4), kit.bone, g, 1.1); z.position.set(sx * 6.2, 0.8, -4.6); z.rotation.y = sx * 0.6; });
-  // the teeth: a row of small blocks in each arc
-  for (let i = -3; i <= 3; i++) { const a = i / 3.6 * HALF; [ju, jl].forEach((J, k) => { const t = mesh(new THREE.BoxGeometry(1, 1.6, 0.8), kit.bone, g, 0.5); t.position.set(Math.sin(a) * 4.4, k ? -5.8 : -3.8, -2.8 - Math.cos(a) * 4.4); }); }
-  g.userData.jaw = jl;
+  const dome = new THREE.SphereGeometry(8, 24, 16); dome.scale(1, 1.08, 1.2);
+  const d = mesh(dome, kit.skull, g, 2); d.position.set(0, 3.4, 1.2);
+  // the temples: a hollow either side, hatched darker (a flattened disc sunk in)
+  [-1, 1].forEach(sx => { const t = mesh(new THREE.SphereGeometry(3.6, 12, 8), kit.hollow, g, 0); t.position.set(sx * 7.2, 3.8, -1.5); t.scale.set(0.5, 1, 1.1); });
+  // the sockets, and the brow over them
+  const sock = new THREE.SphereGeometry(3.2, 12, 8);
+  [-3.4, 3.4].forEach(x => { const sk = new THREE.Mesh(sock, mOut); sk.position.set(x, 3.2, -6.3); sk.scale.set(1, 1.1, 0.6); g.add(sk); });
+  const brow = mesh(new THREE.TorusGeometry(7.4, 1.4, 6, 16, PI * 0.95), kit.bone, g, 1.2); brow.position.set(0, 6.2, -5.2); brow.rotation.set(0.3, 0, PI * 1.025);
+  // the nose: a dark triangle, and the bridge above it
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(1.7, 3.6, 3), mOut); nose.position.set(0, -0.4, -7.7); nose.rotation.set(PI, 0, 0); g.add(nose);
+  mesh(new THREE.BoxGeometry(1.6, 3, 1.4), kit.bone, g, 0.8).position.set(0, 3.2, -8.2);
+  // the cheekbones: an arch either side from under the socket back to the ear
+  [-1, 1].forEach(sx => { const z = mesh(new THREE.TorusGeometry(3.2, 0.9, 6, 12, PI * 0.8), kit.bone, g, 1); z.position.set(sx * 6.4, 0.4, -3.4); z.rotation.set(HALF, 0, sx > 0 ? -0.3 : PI + 0.3); });
+  // the maxilla: the upper arc with its teeth
+  const ju = mesh(new THREE.TorusGeometry(4.6, 1.5, 8, 18, PI), kit.rib, g, 1.4); ju.position.set(0, -2.8, -3.4); ju.rotation.set(HALF, 0, PI);
+  // the mandible: the lower arc, its rami rising to the hinge under the ear, dropped open
+  const jaw = G(g, 0, -1.2, 1.4);
+  const jl = mesh(new THREE.TorusGeometry(4.4, 1.3, 8, 18, PI), kit.rib, jaw, 1.4); jl.position.set(0, -6.6, -3.8); jl.rotation.set(HALF, 0, PI);
+  [-1, 1].forEach(sx => { const r = mesh(new THREE.BoxGeometry(1.4, 7, 2), kit.bone, jaw, 1); r.position.set(sx * 5.8, -3.4, -0.4); r.rotation.x = -0.3; });
+  jaw.rotation.x = 0.32;
+  for (let i = -3; i <= 3; i++) { const a = i / 3.6 * HALF; const tu = mesh(new THREE.BoxGeometry(1, 1.7, 0.8), kit.bone, g, 0.5); tu.position.set(Math.sin(a) * 4.4, -4.2, -3.2 - Math.cos(a) * 4.4); const tl = mesh(new THREE.BoxGeometry(1, 1.5, 0.8), kit.bone, jaw, 0.5); tl.position.set(Math.sin(a) * 4.2, -5.2, -3.6 - Math.cos(a) * 4.2); }
+  g.userData.jaw = jaw;
   return g;
 }
 // A skeleton standing on y = 0, facing -z (toward the seat when the group
@@ -258,33 +270,69 @@ function buildHourglass(kit, h = 14) {
 
 // ------------------------------------------------------------ the damned
 // A body standing on y = 0, facing -z, about 165 tall: the torso a lathe
-// (broad at the shoulders, a waist, the hips), the limbs capsules from
-// their joints, the head with its hair, the mouth open. Its joints are
-// groups, as the skeleton's, posed by hand. flayed: the flesh is the raw
-// red, the hair gone.
-function buildBody(kit, rnd, flayed = false) {
-  const skin = flayed ? kit.raw : kit.flesh, skinUV = flayed ? kit.rawUV : kit.fleshUV;
+// with the chest's swell and the belly's, the collarbones, the limbs
+// capsules from their joints with their knees and elbows, the head with
+// its brow, ears, jaw and hair, the mouth open on its teeth. Its joints
+// are groups, as the skeleton's, posed by hand.
+//   o.flayed: the flesh is the raw muscle, the hair gone, no clothes
+//   o.shirt: a torn shirt over the torso; o.hose: hose on the legs
+//   o.beard; o.split: the torso cut in two from the fork up, the halves
+//   parting, the spine and the rib-ends in the kerf (the sawyer's man)
+function buildBody(kit, rnd, o = {}) {
+  if (o === true) o = { flayed: true };
+  const flayed = !!o.flayed;
+  const skin = flayed ? kit.muscle : kit.flesh, skinUV = flayed ? kit.muscleUV : kit.fleshUV;
   const root = new THREE.Group();
   const hips = G(root, 0, 85, 0);
-  // (closed at both ends: an open lathe shows its outline's hull as a black hole when seen end-on)
-  const torso = mesh(lathe([[0.01, -9], [12, -8.6], [15.5, -8], [16, 0], [14.6, 9], [13.4, 18], [14.2, 27], [16.8, 37], [18.6, 45], [17.2, 51], [9, 55], [0.01, 55.5]], 22), skinUV, hips, 2);
-  torso.scale.set(1, 1, 0.66);
-  // a loincloth, unless flayed (they took it with the skin)
-  if (!flayed) { const lc = mesh(lathe([[0.01, -23.2], [16, -23], [15, -20], [17, -12], [17.5, -4], [16.4, 2], [0.01, 2.2]], 18), kit.linen, hips, 1.4); lc.scale.set(1, 1, 0.7); }
+  const prof = [[0.01, -9], [12, -8.6], [15.5, -8], [16, 0], [14.6, 9], [13.6, 16], [14.6, 24], [16.4, 31], [18.2, 38], [19.4, 44], [18, 50], [9.5, 55], [0.01, 55.5]];
+  let torso;
+  if (o.split) {
+    // (two halves on a hinge at the breastbone, parting at the fork; the
+    // kerf between them is raw, with the spine and the ribs' ends in it)
+    torso = G(hips);
+    // (each half closed on its cut face by a plate of raw, the profile's shape)
+    const capShape = new THREE.Shape();
+    prof.forEach(([r, y], i) => { const u = r * 0.66, v = y - 50; if (i) capShape.lineTo(u, v); else capShape.moveTo(u, v); });
+    for (let i = prof.length - 1; i >= 0; i--) capShape.lineTo(-prof[i][0] * 0.66, prof[i][1] - 50);
+    const capGeo = new THREE.ShapeGeometry(capShape, 4); capGeo.rotateY(HALF);
+    [0, 1].forEach(k => { const h = G(torso, 0, 50, 0); h.rotation.z = (k ? -1 : 1) * 0.15; const half = mesh(new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y - 50)), 12, k ? HALF : -HALF, PI), skinUV, h, 2); half.scale.set(1, 1, 0.66); const cap = mesh(capGeo, kit.rawCap, h, 0); cap.position.x = (k ? -1 : 1) * 0.3; });
+    for (let i = 0; i < 9; i++) { const v = mesh(new THREE.CylinderGeometry(2.2, 2.4, 2.6, 8), kit.ball, torso, 0.8); v.position.set(0, -4 + i * 5.2, 5); }
+    for (let i = 0; i < 4; i++) [-1, 1].forEach(sx => { const rb = mesh(new THREE.CylinderGeometry(0.9, 0.9, 7, 6), kit.bone, torso, 0.8); rb.position.set(sx * 4, 30 + i * 5.5, -3); rb.rotation.z = sx * 1.2; });
+  } else {
+    torso = mesh(lathe(prof, 22), skinUV, hips, 2); torso.scale.set(1, 1, 0.66);
+    // the chest's two swells, the belly, the navel
+    [-1, 1].forEach(sx => { const pc = mesh(new THREE.SphereGeometry(6.5, 14, 10), skin, hips, 1); pc.position.set(sx * 7.5, 40, -8.5); pc.scale.set(1, 0.7, 0.55); const nip = new THREE.Mesh(new THREE.SphereGeometry(0.7, 6, 5), kit.ink); nip.position.set(sx * 7.5, 38.5, -12); hips.add(nip); });
+    const belly = mesh(new THREE.SphereGeometry(10, 16, 12), skin, hips, 1.2); belly.position.set(0, 14, -6); belly.scale.set(1.15, 1.1, 0.55);
+    const nav = new THREE.Mesh(new THREE.SphereGeometry(0.8, 6, 5), kit.ink); nav.position.set(0, 12, -11.6); hips.add(nav);
+  }
+  // the collarbones
+  [-1, 1].forEach(sx => { const c = mesh(new THREE.CylinderGeometry(1.1, 1.1, 15, 6), skin, hips, 0.9); c.position.set(sx * 8.5, 52.5, -5.5); c.rotation.z = sx * (HALF - 0.12); c.rotation.y = sx * 0.3; });
+  if (o.shirt && !flayed) { const sh = mesh(lathe([[0.01, 6], [16.5, 6.4], [15.6, 16], [16.4, 26], [18.6, 36], [20.4, 44], [18.6, 50.5], [10.5, 54], [0.01, 54.4]], 18), kit.linen, hips, 1.5); sh.scale.set(1.03, 1, 0.72); sh.position.z = 0.2; }
+  else if (!flayed) { const lc = mesh(lathe([[0.01, -23.2], [16, -23], [15, -20], [17, -12], [17.5, -4], [16.4, 2], [0.01, 2.2]], 18), kit.linen, hips, 1.4); lc.scale.set(1, 1, 0.7); }
   const neck = G(hips, 0, 55, 0);
-  limb(4, 3.4, skinUV, neck, 1.2).position.y = 4;
+  limb(4, 3.6, skinUV, neck, 1.2).position.y = 4;
   const head = G(neck, 0, 9, 0);
-  const sk = mesh(new THREE.SphereGeometry(9.2, 22, 16), kit.face, head, 2); sk.position.y = 4; sk.scale.set(1, 1.18, 1.04);
-  if (!flayed) { const hair = mesh(new THREE.SphereGeometry(9.9, 18, 10, 0, PI * 2, 0, PI * 0.55), kit.hair, head, 1.4); hair.position.y = 4.6; hair.scale.set(1, 1.15, 1.08); hair.rotation.x = -0.35; }
-  const nose = mesh(new THREE.ConeGeometry(1.4, 3.2, 6), skin, head, 0.9); nose.position.set(0, 2.2, -9.6); nose.rotation.x = -HALF - 0.3;
-  [-3.2, 3.2].forEach(x => { const e = new THREE.Mesh(new THREE.SphereGeometry(0.9, 8, 6), kit.ink); e.position.set(x, 5, -8.8); head.add(e); });
-  const mouth = new THREE.Mesh(new THREE.SphereGeometry(2.2, 10, 8), kit.ink); mouth.position.set(0, -2.2, -8.4); mouth.scale.set(1, 1.3, 0.5); head.add(mouth);
+  const sk = mesh(new THREE.SphereGeometry(9, 22, 16), flayed ? kit.muscleUV : kit.face, head, 2); sk.position.set(0, 4, 0.6); sk.scale.set(1, 1.16, 1.1);
+  // the brow, the jaw and chin, the ears
+  const brow = mesh(new THREE.TorusGeometry(7.6, 1.3, 6, 14, PI * 0.9), skin, head, 0.9); brow.position.set(0, 6.4, -6.2); brow.rotation.set(0.35, 0, PI * 1.05);
+  const chin = mesh(new THREE.BoxGeometry(7, 5.5, 6), skin, head, 1.2); chin.position.set(0, -4.6, -5.4); chin.rotation.x = 0.2;
+  [-1, 1].forEach(sx => { const ear = mesh(new THREE.SphereGeometry(2.4, 10, 8), skin, head, 0.9); ear.position.set(sx * 9, 2.6, 1.2); ear.scale.set(0.45, 1.2, 0.9); });
+  if (!flayed) { const hair = mesh(new THREE.SphereGeometry(9.7, 18, 10, 0, PI * 2, 0, PI * 0.58), kit.hair, head, 1.4); hair.position.set(0, 4.8, 1.4); hair.scale.set(1, 1.1, 1.14); hair.rotation.x = -0.3; }
+  if (o.beard && !flayed) { const bd = mesh(new THREE.ConeGeometry(4.6, 11, 9), kit.hair, head, 1.1); bd.position.set(0, -8.5, -5); bd.rotation.set(PI + 0.3, 0, 0); }
+  const nose = mesh(new THREE.ConeGeometry(1.6, 4, 6), skin, head, 0.9); nose.position.set(0, 1.8, -9.8); nose.rotation.x = -HALF - 0.35;
+  [-3.3, 3.3].forEach(x => { const e = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), kit.ink); e.position.set(x, 4.6, -8.6); head.add(e); });
+  // the mouth open: a dark hollow, the teeth's edge, the tongue
+  const mouth = new THREE.Mesh(new THREE.SphereGeometry(2.4, 10, 8), kit.ink); mouth.position.set(0, -2.2, -8.6); mouth.scale.set(1.25, 1.3, 0.5); head.add(mouth);
+  const teeth = mesh(new THREE.BoxGeometry(4, 0.9, 0.6), kit.bone, head, 0); teeth.position.set(0, -0.6, -9.2);
+  const tongue = mesh(new THREE.SphereGeometry(1.1, 8, 6), kit.raw, head, 0); tongue.position.set(0, -3.4, -9); tongue.scale.set(1, 0.6, 1);
   const arms = {};
   [-1, 1].forEach(s => {
     const key = s < 0 ? 'r' : 'l';
     const sh = G(hips, s * 18, 49, 0);
+    mesh(new THREE.SphereGeometry(6, 12, 9), skin, sh, 1.2).position.y = -1;
     limb(28, 5.4, skinUV, sh, 1.8);
     const el = G(sh, 0, -30, 0);
+    mesh(new THREE.SphereGeometry(4.4, 10, 8), skin, el, 1).position.y = -0.5;
     limb(26, 4.5, skinUV, el, 1.7);
     const hand = G(el, 0, -29, 0);
     mesh(new THREE.BoxGeometry(6.4, 7, 2.4), skin, hand, 1.2).position.y = -3.5;
@@ -292,14 +340,17 @@ function buildBody(kit, rnd, flayed = false) {
     arms[key] = { sh, el, hand };
   });
   const legs = {};
+  const legM = o.hose && !flayed ? kit.linen : skinUV, legS = o.hose && !flayed ? kit.linen : skin;
   [-1, 1].forEach(s => {
     const key = s < 0 ? 'r' : 'l';
     const hip = G(hips, s * 8.5, -4, 0);
-    limb(40, 8.6, skinUV, hip, 2);
+    limb(40, 8.6, legM, hip, 2);
     const kn = G(hip, 0, -44, 0);
-    limb(37, 6.2, skinUV, kn, 1.8);
+    mesh(new THREE.SphereGeometry(6.6, 12, 9), legS, kn, 1.2).position.set(0, -1, -1);
+    limb(37, 6.2, legM, kn, 1.8);
     const foot = G(kn, 0, -41, 0);
-    mesh(new THREE.BoxGeometry(6.5, 3.2, 15), skin, foot, 1.2).position.set(0, -1.6, -4.5);
+    mesh(new THREE.BoxGeometry(6.5, 3.2, 13), skin, foot, 1.2).position.set(0, -1.6, -3.5);
+    for (let t = 0; t < 5; t++) { const toe = mesh(new THREE.CapsuleGeometry(0.75, 2, 2, 6), skin, foot, 0.6); toe.position.set((t - 2) * 1.3 * s, -2.2, -10.6 + Math.abs(t - 0.5) * 0.5); toe.rotation.x = HALF; }
     legs[key] = { hip, kn, foot };
   });
   root.userData = { hips, torso, neck, head, arms, legs, mouth, phase: rnd() * 6.28 };
@@ -326,6 +377,16 @@ const wound = (parent, w, h, d, x, y, z, kit) => { const g = mesh(new THREE.BoxG
 function gutGeo(path, r = 2.1) {
   const curve = new THREE.CatmullRomCurve3(path.map(p => V(...p)), false, 'catmullrom', 0.6);
   return new THREE.TubeGeometry(curve, Math.max(24, path.length * 8), r, 8, false);
+}
+// a cast shadow on the ground: an ellipse of parallel cuts, thrown to the
+// right (away from the key), under whatever stands there
+let shadowGeo = null;
+function shade(parent, x, z, rx, rz, h = 60) {
+  if (!shadowGeo) { shadowGeo = new THREE.CircleGeometry(1, 20); shadowGeo.rotateX(-HALF); }
+  const sh = new THREE.Mesh(shadowGeo, parent.userData.kitShadow || shade.mat);
+  sh.position.set(x - h * 0.12, 0.45, z + h * 0.05); sh.scale.set(rx, 1, rz); sh.renderOrder = 0;
+  parent.add(sh);
+  return sh;
 }
 // a pool on the ground, and spatter round it
 function pool(kit, rnd, r, sx = 1) {
@@ -361,6 +422,7 @@ function buildPlacard(kit, card, i, h = 96, bw = 30) {
   const g = new THREE.Group();
   const bh = bw * 0.69;
   mesh(new THREE.CylinderGeometry(1.8, 2.4, h, 8), kit.wood, g, 1.6).position.y = h / 2;
+  shade(g, 0, 0, 5, 4, 30);
   const board = mesh(new THREE.BoxGeometry(bw, bh, 1.6), kit.wood, g, 1.8); board.position.set(0, h - bh / 2 + 2, -1.4);
   const art = placardArt(card, i, false);
   const face = new THREE.Mesh(new THREE.PlaneGeometry(bw - 0.6, bh - 0.6), new THREE.MeshBasicMaterial({ map: art, toneMapped: false }));
@@ -384,7 +446,7 @@ function vSawyer(kit, rnd) {
   [-1, 1].forEach(s => { [-1, 1].forEach(k => { const leg = mesh(new THREE.CylinderGeometry(3, 3.6, H + 10, 8), kit.wood, g, 1.8); leg.position.set(s * 38 + k * 10, H / 2, k * 12); leg.rotation.x = k * 0.14; leg.rotation.z = -s * 0.05; }); });
   const beam = mesh(new THREE.CylinderGeometry(3.6, 3.6, 110, 8), kit.wood, g, 1.8); beam.position.y = H; beam.rotation.z = HALF;
   // the man: upside down, hips at the beam, the legs out to the forks
-  const man = buildBody(kit, rnd); g.add(man);
+  const man = buildBody(kit, rnd, { split: true, beard: true }); g.add(man);
   const d = man.userData;
   man.rotation.z = PI; man.position.set(0, H + 4, 0);          // (the ankles at the beam; hips at 109, head at 29)
   restBody(man);
@@ -394,12 +456,12 @@ function vSawyer(kit, rnd) {
   // the rope round each ankle to the beam
   ['l', 'r'].forEach(s => { const r = mesh(new THREE.TorusGeometry(6.4, 0.9, 6, 12), kit.rope, d.legs[s].foot, 0.9); r.position.y = 2; r.rotation.x = HALF; });
   // the cut: the raw from the fork down the belly, the bowels out of it
-  wound(d.hips, 3.2, 30, 10, 0, 14, -8, kit);
-  wound(d.hips, 3, 10, 9, 0, -4, -8, kit);
   const gut = mesh(gutGeo([[0, 90, -9], [6, 74, -16], [-4, 66, -20], [7, 60, -13], [-3, 50, -17], [8, 42, -18], [-2, 26, -12], [5, 12, -16], [-3, 4, -14], [6, 2, -20]]), kit.gut, g, 1.3);
   const bag = mesh(new THREE.SphereGeometry(5.5, 12, 9), kit.raw, g, 1.3); bag.position.set(3, 82, -12); bag.scale.set(1, 1.4, 0.8);
   // the pool under his head, and the one under the bowels' end
   g.add(pool(kit, rnd, 30, 1.2)).position.set(0, 0, -6);
+  [-1, 1].forEach(sx => [-1, 1].forEach(k => shade(g, sx * 38 + k * 10, k * 12, 6, 5, 20)));
+  shade(g, -52, -8, 22, 12);
   // Death at the saw: standing to the man's right, both hands on the saw
   const death = buildSkeleton(kit, rnd); g.add(death); restSkeleton(death);
   death.position.set(-52, 0, -8); death.rotation.y = -HALF + 0.3;   // (facing the man, turned a little to you)
@@ -437,7 +499,8 @@ function vWindlass(kit, rnd) {
   const top = mesh(new THREE.BoxGeometry(98, 5, 42), kit.wood, g, 1.8); top.position.set(0, TH, 0);
   [-1, 1].forEach(s => { const tr = mesh(new THREE.BoxGeometry(5, TH, 34), kit.wood, g, 1.6); tr.position.set(s * 40, TH / 2 - 2.5, 0); tr.rotation.y = 0.12 * s; });
   const lie = G(g, 0, TH + 10, 4); lie.rotation.y = -HALF;                 // (lying along x, head to the right, face up)
-  const man = buildBody(kit, rnd); lie.add(man); restBody(man);
+  const man = buildBody(kit, rnd, { beard: rnd() < 0.5 }); lie.add(man); restBody(man);
+  shade(g, 0, 0, 56, 26, 40); shade(g, 50, -70, 22, 12); shade(g, 44, -34, 10, 20, 30);
   const d = man.userData;
   man.rotation.x = HALF; man.position.set(0, 0, -(85 - 10));
   d.arms.l.sh.rotation.set(0, 0, 1.2); d.arms.r.sh.rotation.set(0, 0, -1.2); d.arms.l.el.rotation.set(-1.1, 0, 0); d.arms.r.el.rotation.set(-1.1, 0, 0);
@@ -493,8 +556,9 @@ function vFlaying(kit, rnd) {
   const br2 = mesh(new THREE.CylinderGeometry(1.6, 3.4, 52, 8), kit.bark, g, 1.4); br2.position.set(16, 176, -4); br2.rotation.z = -0.9; br2.rotation.x = 0.3;
   mesh(new THREE.CylinderGeometry(1.4, 2.6, 18, 7), kit.bark, g, 1.2).position.set(8, 118, -6), g.children[g.children.length - 1].rotation.z = -1.3;
   // the man, flayed, bound standing against the trunk, arms up and tied
-  const man = buildBody(kit, rnd, true); g.add(man); restBody(man);
+  const man = buildBody(kit, rnd, { flayed: true }); g.add(man); restBody(man);
   man.position.set(0, 0, -12);
+  shade(g, 0, -4, 24, 16, 80); shade(g, -44, 2, 22, 12);
   const d = man.userData;
   d.arms.l.sh.rotation.set(0, 0, 2.6); d.arms.r.sh.rotation.set(0, 0, -2.6); d.arms.l.el.rotation.x = -0.2; d.arms.r.el.rotation.x = -0.2;
   d.neck.rotation.x = 0.5; d.neck.rotation.z = 0.3; d.legs.l.kn.rotation.x = 0.25; d.legs.r.kn.rotation.x = 0.1;
@@ -530,6 +594,7 @@ function vFlaying(kit, rnd) {
 function buildTree(kit, rnd) {
   const g = new THREE.Group();
   mesh(lathe([[12 + rnd() * 4, 0], [9, 30], [7.5, 80], [6, 130], [4.5, 170], [2.5, 210], [0.01, 212]], 10), kit.bark, g, 2);
+  shade(g, 0, 0, 20, 14, 120);
   const n = 2 + Math.floor(rnd() * 2);
   for (let i = 0; i < n; i++) { const b = mesh(new THREE.CylinderGeometry(1.5 + rnd(), 3.5 + rnd(), 50 + rnd() * 40, 7), kit.bark, g, 1.5); const a = rnd() * 6, y = 120 + rnd() * 70; b.position.set(Math.cos(a) * 20, y, Math.sin(a) * 20); b.rotation.set(Math.sin(a) * 1.0, 0, -Math.cos(a) * 1.0); }
   return g;
@@ -546,7 +611,8 @@ function vWheel(kit, rnd) {
   mesh(new THREE.CylinderGeometry(7, 7, 9, 12), kit.wood, wh, 1.5).rotation.x = HALF;
   // the man: on his back over the hub, the limbs bent back through the
   // spokes (a knee the wrong way, an elbow the wrong way)
-  const man = buildBody(kit, rnd); wh.add(man); restBody(man);
+  const man = buildBody(kit, rnd, { hose: true }); wh.add(man); restBody(man);
+  shade(g, 0, 0, 30, 22, 70); shade(g, -46, 10, 22, 12);
   man.position.set(0, 85, 10); man.rotation.set(0, PI, PI + 0.25);   // (on his back on the face, his head over the top rim, toward you)
   const d = man.userData;
   d.legs.l.hip.rotation.set(0.9, 0, 0.6); d.legs.r.hip.rotation.set(0.6, 0, -0.9); d.legs.l.kn.rotation.x = -1.9; d.legs.r.kn.rotation.x = -2.1;
@@ -588,7 +654,7 @@ function vGallows(kit, rnd) {
   [[-30, 0], [30, 1]].forEach(([x, k]) => {
     const piv = G(g, x, H - 4, 0);
     mesh(new THREE.CylinderGeometry(0.9, 0.9, 44, 6), kit.rope, piv, 0.9).position.y = -22;
-    const b = buildBody(kit, rnd); restBody(b);
+    const b = buildBody(kit, rnd, { shirt: true, hose: k === 1, beard: k === 0 }); restBody(b);
     b.position.y = -44 - 150; b.rotation.y = (rnd() - 0.5) * 1.2 + (k ? 0.5 : -0.4); piv.add(b);
     const d = b.userData;
     d.neck.rotation.set(0.5, 0, 0.6); d.arms.l.sh.rotation.z = 0.12; d.arms.r.sh.rotation.z = -0.12; d.legs.l.hip.rotation.x = 0.05; d.legs.r.hip.rotation.x = -0.05;
@@ -606,7 +672,8 @@ function vGallows(kit, rnd) {
   ['l', 'r'].forEach(s => { const st = mesh(new THREE.CylinderGeometry(0.6, 0.8, 18, 6), kit.wood, dd.arms[s].hand, 1); st.position.set(0, -4, -8); st.rotation.x = HALF + 0.4; });
   g.add(pool(kit, rnd, 14)).position.set(-30, 0, 2);
   const man = hanged[0].b;
-  bleed(man, 0.35); bands.push([man, H - 50, H - 120]);
+  bleed(man, 0.45); bands.push([man, H - 36, H - 62]);   // (the blood at his nose and mouth)
+  [-1, 1].forEach(s => shade(g, s * W / 2, 0, 9, 7, 30)); shade(g, 4, 30, 22, 12); shade(g, -30, 0, 14, 9, 150); shade(g, 30, 0, 14, 9, 150);
   const act = (tt, dt, w, still) => {
     const wv = still ? 0 : tt * 3.2;
     stepSkeleton(death, wv, 1.3);
@@ -625,8 +692,9 @@ function vStake(kit, rnd) {
   const H = 230;
   const stake = mesh(new THREE.CylinderGeometry(2.6, 5, H, 9), kit.wood, g, 2); stake.position.y = H / 2; stake.rotation.z = 0.06;
   mesh(new THREE.ConeGeometry(2.6, 12, 9), kit.wood, g, 1.5).position.set(-H * 0.06 * 0.5 - 6.5, H + 5, 0);
-  const man = buildBody(kit, rnd); g.add(man); restBody(man);
+  const man = buildBody(kit, rnd, { hose: true, beard: true }); g.add(man); restBody(man);
   man.position.set(-8, H - 170, 2); man.rotation.set(0.35, 0.3, 0.1);
+  shade(g, 0, 0, 10, 8, 40); shade(g, -40, 16, 22, 12);
   const d = man.userData;
   d.arms.l.sh.rotation.set(0.2, 0, 0.35); d.arms.r.sh.rotation.set(-0.1, 0, -0.25); d.arms.l.el.rotation.x = 0.3;
   d.legs.l.hip.rotation.x = 0.3; d.legs.r.hip.rotation.x = -0.1; d.legs.l.kn.rotation.x = 0.4; d.legs.r.kn.rotation.x = 0.7;
@@ -659,8 +727,9 @@ function vDragging(kit, rnd) {
   const dd = death.userData;
   dd.spine.rotation.x = 0.55;
   dd.arms.r.sh.rotation.set(1.6, 0, -0.2); dd.arms.r.el.rotation.x = 0.3; dd.arms.l.sh.rotation.set(-0.9, 0, 0.3); dd.arms.l.el.rotation.x = -0.9;
-  const man = buildBody(kit, rnd); g.add(man); restBody(man);
-  man.position.set(22, 0, 6); man.rotation.set(-HALF + 0.1, 0, HALF - 0.2);  // on his back, along x, head to -x
+  const man = buildBody(kit, rnd, { shirt: true }); g.add(man); restBody(man);
+  man.position.set(22, 0, 6);
+  shade(g, -20, 0, 22, 12); shade(g, 30, 6, 60, 18, 20); man.rotation.set(-HALF + 0.1, 0, HALF - 0.2);  // on his back, along x, head to -x
   const d = man.userData;
   d.neck.rotation.x = -1.0; d.arms.l.sh.rotation.set(0, 0, 2.4); d.arms.r.sh.rotation.set(0.3, 0, -2.2); d.legs.l.kn.rotation.x = 0.35; d.legs.r.hip.rotation.z = -0.3;
   wound(d.hips, 16, 9, 12, 2, 32, -8, kit);
@@ -682,7 +751,7 @@ function vDragging(kit, rnd) {
 }
 const VIGNETTES = [vSawyer, vFlaying, vWheel, vDragging, vGallows, vWindlass, vStake];
 // where each stands: [x, tier, placard x offset, placard height]
-const SPOTS = [[50, 0, 74, 96], [150, 1, -92, 104], [-140, 1, -56, 104], [-30, 1, -50, 104], [0, 2, -104, 116], [170, 2, -80, 116], [-170, 2, 76, 116]];
+const SPOTS = [[50, 0, 74, 96], [150, 1, -92, 104], [-140, 1, -56, 104], [-62, 1, 58, 104], [0, 2, -104, 116], [170, 2, -80, 116], [-170, 2, 76, 116]];
 
 // Death at the table: seated on a stool across from you, bare, the rag over
 // his shoulder, the hourglass under his right hand, the left on the cloth.
@@ -697,6 +766,7 @@ function buildDealer(kit, rnd) {
   // the stool
   const st = mesh(new THREE.CylinderGeometry(14, 12, 4, 12), kit.wood, g, 1.6); st.position.set(0, 42, 8);
   for (let i = 0; i < 3; i++) { const lg = mesh(new THREE.CylinderGeometry(1.8, 2.2, 44, 8), kit.wood, g, 1.3); const an = i / 3 * PI * 2 + 0.5; lg.position.set(Math.cos(an) * 10, 20, 8 + Math.sin(an) * 10); lg.rotation.z = -Math.cos(an) * 0.12; lg.rotation.x = Math.sin(an) * 0.12; }
+  shade(g, 0, 8, 26, 18); shade(g, -8, -4, 6, 5, 20);
   g.userData = { sk, phase: rnd() * 6 };
   return g;
 }
@@ -1029,8 +1099,16 @@ export async function prepareTable(opts) {
     steel: mat({ freq: 1.8, angle: 0.02, tone: 0.1, wobble: 0.3 }),
     rope: mat({ uv: [6, 1], angle: 0.9, tone: 0.3, freq: 2 }),
     stone: mat({ freq: 1.3, angle: 0.5, tone: 0.1, wobble: 1.6, steps: 3 }),
+    hollow: mat({ freq: 1.8, angle: 0.9, tone: 0.42, keyI: 0.4 }),
+    // (a flayed man: the muscle in its fibres, fine lines along the limb over the red)
+    rawCap: mat({ paper: BLOOD, tone: 0.22, freq: 1.6, angle: 0.4, side: THREE.DoubleSide }),
+    muscle: mat({ paper: BLOOD, freq: 2.4, angle: -0.4, tone: 0.34, wobble: 0.5 }),
+    muscleUV: mat({ paper: BLOOD, uv: [12, 5], angle: 0.1, tone: 0.34, freq: 2.4, wobble: 0.5 }),
+    // (a cast shadow: parallel cuts on the ground, no light to it)
+    shadow: mat({ tone: -0.34, keyI: 0, sky: 0, angle: -0.55, freq: 1.3, wobble: 0.8, steps: 0 }),
     ink: new THREE.MeshBasicMaterial({ color: INK })
   };
+  shade.mat = kit.shadow;
   const rnd = seeded(23);
   const ground = buildGround(); seat.add(ground);
   const height = ground.userData.height;
@@ -1082,6 +1160,8 @@ export async function prepareTable(opts) {
   }
   for (let i = 0; i < 14; i++) { const ti = Math.floor(rnd() * 3), x = (rnd() - 0.5) * 480, z = TIER[ti].z + (rnd() - 0.5) * 80; if (Math.hypot(x * 0.8, z - 20) < ROCK.lip + 30) continue; const b = mesh(boneGeo(18 + rnd() * 20, 1.6), kit.shaft, dress, 1.2); b.rotation.set(HALF + (rnd() - 0.5) * 0.2, 0, rnd() * 6); b.position.set(x, height(x, z) + 1.5, z); }
   for (let i = 0; i < 5; i++) { const ti = Math.floor(rnd() * 3), x = (rnd() - 0.5) * 440, z = TIER[ti].z + (rnd() - 0.5) * 70; if (Math.hypot(x * 0.8, z - 20) < ROCK.lip + 30) continue; const sk = buildSkull(kit); sk.rotation.set(rnd() * 0.8 - 0.2, rnd() * 6, rnd() * 0.6 - 0.3); sk.position.set(x, height(x, z) + 7, z); dress.add(sk); }
+  // the scarps: boulders along the risers of the second and third terraces
+  [[392, 44], [600, 52]].forEach(([rz, sz]) => { for (let x = -560; x <= 560; x += 26 + rnd() * 30) { if (rnd() < 0.3) continue; const z = rz + (rnd() - 0.5) * 24; const st = mesh(stoneGeo, kit.stone, dress, 1.4); const sc = 9 + rnd() * 11; st.scale.set(sc * (1 + rnd() * 0.8), sc * (0.6 + rnd() * 0.5), sc * 0.8); st.rotation.set(rnd() * 0.6, rnd() * 6, rnd() * 0.6); st.position.set(x, height(x, z) + sc * 0.1, z); } });
   // dead trees on the flanks of the terraces, as a woodcutter fills to the border
   [[-300, 1, 1.0], [300, 1, 0.85], [-360, 2, 1.1], [330, 2, 0.95], [-230, 2, 0.7], [250, 0, 0.8]].forEach(([x, ti, sc]) => { const z = TIER[ti].z + 30, t = buildTree(kit, rnd); t.scale.setScalar(sc); t.position.set(x, height(x, z) - 2, z); t.rotation.y = rnd() * 6; dress.add(t); });
   // the drops and the crows
