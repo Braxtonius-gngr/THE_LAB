@@ -187,7 +187,7 @@ const FRAG = /* glsl */`
     // a rim toward the lens stays light (the plate's bevel of light)
     vec3 v = normalize(uCamPos - vWorld);
     float rim = pow(1.0 - max(dot(n, v), 0.0), 3.0);
-    t = clamp(t + (uInvert > 0.5 ? -rim * 0.3 : -rim * 0.18), 0.0, 1.0);
+    t = clamp(t + (uInvert > 0.5 ? -rim * 0.3 : -rim * 0.07), 0.0, 1.0);
     // the tone in steps: a woodcutter turns a form in a few clear planes
     if (uSteps > 0.5) t = mix(t, floor(t * uSteps + 0.5) / uSteps, 0.7);
     // triplanar: the face's dominant axis picks the plane the lines lie on
@@ -216,7 +216,7 @@ const FRAG = /* glsl */`
     }
     // the wet pass: fresh ink spreads a little wider and the tone deepens
     // (blood is always a darker passage than the skin it runs on)
-    float tt = clamp(t + bm * 0.12 + uWet * 0.08 * max(bm, 0.3), 0.0, 1.0);
+    float tt = clamp(max(t, bm * 0.42) + bm * 0.1 + uWet * 0.06 * max(bm, 0.3), 0.0, 1.0);
     float ink = hatch(p, along, tt, uWobble);
     // ember: in the darks, the ink glows from under (the valley burning)
     // (blood is a wash: the paper under the lines goes red; the lines stay ink)

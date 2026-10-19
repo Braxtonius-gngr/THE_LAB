@@ -331,6 +331,7 @@ function buildBody(kit, rnd, o = {}) {
     const sh = G(hips, s * 18, 49, 0);
     mesh(new THREE.SphereGeometry(6, 12, 9), skin, sh, 1.2).position.y = -1;
     limb(28, 5.4, skinUV, sh, 1.8);
+    if (o.shirt && !flayed) limb(22, 6.8, kit.linen, sh, 1.5).position.y = -9;
     const el = G(sh, 0, -30, 0);
     mesh(new THREE.SphereGeometry(4.4, 10, 8), skin, el, 1).position.y = -0.5;
     limb(26, 4.5, skinUV, el, 1.7);
@@ -444,7 +445,7 @@ function vSawyer(kit, rnd) {
   const H = 190;
   // the frame: two pairs of legs crossed, a beam between the forks
   [-1, 1].forEach(s => { [-1, 1].forEach(k => { const leg = mesh(new THREE.CylinderGeometry(3, 3.6, H + 10, 8), kit.post, g, 1.8); leg.position.set(s * 60 + k * 10, H / 2, k * 12); leg.rotation.x = k * 0.14; leg.rotation.z = -s * 0.05; }); });
-  const beam = mesh(new THREE.CylinderGeometry(3.6, 3.6, 150, 8), kit.post, g, 1.8); beam.position.y = H; beam.rotation.z = HALF;
+  const beam = mesh(new THREE.CylinderGeometry(3.6, 3.6, 136, 8), kit.post, g, 1.8); beam.position.y = H; beam.rotation.z = HALF;
   // the man: upside down, hips at the beam, the legs out to the forks
   const man = buildBody(kit, rnd, { split: true, beard: true }); g.add(man);
   const d = man.userData;
@@ -882,6 +883,7 @@ function buildTable(kit) {
   for (let i = 0; i < 3; i++) { const d = mesh(new THREE.BoxGeometry(4, 4, 4), dm, g, 1.2); d.position.set(-10 + i * 7, 2, 16 + (i % 2) * 6); d.rotation.y = i * 0.7; for (let k = 0; k < [3, 5, 2][i]; k++) { const pip = new THREE.Mesh(new THREE.SphereGeometry(0.42, 6, 5), kit.ink); const [px, pz] = [[-1, -1], [1, 1], [0, 0], [-1, 1], [1, -1]][k]; pip.position.set(px * 1.1, 2.05, pz * 1.1); d.add(pip); } }
   const coinM = mat({ freq: 3.2, angle: 0.9, tone: 0.1 });
   for (let i = 0; i < 7; i++) { const c = mesh(new THREE.CylinderGeometry(3, 3, 0.5, 14), coinM, g, 0.9); c.position.set(12 + (i % 3) * 7, 0.3 + Math.floor(i / 3) * 0.6, 10 + Math.floor(i / 3) * 5); }
+  shade(g, -40, 44, 7, 6, 22); shade(g, 38, 26, 9, 8, 14); shade(g, -3, 19, 12, 7, 4); shade(g, 20, 13, 14, 8, 2);
   g.userData.glass = glass;
   return g;
 }
@@ -1090,14 +1092,14 @@ export async function prepareTable(opts) {
     fleshUV: mat({ uv: [12, 5], angle: 0.08, tone: 0.02, keyI: 1.25, sky: 0.34, wobble: 1.1 }),
     face: mat({ freq: 1.25, angle: 1.1, tone: 0.0, keyI: 1.25, sky: 0.34, wobble: 0.9 }),
     hair: mat({ uv: [24, 8], angle: 0.2, tone: 0.58, freq: 1.6, wobble: 2 }),
-    raw: mat({ paper: BLOOD, tone: 0.16, freq: 1.4, angle: -0.4, keyI: 1.2 }),
-    rawUV: mat({ paper: BLOOD, uv: [12, 5], angle: 0.3, tone: 0.16, freq: 1.3, keyI: 1.2 }),
-    gut: mat({ paper: BLOOD, uv: [40, 5], angle: HALF, tone: 0.3, freq: 1.0 }),
-    pool: mat({ paper: BLOOD, tone: 0.32, freq: 1.0, angle: 0.1, side: THREE.DoubleSide }),
+    raw: mat({ paper: BLOOD, tone: 0.34, freq: 1.4, angle: -0.4, keyI: 1.2 }),
+    rawUV: mat({ paper: BLOOD, uv: [12, 5], angle: 0.1, tone: 0.34, freq: 1.3, keyI: 1.2 }),
+    gut: mat({ paper: BLOOD, uv: [40, 5], angle: HALF, tone: 0.46, freq: 1.0 }),
+    pool: mat({ paper: BLOOD, tone: 0.42, freq: 1.0, angle: 0.1, side: THREE.DoubleSide }),
     skin: mat({ freq: 1.0, angle: 1.2, tone: -0.02, wobble: 1.4, side: THREE.DoubleSide }),
     river: mat({ paper: BLOOD, uv: [8, 60], angle: 0.1, tone: 0.22, freq: 1.0, wobble: 1.8, scroll: [0, 6], steps: 0 }),
     cloth: mat({ freq: 0.9, angle: 1.3, tone: 0.3, wobble: 1.6, side: THREE.DoubleSide }),
-    linen: mat({ uv: [18, 4], angle: 1.4, tone: 0.06, wobble: 1.4 }),
+    linen: mat({ uv: [18, 4], angle: 0.1, tone: 0.08, wobble: 1.4 }),
     // (a plank or a beam, long in x: the grain runs its length; a turned
     // timber - any cylinder, standing or laid - its own length)
     wood: mat({ freq: 0.8, angle: HALF, tone: 0.2, wobble: 1.2, axis: [1, 0, 0] }),
@@ -1110,9 +1112,9 @@ export async function prepareTable(opts) {
     stone: mat({ freq: 1.3, angle: 0.5, tone: 0.1, wobble: 1.6, steps: 3 }),
     hollow: mat({ freq: 1.8, angle: 0.9, tone: 0.56, keyI: 0.3 }),
     // (a flayed man: the muscle in its fibres, fine lines along the limb over the red)
-    rawCap: mat({ paper: BLOOD, tone: 0.22, freq: 1.6, angle: 0.4, side: THREE.DoubleSide }),
-    muscle: mat({ paper: BLOOD, freq: 2.4, angle: -0.4, tone: 0.34, wobble: 0.5 }),
-    muscleUV: mat({ paper: BLOOD, uv: [12, 5], angle: 0.1, tone: 0.34, freq: 2.4, wobble: 0.5 }),
+    rawCap: mat({ paper: BLOOD, tone: 0.4, freq: 1.6, angle: 0.4, side: THREE.DoubleSide }),
+    muscle: mat({ paper: BLOOD, freq: 2.4, angle: -0.4, tone: 0.46, wobble: 0.5 }),
+    muscleUV: mat({ paper: BLOOD, uv: [12, 5], angle: 0.1, tone: 0.46, freq: 2.4, wobble: 0.5 }),
     // (a cast shadow: parallel cuts on the ground, no light to it)
     shadow: mat({ tone: 0.02, keyI: 0, sky: 0, angle: -0.55, freq: 0.7, wobble: 0.5, steps: 0, axis: [1, 0, 0.7] }),
     ink: new THREE.MeshBasicMaterial({ color: INK })
