@@ -1100,9 +1100,9 @@ export async function prepareTable(opts) {
     linen: mat({ uv: [18, 4], angle: 1.4, tone: 0.06, wobble: 1.4 }),
     // (a plank or a beam, long in x: the grain runs its length; a turned
     // timber - any cylinder, standing or laid - its own length)
-    wood: mat({ freq: 0.8, angle: HALF, tone: 0.36, wobble: 1.2, axis: [1, 0, 0] }),
-    post: mat({ freq: 0.8, angle: 0, tone: 0.36, wobble: 1.2 }),
-    woodRing: mat({ uv: [1, 10], angle: HALF, tone: 0.36, freq: 0.8, wobble: 1.2 }),
+    wood: mat({ freq: 0.8, angle: HALF, tone: 0.2, wobble: 1.2, axis: [1, 0, 0] }),
+    post: mat({ freq: 0.8, angle: 0, tone: 0.2, wobble: 1.2 }),
+    woodRing: mat({ uv: [1, 10], angle: HALF, tone: 0.2, freq: 0.8, wobble: 1.2 }),
     bark: mat({ uv: [12, 4], angle: 0.12, tone: 0.44, freq: 1.4, wobble: 2.2 }),
     iron: mat({ freq: 1.6, angle: 0.3, tone: 0.5 }),
     steel: mat({ freq: 1.8, angle: 0.02, tone: 0.1, wobble: 0.3, axis: [0, 0, 1] }),
