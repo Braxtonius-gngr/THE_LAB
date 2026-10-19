@@ -262,8 +262,8 @@ function buildHourglass(kit, h = 14) {
   // the sand: in the lower bulb a cone of ink, a thread between
   const sand = mesh(new THREE.ConeGeometry(3.4, 2.8, 14), mat({ tone: 0.55, freq: 2.4 }), g, 0); sand.position.y = 2.2;
   mesh(new THREE.CylinderGeometry(0.25, 0.25, 4, 6), kit.ink, g, 0).position.y = h / 2;
-  [0, h].forEach(y => { const d = mesh(new THREE.CylinderGeometry(5.6, 5.6, 1, 16), kit.wood, g, 1.2); d.position.y = y; });
-  for (let i = 0; i < 3; i++) { const a2 = i / 3 * PI * 2 + 0.4, p = mesh(new THREE.CylinderGeometry(0.5, 0.5, h, 6), kit.wood, g, 0.9); p.position.set(Math.cos(a2) * 5, h / 2, Math.sin(a2) * 5); }
+  [0, h].forEach(y => { const d = mesh(new THREE.CylinderGeometry(5.6, 5.6, 1, 16), kit.post, g, 1.2); d.position.y = y; });
+  for (let i = 0; i < 3; i++) { const a2 = i / 3 * PI * 2 + 0.4, p = mesh(new THREE.CylinderGeometry(0.5, 0.5, h, 6), kit.post, g, 0.9); p.position.set(Math.cos(a2) * 5, h / 2, Math.sin(a2) * 5); }
   g.userData.sand = sand;
   return g;
 }
@@ -444,7 +444,7 @@ function vSawyer(kit, rnd) {
   const H = 190;
   // the frame: two pairs of legs crossed, a beam between the forks
   [-1, 1].forEach(s => { [-1, 1].forEach(k => { const leg = mesh(new THREE.CylinderGeometry(3, 3.6, H + 10, 8), kit.post, g, 1.8); leg.position.set(s * 60 + k * 10, H / 2, k * 12); leg.rotation.x = k * 0.14; leg.rotation.z = -s * 0.05; }); });
-  const beam = mesh(new THREE.CylinderGeometry(3.6, 3.6, 150, 8), kit.wood, g, 1.8); beam.position.y = H; beam.rotation.z = HALF;
+  const beam = mesh(new THREE.CylinderGeometry(3.6, 3.6, 150, 8), kit.post, g, 1.8); beam.position.y = H; beam.rotation.z = HALF;
   // the man: upside down, hips at the beam, the legs out to the forks
   const man = buildBody(kit, rnd, { split: true, beard: true }); g.add(man);
   const d = man.userData;
@@ -473,7 +473,7 @@ function vSawyer(kit, rnd) {
   const saw = new THREE.Group(); g.add(saw);
   const blade = mesh(new THREE.BoxGeometry(0.8, 9, 84), kit.steel, saw, 1.6);
   for (let i = -19; i <= 19; i++) { const t = mesh(new THREE.ConeGeometry(1.1, 2.4, 4), kit.steel, saw, 0); t.position.set(0, -5.6, i * 2.1); t.rotation.x = PI; }
-  [-1, 1].forEach(s => { const h = mesh(new THREE.CylinderGeometry(1.6, 1.6, 12, 8), kit.wood, saw, 1.2); h.position.set(0, 2, s * 42); h.rotation.z = HALF; });
+  [-1, 1].forEach(s => { const h = mesh(new THREE.CylinderGeometry(1.6, 1.6, 12, 8), kit.post, saw, 1.2); h.position.set(0, 2, s * 42); h.rotation.z = HALF; });
   saw.position.set(-14, 104, -9); saw.rotation.y = HALF; saw.rotation.z = -0.1;
   bleed(man, 0.5); bands.push([man, 110, 24]);
   bleed(saw); bands.push([saw, 108, 92]);
@@ -513,13 +513,13 @@ function vWindlass(kit, rnd) {
   const wl = G(g, 44, 0, -34);
   [-1, 1].forEach(s => { const u = mesh(new THREE.BoxGeometry(6, 92, 6), kit.post, wl, 1.6); u.position.set(0, 46, s * 16); });
   const drum = G(wl, 0, 90, 0);
-  const dr = mesh(new THREE.CylinderGeometry(7, 7, 30, 14), kit.wood, drum, 1.6); dr.rotation.x = HALF;
+  const dr = mesh(new THREE.CylinderGeometry(7, 7, 30, 14), kit.post, drum, 1.6); dr.rotation.x = HALF;
   // the bowels wound on the drum: a spiral tube
   const sp = [];
   for (let i = 0; i <= 40; i++) { const a = i / 40 * PI * 2 * 3, z = -10 + i / 40 * 18; sp.push([Math.cos(a) * 8.6, Math.sin(a) * 8.6, z]); }
   mesh(gutGeo(sp, 2.2), kit.gut, drum, 1.2);
   const crank = mesh(new THREE.BoxGeometry(2.4, 20, 2.4), kit.iron, drum, 1.2); crank.position.set(0, 10, -22);
-  const handle = mesh(new THREE.CylinderGeometry(1.4, 1.4, 12, 8), kit.wood, drum, 1.1); handle.position.set(0, 20, -28); handle.rotation.x = HALF;
+  const handle = mesh(new THREE.CylinderGeometry(1.4, 1.4, 12, 8), kit.post, drum, 1.1); handle.position.set(0, 20, -28); handle.rotation.x = HALF;
   // the free run of the bowels, from the belly up to the drum
   mesh(gutGeo([[5, TH + 24, -4], [16, TH + 30, -10], [28, 80, -20], [38, 92, -28], [44, 99, -34]]), kit.gut, g, 1.2);
   // Death at the crank, side on, one hand on the handle, the other on the frame
@@ -611,9 +611,9 @@ function vWheel(kit, rnd) {
   const P = 118, R = 42;
   mesh(new THREE.CylinderGeometry(4, 5.5, P, 10), kit.post, g, 2).position.y = P / 2;
   const wh = G(g, 0, P + 2, 0); wh.rotation.x = 2.6;   // (its face tilted down toward you)
-  mesh(new THREE.TorusGeometry(R, 3.2, 8, 36), kit.wood, wh, 1.8);
-  for (let k = 0; k < 8; k++) { const sp = mesh(new THREE.CylinderGeometry(1.6, 2, R - 4, 8), kit.wood, wh, 1.3); const a = k / 8 * PI * 2; sp.position.set(Math.cos(a) * R / 2, Math.sin(a) * R / 2, 0); sp.rotation.z = a + HALF; }
-  mesh(new THREE.CylinderGeometry(7, 7, 9, 12), kit.wood, wh, 1.5).rotation.x = HALF;
+  mesh(new THREE.TorusGeometry(R, 3.2, 8, 36), kit.woodRing, wh, 1.8);
+  for (let k = 0; k < 8; k++) { const sp = mesh(new THREE.CylinderGeometry(1.6, 2, R - 4, 8), kit.post, wh, 1.3); const a = k / 8 * PI * 2; sp.position.set(Math.cos(a) * R / 2, Math.sin(a) * R / 2, 0); sp.rotation.z = a + HALF; }
+  mesh(new THREE.CylinderGeometry(7, 7, 9, 12), kit.post, wh, 1.5).rotation.x = HALF;
   // the man: on his back over the hub, the limbs bent back through the
   // spokes (a knee the wrong way, an elbow the wrong way)
   const man = buildBody(kit, rnd, { hose: true }); wh.add(man); restBody(man);
@@ -673,8 +673,8 @@ function vGallows(kit, rnd) {
   const dd = death.userData;
   const drum = G(dd.hips, 12, -6, -12);
   const dm = mesh(new THREE.CylinderGeometry(9, 9, 14, 16), kit.cloth, drum, 1.6); dm.rotation.x = HALF; dm.rotation.z = 0.3;
-  mesh(new THREE.CylinderGeometry(9.4, 9.4, 1.2, 16), kit.wood, drum, 1.2).rotation.copy(dm.rotation);
-  ['l', 'r'].forEach(s => { const st = mesh(new THREE.CylinderGeometry(0.6, 0.8, 18, 6), kit.wood, dd.arms[s].hand, 1); st.position.set(0, -4, -8); st.rotation.x = HALF + 0.4; });
+  mesh(new THREE.CylinderGeometry(9.4, 9.4, 1.2, 16), kit.post, drum, 1.2).rotation.copy(dm.rotation);
+  ['l', 'r'].forEach(s => { const st = mesh(new THREE.CylinderGeometry(0.6, 0.8, 18, 6), kit.post, dd.arms[s].hand, 1); st.position.set(0, -4, -8); st.rotation.x = HALF + 0.4; });
   g.add(pool(kit, rnd, 14)).position.set(-30, 0, 2);
   const man = hanged[0].b;
   bleed(man, 0.45); bands.push([man, H - 36, H - 62]);   // (the blood at his nose and mouth)
@@ -696,7 +696,7 @@ function vStake(kit, rnd) {
   const g = new THREE.Group(), bands = [];
   const H = 230;
   const stake = mesh(new THREE.CylinderGeometry(2.6, 5, H, 9), kit.post, g, 2); stake.position.y = H / 2; stake.rotation.z = 0.06;
-  mesh(new THREE.ConeGeometry(2.6, 12, 9), kit.wood, g, 1.5).position.set(-H * 0.06 * 0.5 - 6.5, H + 5, 0);
+  mesh(new THREE.ConeGeometry(2.6, 12, 9), kit.post, g, 1.5).position.set(-H * 0.06 * 0.5 - 6.5, H + 5, 0);
   const man = buildBody(kit, rnd, { hose: true, beard: true }); g.add(man); restBody(man);
   man.position.set(-8, H - 170, 2); man.rotation.set(0.35, 0.3, 0.1);
   shade(g, 0, 0, 10, 8, 40); shade(g, -40, 16, 22, 12);
@@ -769,7 +769,7 @@ function buildDealer(kit, rnd) {
   l.l.hip.rotation.x = -1.45; l.r.hip.rotation.x = -1.45; l.l.kn.rotation.x = 1.5; l.r.kn.rotation.x = 1.5;
   a.l.sh.rotation.set(0.55, 0, 0.1); a.r.sh.rotation.set(0.5, 0, -0.2); a.l.el.rotation.x = 1.0; a.r.el.rotation.x = 1.05;
   // the stool
-  const st = mesh(new THREE.CylinderGeometry(14, 12, 4, 12), kit.wood, g, 1.6); st.position.set(0, 42, 8);
+  const st = mesh(new THREE.CylinderGeometry(14, 12, 4, 12), kit.post, g, 1.6); st.position.set(0, 42, 8);
   for (let i = 0; i < 3; i++) { const lg = mesh(new THREE.CylinderGeometry(1.8, 2.2, 44, 8), kit.post, g, 1.3); const an = i / 3 * PI * 2 + 0.5; lg.position.set(Math.cos(an) * 10, 20, 8 + Math.sin(an) * 10); lg.rotation.z = -Math.cos(an) * 0.12; lg.rotation.x = Math.sin(an) * 0.12; }
   shade(g, 0, 8, 26, 18); shade(g, -8, -4, 6, 5, 20);
   g.userData = { sk, phase: rnd() * 6 };
@@ -807,7 +807,7 @@ function buildGround() {
   geo.computeVertexNormals();
   // the ground's cut: broken horizontals, the hills a lighter tone (the
   // block's distance)
-  const g = new THREE.Mesh(geo, mat({ freq: 0.5, angle: 0.04, tone: -0.14, sky: 0.45, keyI: 1.0, wobble: 0.6, steps: 3 }));
+  const g = new THREE.Mesh(geo, mat({ freq: 0.5, angle: 0.04, tone: -0.14, sky: 0.45, keyI: 1.0, wobble: 0.6, steps: 3, axis: [1, 0, 0] }));
   g.userData.height = (x, z) => groundHeight(x, z, n1, n2);
   return g;
 }
@@ -1098,12 +1098,14 @@ export async function prepareTable(opts) {
     river: mat({ paper: BLOOD, uv: [8, 60], angle: 0.1, tone: 0.22, freq: 1.0, wobble: 1.8, scroll: [0, 6], steps: 0 }),
     cloth: mat({ freq: 0.9, angle: 1.3, tone: 0.3, wobble: 1.6, side: THREE.DoubleSide }),
     linen: mat({ uv: [18, 4], angle: 1.4, tone: 0.06, wobble: 1.4 }),
-    wood: mat({ freq: 0.8, angle: HALF, tone: 0.36, wobble: 1.2 }),
-    // (a standing timber: the grain runs up it, not round it)
+    // (a plank or a beam, long in x: the grain runs its length; a turned
+    // timber - any cylinder, standing or laid - its own length)
+    wood: mat({ freq: 0.8, angle: HALF, tone: 0.36, wobble: 1.2, axis: [1, 0, 0] }),
     post: mat({ freq: 0.8, angle: 0, tone: 0.36, wobble: 1.2 }),
+    woodRing: mat({ uv: [1, 10], angle: HALF, tone: 0.36, freq: 0.8, wobble: 1.2 }),
     bark: mat({ uv: [12, 4], angle: 0.12, tone: 0.44, freq: 1.4, wobble: 2.2 }),
     iron: mat({ freq: 1.6, angle: 0.3, tone: 0.5 }),
-    steel: mat({ freq: 1.8, angle: 0.02, tone: 0.1, wobble: 0.3 }),
+    steel: mat({ freq: 1.8, angle: 0.02, tone: 0.1, wobble: 0.3, axis: [0, 0, 1] }),
     rope: mat({ uv: [6, 1], angle: 0.9, tone: 0.3, freq: 2 }),
     stone: mat({ freq: 1.3, angle: 0.5, tone: 0.1, wobble: 1.6, steps: 3 }),
     hollow: mat({ freq: 1.8, angle: 0.9, tone: 0.56, keyI: 0.3 }),
@@ -1112,7 +1114,7 @@ export async function prepareTable(opts) {
     muscle: mat({ paper: BLOOD, freq: 2.4, angle: -0.4, tone: 0.34, wobble: 0.5 }),
     muscleUV: mat({ paper: BLOOD, uv: [12, 5], angle: 0.1, tone: 0.34, freq: 2.4, wobble: 0.5 }),
     // (a cast shadow: parallel cuts on the ground, no light to it)
-    shadow: mat({ tone: 0.02, keyI: 0, sky: 0, angle: -0.55, freq: 0.7, wobble: 0.5, steps: 0 }),
+    shadow: mat({ tone: 0.02, keyI: 0, sky: 0, angle: -0.55, freq: 0.7, wobble: 0.5, steps: 0, axis: [1, 0, 0.7] }),
     ink: new THREE.MeshBasicMaterial({ color: INK })
   };
   shade.mat = kit.shadow;

@@ -56,6 +56,8 @@ const VERT = /* glsl */`
   varying vec3 vNormalW;
   varying vec2 vUv;
   varying float vDepth;
+  varying vec3 vAxisW;
+  uniform vec3 uAxis;
   #include <common>
   #include <skinning_pars_vertex>
   #include <morphtarget_pars_vertex>
@@ -70,6 +72,7 @@ const VERT = /* glsl */`
     vec4 w = modelMatrix * vec4(transformed, 1.0);
     vWorld = w.xyz;
     vNormalW = normalize(mat3(modelMatrix) * objectNormal);
+    vAxisW = normalize(mat3(modelMatrix) * uAxis);
     vUv = uv;
     vec4 mv = viewMatrix * w;
     vDepth = -mv.z;
@@ -83,6 +86,7 @@ const FRAG = /* glsl */`
   varying vec3 vNormalW;
   varying vec2 vUv;
   varying float vDepth;
+  varying vec3 vAxisW;
   uniform vec3 uPaper;
   uniform vec3 uInk;
   uniform vec3 uBlood;
@@ -107,6 +111,8 @@ const FRAG = /* glsl */`
   uniform vec2 uUvScale;
   uniform vec2 uScroll;    // the lines' drift along the plane (a river's current, smoke)
   uniform float uSteps;    // >0: the tone cut in this many steps, as an engraver turns a form in three or four
+  uniform float uAxisOn;   // 1: the lines run with the form's long axis (uAxis, object space) wherever the face lets them
+  uniform float uPitchPx;  // >0: the lines keep about this many pixels between them on screen - far off, fewer bolder lines, never a grey
 
   float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
   float vnoise(vec2 p) {
@@ -121,33 +127,50 @@ const FRAG = /* glsl */`
     float edge = w * 0.5;
     return 1.0 - smoothstep(edge - aa, edge + aa, d);
   }
-  // the hatch at tone t (0 light .. 1 dark) over planar coords p
-  float hatch(vec2 p, float t, float wobble) {
-    float c = cos(uAngle), sn = sin(uAngle);
-    vec2 d1 = vec2(c, sn), d2 = vec2(cos(uAngle + 1.0472), sin(uAngle + 1.0472)), d3 = vec2(cos(uAngle - 1.0472), sin(uAngle - 1.0472));
+  vec2 rot2(vec2 d, float a) { float c = cos(a), sn = sin(a); return vec2(c * d.x - sn * d.y, sn * d.x + c * d.y); }
+  // one octave of the three sets at frequency f over planar coords p,
+  // the first set across direction d1 (its lines run along perp(d1))
+  float sets(vec2 p, vec2 d1, float f, float w1, float w2, float w3, float wob) {
+    vec2 d2 = rot2(d1, 1.0472), d3 = rot2(d1, -1.0472);
+    float ink = lines(dot(p, d1) * f + wob, w1);
+    ink = max(ink, lines(dot(p, d2) * f * 0.93 + wob * 0.7, w2) * step(0.001, w2));
+    ink = max(ink, lines(dot(p, d3) * f * 1.07 - wob * 0.5, w3) * step(0.001, w3));
+    return ink;
+  }
+  // the hatch at tone t (0 light .. 1 dark) over planar coords p, the
+  // lines running along the vector along (a unit vector in the plane)
+  float hatch(vec2 p, vec2 along, float t, float wobble) {
+    vec2 d1 = vec2(-along.y, along.x);
     // the hand's wobble: a slow drift along each line so no line is ruled
     float wob = (vnoise(p * 0.35) - 0.5) * wobble;
-    float s1 = dot(p, d1) * uFreq + wob;
-    float s2 = dot(p, d2) * uFreq * 0.93 + wob * 0.7;
-    float s3 = dot(p, d3) * uFreq * 1.07 - wob * 0.5;
     // the first set from a hairline to a fat cut; the second comes in past
     // the middle tone, the third in the deep dark
     // (the lit plane is left as paper: no line at all until the form turns)
     float w1 = mix(0.0, 0.66, smoothstep(0.1, 0.74, t));
     float w2 = mix(0.0, 0.5, smoothstep(0.42, 0.9, t));
     float w3 = mix(0.0, 0.4, smoothstep(0.7, 1.0, t));
-    float ink = lines(s1, w1);
-    ink = max(ink, lines(s2, w2) * step(0.001, w2));
-    ink = max(ink, lines(s3, w3) * step(0.001, w3));
+    float ink;
+    if (uPitchPx > 0.0) {
+      // the pitch held on screen: where uFreq would put more than one
+      // line per uPitchPx pixels, drop an octave (half the lines), and
+      // blend the two octaves so nothing pops as it recedes
+      float lpp = fwidth(dot(p, d1)) * uFreq;             // lines per pixel at uFreq
+      float k = max(0.0, log2(max(lpp * uPitchPx, 1e-5)));
+      float k0 = floor(k), fr = k - k0;
+      float f0 = uFreq * exp2(-k0), f1 = f0 * 0.5;
+      ink = mix(sets(p, d1, f0, w1, w2, w3, wob), sets(p, d1, f1, w1, w2, w3, wob), smoothstep(0.0, 1.0, fr));
+    } else {
+      ink = sets(p, d1, uFreq, w1, w2, w3, wob);
+      // where the lines fall under a pixel they dissolve into their mean
+      float px = fwidth(dot(p, d1) * uFreq);
+      float mean = clamp(w1 + w2 * 0.6 + w3 * 0.4, 0.0, 1.0);
+      ink = mix(ink, mean, smoothstep(0.45, 1.0, px));
+    }
     // stipple in the light: a dot where the line would be too thin to cut
     vec2 cell = p * uFreq * 1.6;
     float dot_ = length(fract(cell) - 0.5);
     float sp = step(0.965, hash(floor(cell))) * (1.0 - smoothstep(0.12, 0.2, dot_)) * smoothstep(0.3, 0.12, t) * smoothstep(0.04, 0.1, t) * 0.6;
-    ink = max(ink, sp);
-    // where the lines fall under a pixel they dissolve into their mean
-    float px = fwidth(s1);
-    float mean = clamp(w1 + w2 * 0.6 + w3 * 0.4, 0.0, 1.0);
-    return mix(ink, mean, smoothstep(0.45, 1.0, px));
+    return max(ink, sp);
   }
   void main() {
     vec3 n = normalize(vNormalW);
@@ -169,8 +192,16 @@ const FRAG = /* glsl */`
     if (uSteps > 0.5) t = mix(t, floor(t * uSteps + 0.5) / uSteps, 0.7);
     // triplanar: the face's dominant axis picks the plane the lines lie on
     vec3 an = abs(n);
-    vec2 p = an.y > max(an.x, an.z) ? vWorld.xz : (an.x > an.z ? vWorld.zy : vWorld.xy);
-    if (uUvMode > 0.5) p = vUv * uUvScale;
+    vec2 p, along;
+    vec3 ax = normalize(vAxisW);
+    if (uUvMode > 0.5) { p = vUv * uUvScale; along = vec2(-sin(uAngle), cos(uAngle)); }
+    else if (an.y > max(an.x, an.z)) { p = vWorld.xz; along = ax.xz; }
+    else if (an.x > an.z) { p = vWorld.zy; along = ax.zy; }
+    else { p = vWorld.xy; along = ax.xy; }
+    // (the lines run with the form's long axis as it lies on this face; a
+    // face the axis stands square to - a post's end - takes the set angle)
+    if (uUvMode < 0.5 && (uAxisOn < 0.5 || length(along) < 0.25)) along = vec2(-sin(uAngle), cos(uAngle));
+    along = normalize(along);
     p += uScroll * uTime;
     // blood: a mask by height that runs down with spill, its edge ragged
     float bm = 0.0;
@@ -186,7 +217,7 @@ const FRAG = /* glsl */`
     // the wet pass: fresh ink spreads a little wider and the tone deepens
     // (blood is always a darker passage than the skin it runs on)
     float tt = clamp(t + bm * 0.12 + uWet * 0.08 * max(bm, 0.3), 0.0, 1.0);
-    float ink = hatch(p, tt, uWobble);
+    float ink = hatch(p, along, tt, uWobble);
     // ember: in the darks, the ink glows from under (the valley burning)
     // (blood is a wash: the paper under the lines goes red; the lines stay ink)
     vec3 inkCol = uInk;
@@ -209,7 +240,7 @@ const FRAG = /* glsl */`
 // A sharable set of uniforms (uTime, uCamPos are driven per frame by
 // burinTick(); the rest are the material's own).
 export function engravingMaterial(opts = {}) {
-  const o = Object.assign({ paper: BONE, ink: INK, blood: BLOOD, freq: 1.1, angle: -0.6, tone: 0.0, wet: 0, bloodOn: false, bloodLo: 0, bloodHi: 1, spill: 0, ember: 0, sky: 0.28, keyI: 1.0, transparent: false, opacity: 1, side: THREE.FrontSide, uv: null, invert: false, wobble: 0.6, scroll: null, steps: 0 }, opts);
+  const o = Object.assign({ paper: BONE, ink: INK, blood: BLOOD, freq: 1.1, angle: -0.6, tone: 0.0, wet: 0, bloodOn: false, bloodLo: 0, bloodHi: 1, spill: 0, ember: 0, sky: 0.28, keyI: 1.0, transparent: false, opacity: 1, side: THREE.FrontSide, uv: null, invert: false, wobble: 0.6, scroll: null, steps: 0, axis: [0, 1, 0], pitch: 4.5 }, opts);
   const m = new THREE.ShaderMaterial({
     vertexShader: VERT, fragmentShader: FRAG,
     uniforms: {
@@ -219,7 +250,8 @@ export function engravingMaterial(opts = {}) {
       uBloodLo: { value: o.bloodLo }, uBloodHi: { value: o.bloodHi }, uBloodOn: { value: o.bloodOn ? 1 : 0 }, uBloodSpill: { value: o.spill },
       uEmber: { value: o.ember }, uTime: { value: 0 }, uOpacity: { value: o.opacity }, uCamPos: { value: new THREE.Vector3() },
       uInvert: { value: o.invert ? 1 : 0 }, uWobble: { value: o.wobble }, uUvMode: { value: o.uv ? 1 : 0 }, uUvScale: { value: new THREE.Vector2(o.uv ? o.uv[0] : 1, o.uv ? o.uv[1] : 1) },
-      uScroll: { value: new THREE.Vector2(o.scroll ? o.scroll[0] : 0, o.scroll ? o.scroll[1] : 0) }, uSteps: { value: o.steps }
+      uScroll: { value: new THREE.Vector2(o.scroll ? o.scroll[0] : 0, o.scroll ? o.scroll[1] : 0) }, uSteps: { value: o.steps },
+      uAxis: { value: new THREE.Vector3(...(o.axis || [0, 1, 0])) }, uAxisOn: { value: o.axis ? 1 : 0 }, uPitchPx: { value: o.pitch }
     },
     transparent: o.transparent, side: o.side, lights: false, fog: false
   });
