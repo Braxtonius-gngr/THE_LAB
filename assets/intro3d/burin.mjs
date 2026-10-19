@@ -12,11 +12,17 @@
 // engravingMaterial(opts) makes a material that lights a surface with one
 // key light and a sky, turns that into a tone, and prints the tone as
 // hatching:
-//   - the lines run in a fixed direction over each face (triplanar, so a
-//     turning object's lines turn with it, as the plate's would), or along
-//     the mesh's own UVs for a turned form (opts.uv = [su, sv]: a sphere's
-//     meridians, a lathe's rings - the way an engraver follows a form),
+//   - the lines run WITH THE FORM: each plate has an axis (opts.axis, in
+//     object space - the form's length by default), and on every face the
+//     lines run along it as it lies on that face (a post cut up its length,
+//     a plank along its grain, a limb along the limb, a dome in meridians;
+//     a face the axis stands square to - a post's end - takes opts.angle);
+//     or along the mesh's own UVs for a turned form (opts.uv = [su, sv]);
 //     and are cut analytically - sharp at any zoom, no texture to blur;
+//   - their pitch is held on screen (opts.pitch, pixels between lines):
+//     where the frequency would crowd them the hatch drops an octave, two
+//     octaves blended, so a far figure is cut with fewer, bolder lines and
+//     nothing dissolves into a grey (a printed block has no grey);
 //   - their width follows the tone: a hairline in the light, swelling to
 //     near-solid in the dark; a second set crosses at 60 degrees as the
 //     tone passes the middle, a third below that;
