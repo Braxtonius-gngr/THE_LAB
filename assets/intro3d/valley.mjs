@@ -103,7 +103,7 @@ const RIVER = { z: 206, w: 56 };
 const SKY = 1100;
 // The broadside: a printed sheet nailed to the table's back rail, under
 // your thumb (at: its middle; 60 x 38 cm, 30 page px to the cm).
-const SHEET = { at: [20, 17, 55.4], lean: 0.1, w: 60, h: 38, px: 30, tilt: 0.9 * DEG };
+const SHEET = { at: [20, 16, 55.2], lean: 0.3, w: 60, h: 38, px: 30, tilt: 0.9 * DEG };
 // The views: the seat, portrait and landscape.
 const VIEW = [{ eye: [0, 130, -112], aim: [0, 70, 140], fov: 68 }, { eye: [0, 118, -112], aim: [0, 90, 140], fov: 54 }];
 const T = { fly: 4.8, uiIn: 0.6, lift: 0.55 };
@@ -875,7 +875,7 @@ function buildTable(kit) {
   for (let i = 0; i < 3; i++) { const pl = mesh(new THREE.BoxGeometry(TABLE.w, TABLE.slab, TABLE.d / 3 - 0.8), kit.wood, g, 2); pl.position.set(0, -TABLE.slab / 2, TABLE.z0 + (i + 0.5) * TABLE.d / 3); }
   [-1, 1].forEach(s => { const leg = mesh(new THREE.BoxGeometry(6, 76, 40), kit.post, g, 1.6); leg.position.set(s * (TABLE.w / 2 - 12), -TABLE.slab - 38, TABLE.z0 + TABLE.d / 2); leg.rotation.z = s * 0.1; });
   mesh(new THREE.BoxGeometry(TABLE.w - 30, 5, 5), kit.wood, g, 1.4).position.set(0, -50, TABLE.z0 + TABLE.d / 2);
-  const rail = mesh(new THREE.BoxGeometry(TABLE.w, 40, 4), kit.wood, g, 1.6); rail.position.set(0, 18, TABLE.z0 + TABLE.d - 2);
+  const rail = mesh(new THREE.BoxGeometry(TABLE.w, 22, 4), kit.wood, g, 1.6); rail.position.set(0, 9, TABLE.z0 + TABLE.d - 2);
   const glass = buildHourglass(kit, 22); glass.position.set(-40, 0, 44); g.add(glass);
   const sk = buildSkull(kit); sk.scale.setScalar(1.15); sk.position.set(38, 7, 26); sk.rotation.set(0.25, 0.45, 0.1); g.add(sk);
   const dm = mat({ freq: 2.6, angle: 0.7, tone: -0.1 });
