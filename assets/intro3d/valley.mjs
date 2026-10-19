@@ -105,7 +105,7 @@ const SKY = 1100;
 // your thumb (at: its middle; 60 x 38 cm, 30 page px to the cm).
 const SHEET = { at: [20, 19, 56], lean: 0.6, w: 60, h: 38, px: 30, tilt: 0.9 * DEG };
 // The views: the seat, portrait and landscape.
-const VIEW = [{ eye: [0, 130, -112], aim: [0, 70, 140], fov: 68 }, { eye: [0, 118, -112], aim: [0, 62, 140], fov: 48 }];
+const VIEW = [{ eye: [0, 130, -112], aim: [0, 70, 140], fov: 68 }, { eye: [0, 118, -112], aim: [0, 90, 140], fov: 54 }];
 const T = { fly: 4.8, uiIn: 0.6, lift: 0.55 };
 const SND = { drone: 0.11, choir: 0.05, drum: 0.5, wind: 0.06, bell: 0.35, saw: 0.05, crow: 0.09 };
 // The key: Holbein's light, high from the left and a little in front.
@@ -405,8 +405,8 @@ function vSawyer(kit, rnd) {
   // the saw: a long blade with teeth, a handle at each end, held in the
   // right hand, set in the cut
   const saw = new THREE.Group(); g.add(saw);
-  const blade = mesh(new THREE.BoxGeometry(1, 11, 84), kit.iron, saw, 1.6);
-  for (let i = -19; i <= 19; i++) { const t = mesh(new THREE.ConeGeometry(1.2, 2.6, 4), kit.iron, saw, 0); t.position.set(0, -6.6, i * 2.1); t.rotation.x = PI; }
+  const blade = mesh(new THREE.BoxGeometry(0.8, 9, 84), kit.steel, saw, 1.6);
+  for (let i = -19; i <= 19; i++) { const t = mesh(new THREE.ConeGeometry(1.1, 2.4, 4), kit.steel, saw, 0); t.position.set(0, -5.6, i * 2.1); t.rotation.x = PI; }
   [-1, 1].forEach(s => { const h = mesh(new THREE.CylinderGeometry(1.6, 1.6, 12, 8), kit.wood, saw, 1.2); h.position.set(0, 2, s * 42); h.rotation.z = HALF; });
   saw.position.set(-20, 104, -9); saw.rotation.y = HALF; saw.rotation.z = -0.1;
   bleed(man, 0.5); bands.push([man, 110, 24]);
@@ -1014,6 +1014,7 @@ export async function prepareTable(opts) {
     wood: mat({ freq: 0.8, angle: HALF, tone: 0.36, wobble: 1.2 }),
     bark: mat({ uv: [12, 4], angle: HALF - 0.2, tone: 0.44, freq: 1.4, wobble: 2.2 }),
     iron: mat({ freq: 1.6, angle: 0.3, tone: 0.5 }),
+    steel: mat({ freq: 1.8, angle: 0.02, tone: 0.1, wobble: 0.3 }),
     rope: mat({ uv: [6, 1], angle: 0.9, tone: 0.3, freq: 2 }),
     stone: mat({ freq: 1.3, angle: 0.5, tone: 0.1, wobble: 1.6, steps: 3 }),
     ink: new THREE.MeshBasicMaterial({ color: INK })
