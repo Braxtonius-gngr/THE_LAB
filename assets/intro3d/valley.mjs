@@ -263,10 +263,11 @@ function buildBody(kit, rnd, flayed = false) {
   const skin = flayed ? kit.raw : kit.flesh, skinUV = flayed ? kit.rawUV : kit.fleshUV;
   const root = new THREE.Group();
   const hips = G(root, 0, 85, 0);
-  const torso = mesh(lathe([[15.5, -8], [16, 0], [14.6, 9], [13.4, 18], [14.2, 27], [16.8, 37], [18.6, 45], [17.2, 51], [9, 55]], 22), skinUV, hips, 2);
+  // (closed at both ends: an open lathe shows its outline's hull as a black hole when seen end-on)
+  const torso = mesh(lathe([[0.01, -9], [12, -8.6], [15.5, -8], [16, 0], [14.6, 9], [13.4, 18], [14.2, 27], [16.8, 37], [18.6, 45], [17.2, 51], [9, 55], [0.01, 55.5]], 22), skinUV, hips, 2);
   torso.scale.set(1, 1, 0.66);
   // a loincloth, unless flayed (they took it with the skin)
-  if (!flayed) { const lc = mesh(lathe([[16.4, 2], [17.5, -4], [17, -12], [15, -20], [16, -23]], 18), kit.linen, hips, 1.4); lc.scale.set(1, 1, 0.7); }
+  if (!flayed) { const lc = mesh(lathe([[0.01, 2.2], [16.4, 2], [17.5, -4], [17, -12], [15, -20], [16, -23], [0.01, -23.2]], 18), kit.linen, hips, 1.4); lc.scale.set(1, 1, 0.7); }
   const neck = G(hips, 0, 55, 0);
   limb(4, 3.4, skinUV, neck, 1.2).position.y = 4;
   const head = G(neck, 0, 9, 0);
@@ -484,7 +485,7 @@ function vWindlass(kit, rnd) {
 function vFlaying(kit, rnd) {
   const g = new THREE.Group(), bands = [];
   // the tree: a trunk with a lean, two branches, a stump of a third
-  const trunk = mesh(lathe([[13, 0], [10, 30], [8.5, 80], [7, 130], [5.5, 170], [3, 200]], 12), kit.bark, g, 2);
+  const trunk = mesh(lathe([[13, 0], [10, 30], [8.5, 80], [7, 130], [5.5, 170], [3, 200], [0.01, 201]], 12), kit.bark, g, 2);
   const br = mesh(new THREE.CylinderGeometry(2.4, 4.4, 70, 8), kit.bark, g, 1.6); br.position.set(-26, 158, 2); br.rotation.z = 1.2;
   const br2 = mesh(new THREE.CylinderGeometry(1.6, 3.4, 52, 8), kit.bark, g, 1.4); br2.position.set(16, 176, -4); br2.rotation.z = -0.9; br2.rotation.x = 0.3;
   mesh(new THREE.CylinderGeometry(1.4, 2.6, 18, 7), kit.bark, g, 1.2).position.set(8, 118, -6), g.children[g.children.length - 1].rotation.z = -1.3;
