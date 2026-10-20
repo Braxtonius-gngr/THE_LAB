@@ -73,7 +73,7 @@ import * as THREE from '../vendor/three/three.module.js';
 import { CSS3DRenderer, CSS3DObject } from '../vendor/three/three.addons.js';
 import { tableKit as K } from './table.mjs';
 import { engravingMaterial, outlineOf, burinTick, BONE, INK, BLOOD, BLOOD_WET } from './burin.mjs';
-import { buildFigure, buildDeath, buildSkull, BODY_HIPS } from './figure.mjs';
+import { buildFigure, buildDeath, buildSkull, BODY_HIPS, hold, reach, setArm, lerp3 } from './figure.mjs';
 
 export const DESTS = ['valley'];
 
@@ -300,11 +300,17 @@ function vSawyer(kit, rnd) {
   bleed(man, 0.5); bands.push([man, 110, 24]);
   bleed(saw); bands.push([saw, 108, 92]);
   const hi = 100;
+  // both his hands on the near handle, a hand to each end of it: the arms
+  // solved at the stroke's two ends and its middle, and read between
+  const handleAt = (sx, z) => [-14 + sx * 14 - 42, 106, -9 + z];
+  const sawPose = [-1, 0, 1].map(sx => { dd.spine.rotation.x = 0.18 + sx * 0.12; return { l: reach(dd.arms.l, handleAt(sx, 5), death), r: reach(dd.arms.r, handleAt(sx, -5), death) }; });
+  dd.arms.l.hand.userData.grip(1); dd.arms.r.hand.userData.grip(1);
   const act = (tt, dt, w, still) => {
     // the stroke: a slow draw back, a bite forward, the frame giving
     const s = still ? 0 : Math.sin(tt * 2.6), c = still ? 0 : Math.cos(tt * 2.6);
     saw.position.x = -14 + s * 14;
-    dd.spine.rotation.x = 0.18 + c * 0.12; dd.arms.l.el.rotation.x = -0.7 + c * 0.4; dd.arms.r.el.rotation.x = -0.7 + c * 0.4; dd.arms.l.sh.rotation.x = -0.75 - c * 0.2; dd.arms.r.sh.rotation.x = -0.75 - c * 0.2;
+    dd.spine.rotation.x = 0.18 + s * 0.12;
+    setArm(dd.arms.l, lerp3(sawPose[0].l, sawPose[1].l, sawPose[2].l, s)); setArm(dd.arms.r, lerp3(sawPose[0].r, sawPose[1].r, sawPose[2].r, s));
     dd.hips.position.y = 92 - Math.abs(c) * 1.5;
     man.rotation.y = (still ? 0 : Math.sin(tt * 0.7) * 0.05) + w * 0.12;
     man.rotation.x = still ? 0 : c * 0.012;
@@ -399,7 +405,7 @@ function vFlaying(kit, rnd) {
   const dd = death.userData;
   dd.arms.l.sh.rotation.set(-2.7, 0, 0.4); dd.arms.l.el.rotation.x = -0.3; dd.arms.r.sh.rotation.set(-1.0, 0, -0.5); dd.arms.r.el.rotation.x = -1.4;
   dd.spine.rotation.x = -0.1; dd.legs.r.hip.rotation.x = -0.3; dd.legs.l.hip.rotation.x = 0.2; dd.legs.l.kn.rotation.x = 0.3;
-  const knife = mesh(new THREE.BoxGeometry(0.6, 2.6, 16), kit.iron, dd.arms.r.hand, 1.2); knife.position.set(0, -8, -8); knife.rotation.x = 0.4;
+  const knife = mesh(new THREE.BoxGeometry(0.6, 2.6, 16), kit.iron, g, 1.2); knife.position.z = 6; hold(dd.arms.r.hand, knife, { axis: 'z' });   // (the blade out past the thumb)
   g.add(pool(kit, rnd, 26)).position.set(0, 0, -16);
   bleed(trunk); bands.push([trunk, 150, 0]);
   const act = (tt, dt, w, still) => {
@@ -450,7 +456,7 @@ function vWheel(kit, rnd) {
   const death = buildDeath(kit, rnd); g.add(death); restSkeleton(death);
   death.position.set(-46, 0, 10); death.rotation.y = 0.75;
   const dd = death.userData;
-  const bar = mesh(new THREE.CylinderGeometry(1.8, 2.2, 88, 8), kit.iron, dd.arms.r.hand, 1.4); bar.position.set(0, 10, 0); bar.rotation.z = 0.1;
+  const bar = mesh(new THREE.CylinderGeometry(1.8, 2.2, 88, 8), kit.iron, g, 1.4); bar.position.y = 12; hold(dd.arms.r.hand, bar); dd.arms.l.hand.userData.grip(1);   // (across both fists, raised)
   dd.legs.l.hip.rotation.x = -0.4; dd.legs.r.hip.rotation.x = 0.35; dd.legs.r.kn.rotation.x = 0.4;
   g.add(pool(kit, rnd, 18)).position.set(6, 0, 16);
   bleed(man, 0.3); bands.push([man, P + 30, P - 30]);
@@ -496,7 +502,7 @@ function vGallows(kit, rnd) {
   const drum = G(dd.hips, 12, -6, -12);
   const dm = mesh(new THREE.CylinderGeometry(9, 9, 14, 16), kit.cloth, drum, 1.6); dm.rotation.x = HALF; dm.rotation.z = 0.3;
   mesh(new THREE.CylinderGeometry(9.4, 9.4, 1.2, 16), kit.post, drum, 1.2).rotation.copy(dm.rotation);
-  ['l', 'r'].forEach(s => { const st = mesh(new THREE.CylinderGeometry(0.6, 0.8, 18, 6), kit.post, dd.arms[s].hand, 1); st.position.set(0, -4, -8); st.rotation.x = HALF + 0.4; });
+  ['l', 'r'].forEach(s => { const st = mesh(new THREE.CylinderGeometry(0.6, 0.8, 18, 6), kit.post, g, 1); st.position.y = 7; hold(dd.arms[s].hand, st, { roll: s === 'l' ? 0.5 : -0.5 }); });
   g.add(pool(kit, rnd, 14)).position.set(-30, 0, 2);
   const man = hanged[0].b;
   bleed(man, 0.45); bands.push([man, H - 36, H - 62]);   // (the blood at his nose and mouth)
@@ -533,7 +539,7 @@ function vStake(kit, rnd) {
   const dd = death.userData;
   dd.arms.r.sh.rotation.set(-2.2, 0, -0.3); dd.arms.r.el.rotation.x = -0.4; dd.arms.l.sh.rotation.set(0.2, 0, 0.25);
   dd.neck.rotation.x = -0.55; dd.spine.rotation.x = -0.15;
-  const glass = buildHourglass(kit, 12); glass.position.set(0, -8, -4); glass.rotation.x = 0.3; dd.arms.r.hand.add(glass);
+  const glass = buildHourglass(kit, 12); glass.position.set(0, -8, -4); glass.rotation.x = 0.3; dd.arms.r.hand.add(glass); dd.arms.r.hand.userData.grip(0.45);
   g.add(pool(kit, rnd, 20)).position.set(-6, 0, 4);
   bleed(man, 0.6); bands.push([man, H - 60, H - 170]);
   bleed(stake, 0.7); bands.push([stake, H - 100, 0]);
