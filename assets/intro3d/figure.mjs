@@ -154,6 +154,44 @@ function seam(pts, parent, m, r = 0.45) {
 }
 const knob = (r, sx = 1, sy = 1, sz = 1, detail = 1) => { const g = new THREE.IcosahedronGeometry(r, detail); g.scale(sx, sy, sz); return g; };
 
+// where a shaft lies in a closed hand (hand space): across the palm, under
+// the fingers' roots, on the palm's side (+z: the fingers curl toward +z)
+export const GRIP = [0, -7.5, 3.6];
+// a tool set in a hand: its own y laid along the hand's x (across the
+// palm) at GRIP, turned `roll` about that axis, the fingers closed on it
+export function hold(hand, tool, o = {}) {
+  const w = new THREE.Group(); hand.add(w);
+  w.position.set(...GRIP); w.rotation.x = o.roll || 0;
+  w.add(tool);
+  if ((o.axis || 'y') === 'y') tool.rotation.set(0, 0, -HALF); else tool.rotation.set(0, HALF, 0);
+  if (hand.userData.grip) hand.userData.grip(o.c == null ? 1 : o.c);
+  return w;
+}
+// the arm reached to a point: the shoulder's three turns and the elbow's
+// bend searched (coordinate descent) until the hand's grip point sits on
+// `target` (in root's own frame; root is updated as it goes). Returns the
+// four angles, for a pose lerped later.
+const _gp = new THREE.Vector3(), _t = new THREE.Vector3();
+export function reach(arm, target, root, rounds = 10) {
+  const { sh, el, hand } = arm;
+  _t.set(...target);
+  const dist = () => { root.updateMatrixWorld(true); _gp.set(...GRIP); hand.localToWorld(_gp); if (root.parent) root.parent.worldToLocal(_gp); return _gp.distanceTo(_t); };
+  const P = [[sh.rotation, 'x'], [sh.rotation, 'y'], [sh.rotation, 'z'], [el.rotation, 'x']];
+  let step = 0.5, best = dist();
+  for (let r = 0; r < rounds; r++) {
+    for (const [rot, k] of P) {
+      for (const dir of [1, -1]) {
+        const was = rot[k]; rot[k] = was + dir * step; const d = dist();
+        if (d < best - 1e-4) { best = d; break; } rot[k] = was;
+      }
+    }
+    step *= 0.65;
+  }
+  return [sh.rotation.x, sh.rotation.y, sh.rotation.z, el.rotation.x];
+}
+export function setArm(arm, a) { arm.sh.rotation.set(a[0], a[1], a[2]); arm.el.rotation.x = a[3]; }
+// a pose through three solves at s = -1, 0, 1, read at s
+export function lerp3(a, b, c, s) { return a.map((_, i) => b[i] + s * (c[i] - a[i]) / 2 + s * s * ((c[i] + a[i]) / 2 - b[i])); }
 // ------------------------------------------------------------ the hand
 // A hand hanging from its wrist at the origin, down -y, the palm facing
 // +z when `s` is 1 (a left hand) - the palm a flat wedge with the heel's
@@ -176,16 +214,16 @@ function buildHand(kit, s, m, o = {}) {
     const bend = (0.22 + f * 0.1) + curl * 1.1;
     kn.rotation.x = -bend * 0.9; kn.rotation.z = (f - 1.5) * -0.04 * s;
     const shares = [0.42, 0.32, 0.26];
-    let at = kn;
+    let at = kn; const chain = [kn];
     shares.forEach((sh, k) => {
       const L = len * sh, r = gr * (1 - k * 0.12);
       facet(tube([[0, r * 1.05], [-L * 0.5, r], [-L, r * 0.85]], 6), m, at, 0.7);
       const nx = G(at, 0, -L, 0); if (k < 2) nx.rotation.x = -bend * (k ? 0.9 : 1.1);
-      at = nx;
+      at = nx; chain.push(nx);
     });
     // the nail: a flat plane at the tip
     const nail = facet(block(gr * 1.1, 1.4, 0.35, 0), kit.bone, at, 0); nail.position.set(0, 0.8, -gr * 0.8);
-    fingers.push(kn);
+    fingers.push({ chain, bend, f });
   });
   // the thumb: out from the side of the palm, two phalanges, opposed
   const th = G(hand, s * 3.6, -2.6, 0.6);
@@ -194,6 +232,11 @@ function buildHand(kit, s, m, o = {}) {
   const th2 = G(th, 0, -3.8, 0); th2.rotation.x = -0.4 - curl * 0.8;
   facet(tube([[0, 1.1], [-2.8, 0.95], [-3.2, 0.7]], 6), m, th2, 0.7);
   hand.userData = { palm, fingers, thumb: th };
+  // the grip, as the Death's: c 0 the rest curl, 1 closed on a shaft at GRIP
+  hand.userData.grip = (c = 0) => {
+    fingers.forEach(({ chain, bend }) => { chain[0].rotation.x = -bend * 0.9 - c * 1.0; chain[1].rotation.x = -bend * 1.1 - c * 0.9; chain[2].rotation.x = -bend * 0.9 - c * 0.5; });
+    th.rotation.set(-0.9 - curl * 0.5 - c * 0.5, s * (0.5 + c * 0.3), s * (0.7 - curl * 0.3 - c * 0.4)); th2.rotation.x = -0.4 - curl * 0.8 - c * 0.6;
+  };
   return hand;
 }
 
@@ -326,7 +369,7 @@ export function buildFigure(kit, rnd, o = {}) {
     facet(tube([[-1, 4.2], [-8, 5.0, 4.6, 0, 0.6], [-18, 3.9], [-26, 3.2, 2.4]], 8, { metric: UVS }), skinUV, el, 1.7);
     if (flayed) seam([[s * 4.4, -3, -0.5], [s * 4.2, -12, -2.2], [s * 2.8, -24, -1.8]], el, kit.ink, 0.35);
     const hand = G(el, 0, -29, 0);
-    hand.add(buildHand(kit, s, skin, { curl: o.curl }));
+    const hh = buildHand(kit, s, skin, { curl: o.curl }); hand.add(hh); hand.userData.grip = hh.userData.grip;
     arms[key] = { sh, el, hand };
   });
   const legs = {};
@@ -438,14 +481,23 @@ export function buildDeath(kit, rnd) {
     // the hand: eight carpal knobs, five metacarpals, the phalanges in a loose curl
     for (let c = 0; c < 4; c++) facet(knob(0.9, 1, 1, 0.8, 0), kit.ball, hand, 0.5).position.set((c - 1.5) * 1.5, -1.2, 0);
     const F = [[-2.6, 7.2, 0.5, 0.1], [-0.9, 8.4, 0.5, 0.2], [0.9, 8.0, 0.48, 0.3], [2.6, 6.4, 0.42, 0.4]];
+    const chains = [];
     F.forEach(([fx, len, r, curl]) => {
       const mc = facet(bone(5.6, r * 1.1, 1.4, 6), m, hand, 0.7); mc.rotation.x = PI; mc.position.set(s * fx, -2.0, 0);
-      let at = G(hand, s * fx, -7.8, 0); at.rotation.x = -0.4 - curl;
-      [0.42, 0.33, 0.25].forEach((shr, k) => { const L = len * shr; const ph = facet(bone(L, r * (1 - k * 0.12), 1.3, 6), m, at, 0.6); ph.rotation.x = PI; const nx = G(at, 0, -L, 0); nx.rotation.x = -0.5 - curl * 0.6; at = nx; });
+      let at = G(hand, s * fx, -7.8, 0); const chain = [at];
+      [0.42, 0.33, 0.25].forEach((shr, k) => { const L = len * shr; const ph = facet(bone(L, r * (1 - k * 0.12), 1.3, 6), m, at, 0.6); ph.rotation.x = PI; const nx = G(at, 0, -L, 0); chain.push(nx); at = nx; });
+      chains.push({ chain, curl });
     });
-    const th = G(hand, s * 3.4, -1.6, -0.4); th.rotation.set(-0.5, 0, s * 1.1);
+    const th = G(hand, s * 3.4, -1.6, -0.4);
     const tm = facet(bone(4.2, 0.6, 1.3, 6), m, th, 0.7); tm.rotation.x = PI;
-    const th2 = G(th, 0, -4.2, 0); th2.rotation.x = -0.6; const tp = facet(bone(3.2, 0.5, 1.3, 6), m, th2, 0.6); tp.rotation.x = PI;
+    const th2 = G(th, 0, -4.2, 0); const tp = facet(bone(3.2, 0.5, 1.3, 6), m, th2, 0.6); tp.rotation.x = PI;
+    // the grip: c 0 a loose hang, 1 closed on a shaft across the palm at
+    // GRIP (the fingers round it, the thumb over)
+    hand.userData.grip = (c = 0) => {
+      chains.forEach(({ chain, curl }) => { chain[0].rotation.x = -0.4 - curl - c * 1.1; chain[1].rotation.x = -0.5 - curl * 0.6 - c * 1.0; chain[2].rotation.x = -0.5 - curl * 0.6 - c * 0.5; });
+      th.rotation.set(-0.5 - c * 0.9, s * c * 0.6, s * (1.1 - c * 0.5)); th2.rotation.x = -0.6 - c * 0.7;
+    };
+    hand.userData.grip(0);
     arms[key] = { sh, el, hand };
   });
   const legs = {};
