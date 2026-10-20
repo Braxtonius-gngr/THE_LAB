@@ -384,13 +384,13 @@ export function buildDeath(kit, rnd) {
   const chest = G(spine, 0, 30, 0);
   // the ribcage: twelve ribs as real bars, each from the spine round the
   // side and forward, falling to the breastbone - the gaps between them open
-  const sternum = facet(loft([{ y: -16, rx: 1.4, rz: 0.8, z: -11.2 }, { y: -4, rx: 2.0, rz: 1.0, z: -12.4 }, { y: 7, rx: 2.4, rz: 1.0, z: -11.6 }], { n: 5 }), m, chest, 1.1);
+  const sternum = facet(loft([{ y: -14, rx: 1.6, rz: 0.9, z: -10.6 }, { y: -4, rx: 2.4, rz: 1.1, z: -11.8 }, { y: 6, rx: 3.0, rz: 1.1, z: -11.0 }], { n: 5 }), m, chest, 1.1);
   for (let i = 0; i < 8; i++) {
     const t = i / 7, y0 = 10 - i * 3.6, R = 10.5 * Math.sin(0.6 + t * 2.1) + 4.5, D = R * 0.78, short = i > 5 ? 0.78 : 1;
     [-1, 1].forEach(sx => {
       const pts = [];
       // (from the spine out and round, falling steeply as it comes to the front: the gaps between read)
-      for (let k = 0; k <= 8; k++) { const a = k / 8 * short, ang = a * PI * 0.94; pts.push(new THREE.Vector3(sx * Math.sin(ang) * R, y0 - a * 7.5 - a * a * 3 - 1.2 * Math.sin(a * PI), 3.2 - (1 - Math.cos(ang)) * D * 0.62 - a * 1.2)); }
+      for (let k = 0; k <= 8; k++) { const a = k / 8 * short, ang = a * PI * 0.84; pts.push(new THREE.Vector3(sx * Math.sin(ang) * R, y0 - a * 7.5 - a * a * 3 - 1.2 * Math.sin(a * PI), 3.2 - (1 - Math.cos(ang)) * D * 0.62 - a * 1.2)); }
       const geo = () => new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 12, i < 6 ? 0.62 : 0.5, 4, false);
       const rib = new THREE.Mesh(geo().toNonIndexed(), kit.rib);
       rib.geometry.computeVertexNormals(); chest.add(rib); const ol = outlineOf(rib, 0.9); ol.geometry = geo();

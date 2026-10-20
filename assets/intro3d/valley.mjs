@@ -445,7 +445,7 @@ function vWheel(kit, rnd) {
   d.legs.l.hip.rotation.set(0.9, 0, 0.6); d.legs.r.hip.rotation.set(0.6, 0, -0.9); d.legs.l.kn.rotation.x = -1.9; d.legs.r.kn.rotation.x = -2.1;
   d.arms.l.sh.rotation.set(0.4, 0, 1.9); d.arms.r.sh.rotation.set(0.9, 0, -2.3); d.arms.l.el.rotation.set(0, 0, 1.6); d.arms.r.el.rotation.set(0, 0, -1.9);
   d.neck.rotation.set(-0.6, 0, 0.5);
-  wound(d.legs.l.kn, 5, 7, 9, 0, -2, -2, kit); wound(d.arms.r.el, 4, 6, 7, 0, -1, 0, kit); wound(d.hips, 14, 7, 10, -4, 30, -10, kit);
+  wound(d.legs.l.kn, 5, 7, 9, 0, -2, -2, kit); wound(d.arms.r.el, 4, 6, 7, 0, -1, 0, kit); wound(d.hips, 9, 5, 8, -4, 30, -10, kit);
   // Death with the bar: both hands, raised over his head
   const death = buildDeath(kit, rnd); g.add(death); restSkeleton(death);
   death.position.set(-46, 0, 10); death.rotation.y = 0.75;
@@ -453,7 +453,7 @@ function vWheel(kit, rnd) {
   const bar = mesh(new THREE.CylinderGeometry(1.8, 2.2, 88, 8), kit.iron, dd.arms.r.hand, 1.4); bar.position.set(0, 10, 0); bar.rotation.z = 0.1;
   dd.legs.l.hip.rotation.x = -0.4; dd.legs.r.hip.rotation.x = 0.35; dd.legs.r.kn.rotation.x = 0.4;
   g.add(pool(kit, rnd, 18)).position.set(6, 0, 16);
-  bleed(man, 0.5); bands.push([man, P + 30, P - 30]);
+  bleed(man, 0.3); bands.push([man, P + 30, P - 30]);
   const act = (tt, dt, w, still) => {
     // the blow: a long wind-up, the bar brought down, a settle (a 3.4 s cycle)
     const c = still ? 0.3 : (tt % 3.4) / 3.4;
