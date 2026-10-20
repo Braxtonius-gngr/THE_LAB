@@ -268,7 +268,7 @@ function vSawyer(kit, rnd) {
   [-1, 1].forEach(s => { [-1, 1].forEach(k => { const leg = mesh(new THREE.CylinderGeometry(3, 3.6, H + 10, 8), kit.post, g, 1.8); leg.position.set(s * 60 + k * 10, H / 2, k * 12); leg.rotation.x = k * 0.14; leg.rotation.z = -s * 0.05; }); });
   const beam = mesh(new THREE.CylinderGeometry(3.6, 3.6, 136, 8), kit.post, g, 1.8); beam.position.y = H; beam.rotation.z = HALF;
   // the man: upside down, hips at the beam, the legs out to the forks
-  const man = buildFigure(kit, rnd, { split: true, beard: true }); g.add(man);
+  const man = buildFigure(kit, rnd, { split: true, beard: true, part: 0.3 }); g.add(man);
   const d = man.userData;
   man.rotation.z = PI; man.position.set(0, H + 4, 0);          // (the ankles at the beam; hips at 109, head at 29)
   restBody(man);
@@ -895,8 +895,9 @@ export function valleyKit() {
     hollow: mat({ freq: 1.8, angle: 0.9, tone: 0.56, keyI: 0.3 }),
     // (a flayed man: the muscle in its fibres, fine lines along the limb over the red)
     rawCap: mat({ paper: BLOOD, tone: 0.4, freq: 1.6, angle: 0.4, side: THREE.DoubleSide }),
-    muscle: mat({ paper: BLOOD, freq: 2.0, angle: -0.4, tone: 0.1, sky: 0.3, wobble: 0.5 }),
-    muscleUV: mat({ paper: BLOOD, uv: [12, 5], angle: 0.1, tone: 0.1, sky: 0.3, freq: 2.0, wobble: 0.5 }),
+    // (a flayed man: the fibres cut in blood on the paper - the page's own sanguine - so the figure keeps its silhouette and the lines read as muscle)
+    muscle: mat({ paper: BONE, ink: BLOOD_WET, freq: 2.0, angle: -0.4, tone: 0.3, sky: 0.3, wobble: 0.5 }),
+    muscleUV: mat({ paper: BONE, ink: BLOOD_WET, uv: [12, 5], angle: 0.1, tone: 0.3, sky: 0.3, freq: 2.0, wobble: 0.5 }),
     // (a cast shadow: parallel cuts on the ground, no light to it)
     shadow: mat({ tone: 0.02, keyI: 0, sky: 0, angle: -0.55, freq: 0.7, wobble: 0.5, steps: 0, axis: [1, 0, 0.7] }),
     ink: new THREE.MeshBasicMaterial({ color: INK })
