@@ -59,10 +59,11 @@
 //     (IM Fell English, DW Pica), the hand's box in blood with bone
 //     letters, nailed at the corners to the rail.
 //
-// The sound (with the music on - the valley has no loops; it plays its
-// own): a hurdy-gurdy drone a fifth apart, slowly beating, a choir's hum
-// under it, a timpani dirge at 70 to the minute, the wind, crows, the saw's
-// rasp, and far off a bell. With motion off nothing moves on its own.
+// The sound: the valley's piece is the homes' music (music.mjs `valley`:
+// a groove-metal procession over a psytrance floor, Base / Main / Lift as
+// the other homes have); under it the valley plays its own ambience - the
+// wind, crows, the saw's rasp in time with the sawyer, and far off a bell -
+// gated on the same setting. With motion off nothing moves on its own.
 //
 // Coordinates are the seat's own, as the table's: centimetres, the origin
 // on the table's top at the middle of its near edge, +z away from you,
@@ -107,7 +108,7 @@ const SHEET = { at: [20, 16, 55.7], lean: 0.0, w: 60, h: 38, px: 30, tilt: 0.9 *
 // The views: the seat, portrait and landscape.
 const VIEW = [{ eye: [0, 130, -112], aim: [0, 70, 140], fov: 68 }, { eye: [0, 118, -112], aim: [0, 90, 140], fov: 54 }];
 const T = { fly: 4.8, uiIn: 0.6, lift: 0.55 };
-const SND = { drone: 0.11, choir: 0.05, drum: 0.5, wind: 0.06, bell: 0.35, saw: 0.05, crow: 0.09 };
+const SND = { wind: 0.06, bell: 0.22, saw: 0.05, crow: 0.09 };
 // The key: Holbein's light, high from the left and a little in front.
 const KEY_SEAT = new THREE.Vector3(0.82, 0.5, -0.22).normalize();
 
@@ -975,10 +976,7 @@ function sheetHTML() {
 }
 
 // ------------------------------------------------------------ the sound
-// The valley's own score, made here (no loops): two hurdy-gurdy drones a
-// fifth apart (sawtooths through a formant, their trompette buzz a slow
-// beat), a choir's hum (three voices through vowel bandpasses), a timpani
-// dirge at 70 to the minute (one stroke a bar, a flam every fourth), the
+// The valley's ambience, made here, under the piece music.mjs plays: the
 // wind (filtered noise, gusting), the saw's rasp in time with the stroke,
 // a crow now and then, and far off a bell.
 function valleySound() {
@@ -994,13 +992,6 @@ function valleySound() {
       const osc = (type, f) => { const o = ctx.createOscillator(); o.type = type; o.frequency.value = f; srcs.push(o); return o; };
       const gain = v => { const g = ctx.createGain(); g.gain.value = v; return g; };
       const filt = (type, f, q) => { const b = ctx.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; return b; };
-      const drone = gain(SND.drone);
-      [[73.42, 0], [73.42, 3], [110, 0], [110, -4]].forEach(([f, cents]) => { const o = osc('sawtooth', f * Math.pow(2, cents / 1200)), b = filt('bandpass', 520, 1.4), g = gain(0.5); o.connect(b); b.connect(g); g.connect(drone); });
-      const buzz = osc('sawtooth', 146.83), bb = filt('bandpass', 1800, 3), bg = gain(0), lfo = osc('sine', 0.23), lg = gain(0.12); lfo.connect(lg); lg.connect(bg.gain); buzz.connect(bb); bb.connect(bg); bg.connect(drone);
-      drone.connect(master);
-      const choir = gain(SND.choir), swell = osc('sine', 0.05), sg = gain(SND.choir * 0.6); swell.connect(sg); sg.connect(choir.gain);
-      [146.83, 220, 293.66].forEach((f, i) => { const o = osc('sawtooth', f * (1 + (i - 1) * 0.0015)); const b1 = filt('bandpass', 400, 6), b2 = filt('bandpass', 800 + i * 150, 6), g = gain(0.4); o.connect(b1); o.connect(b2); b1.connect(g); b2.connect(g); g.connect(choir); });
-      choir.connect(master);
       const noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate), nd = noise.getChannelData(0);
       for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
       const ns = ctx.createBufferSource(); ns.buffer = noise; ns.loop = true; srcs.push(ns);
@@ -1012,15 +1003,6 @@ function valleySound() {
       const sbp = filt('bandpass', 2600, 4), sgn = gain(0), slfo = osc('sine', 2.6 / (2 * PI)), slg = gain(SND.saw); slfo.connect(slg); slg.connect(sgn.gain);
       ns2.connect(sbp); sbp.connect(sgn); sgn.connect(master);
       srcs.forEach(o => o.start());
-      const BAR = 60 / 70 * 4;
-      const drum = (t, level) => {
-        const o = ctx.createOscillator(), g = gain(0), th = ctx.createBufferSource(), tf = filt('lowpass', 240, 1), tg = gain(0);
-        o.frequency.setValueAtTime(96, t); o.frequency.exponentialRampToValueAtTime(52, t + 0.35);
-        g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(SND.drum * level, t + 0.012); g.gain.exponentialRampToValueAtTime(0.001, t + 1.6);
-        th.buffer = noise; tg.gain.setValueAtTime(SND.drum * 0.5 * level, t); tg.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
-        o.connect(g); g.connect(master); th.connect(tf); tf.connect(tg); tg.connect(master);
-        o.start(t); o.stop(t + 1.7); th.start(t); th.stop(t + 0.2);
-      };
       // a crow: a sawtooth dropping through a throat, twice or three times
       const crow = t => {
         const n = 2 + Math.floor(Math.random() * 2);
@@ -1031,17 +1013,12 @@ function valleySound() {
           o.connect(b); b.connect(g); g.connect(master); o.start(t0); o.stop(t0 + 0.25);
         }
       };
-      let bar = 0, next = ctx.currentTime + 0.5;
       const bell = t => {
         [1, 2.0, 2.76, 4.07, 5.4].forEach((r, i) => { const o = ctx.createOscillator(), g = gain(0); o.frequency.value = 164.8 * r; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(SND.bell * [1, 0.5, 0.4, 0.22, 0.12][i], t + 0.004); g.gain.exponentialRampToValueAtTime(0.0005, t + 6 - i * 0.6); o.connect(g); g.connect(master); o.start(t); o.stop(t + 6.5); });
       };
       bellT = 40 + Math.random() * 30; crowT = 6 + Math.random() * 8;
       timer = setInterval(() => {
         if (!up) return;
-        while (next < ctx.currentTime + 1.2) {
-          drum(next, 1); if (bar % 4 === 3) drum(next - 0.07, 0.45);
-          bar++; next += BAR;
-        }
         bellT -= 0.5; if (bellT <= 0) { bell(ctx.currentTime + 0.1); bellT = 50 + Math.random() * 40; }
         crowT -= 0.5; if (crowT <= 0) { crow(ctx.currentTime + 0.1); crowT = 9 + Math.random() * 16; }
       }, 500);
