@@ -10,7 +10,7 @@
 // outline is an inverted hull pushed along the normal: flat normals would
 // tear it at every edge).
 import * as THREE from '../vendor/three/three.module.js';
-import { outlineOf } from './burin.mjs';
+import { outlineOf, haloOf } from './burin.mjs';
 
 const PI = Math.PI, HALF = PI / 2;
 // the body's hip joint off the ground (the ankle then stands at 3, the sole on it)
@@ -23,6 +23,11 @@ const G = (parent, x = 0, y = 0, z = 0) => { const g = new THREE.Group(); g.posi
 // facets, 1 = smooth): the cut shows as a step in tone, not a cliff.
 let SOFT = 0.8;
 export function setSoft(v) { SOFT = v; }
+// the paper halo round a figure's main forms (px, 0 = none): every piece
+// with an outline of 1.2 or more gets one, so a figure stands off a dark
+// passage behind it and a limb off the body it crosses
+let HALO = 0;
+export function setHalo(v) { HALO = v; }
 function facet(geo, m, parent, outline = 1.8, soft = SOFT) {
   const smooth = geo.index ? geo : weld(geo);
   smooth.computeVertexNormals();
@@ -42,6 +47,7 @@ function facet(geo, m, parent, outline = 1.8, soft = SOFT) {
   }
   const x = new THREE.Mesh(flat, m); parent.add(x);
   if (outline) { const o = outlineOf(x, outline); o.geometry = smooth; }
+  if (HALO && outline >= 1.2) { const h = haloOf(x, HALO); h.geometry = smooth; }
   return x;
 }
 
@@ -339,6 +345,9 @@ function buildHead(kit, o = {}) {
 // hinge at the breastbone with the spine and the rib-ends in the kerf.
 export function buildFigure(kit, rnd, o = {}) {
   if (o === true) o = { flayed: true };
+  // (a body is turned smooth: its forms round, the planes' steps gone - the
+  // hatch wraps it, and its contour carries it)
+  const soft0 = SOFT; SOFT = 1;
   const flayed = !!o.flayed;
   const skin = flayed ? kit.muscle : kit.flesh, skinUV = flayed ? kit.muscleUV : kit.fleshUV, UVS = flayed ? UVM.muscle : UVM.flesh;
   const root = new THREE.Group();
@@ -353,10 +362,11 @@ export function buildFigure(kit, rnd, o = {}) {
     { y: 22.0, rx: 14.2, rz: 9.6, front: 0.4 },                 // the waist's lift to the ribs
     { y: 30.0, rx: 16.4, rz: 10.4 },                            // the ribs
     { y: 37.0, rx: 18.2, rz: 11.2, front: 1.0 },                // the chest
-    { y: 43.0, rx: 19.4, rz: 11.0, front: 1.2 },
-    { y: 49.0, rx: 18.6, rz: 9.6 },                             // the shoulders
-    { y: 53.5, rx: 11.0, rz: 7.0 },                             // the trapezius' slope
-    { y: 55.5, rx: 4.2, rz: 4.2 }                               // the neck's root
+    { y: 43.0, rx: 19.0, rz: 11.0, front: 1.2 },
+    { y: 47.5, rx: 16.4, rz: 10.0 },                            // the shoulders (the deltoids round them off)
+    { y: 51.0, rx: 13.2, rz: 8.4 },                             // falling to the neck
+    { y: 54.0, rx: 9.0, rz: 6.6 },                              // the trapezius' slope
+    { y: 56.5, rx: 5.6, rz: 5.2 }                               // the neck's root
   ];
   let torso;
   if (o.split) {
@@ -364,7 +374,7 @@ export function buildFigure(kit, rnd, o = {}) {
     [0, 1].forEach(k => {
       const h = G(torso, 0, 50, 0); h.rotation.z = (k ? -1 : 1) * (o.part == null ? 0.15 : o.part);
       const secs = T.map(s => Object.assign({}, s, { y: s.y - 50 }));
-      const half = facet(loft(secs, { n: 10, arc: k ? [HALF, PI * 1.5] : [-HALF, HALF], cap: true, metric: UVS }), skinUV, h, 2);
+      const half = facet(loft(secs, { n: 16, arc: k ? [HALF, PI * 1.5] : [-HALF, HALF], cap: true, metric: UVS }), skinUV, h, 2);
       // the cut face: a plate of raw, the trunk's profile
       const sh = new THREE.Shape();
       secs.forEach((s, i) => { const z = -(s.rz + (s.front || 0)); if (i) sh.lineTo(z, s.y); else sh.moveTo(z, s.y); });
@@ -375,13 +385,13 @@ export function buildFigure(kit, rnd, o = {}) {
     for (let i = 0; i < 9; i++) { const v = facet(new THREE.CylinderGeometry(2.2, 2.4, 2.6, 8), kit.ball, torso, 0.8); v.position.set(0, -4 + i * 5.2, 5); }
     for (let i = 0; i < 4; i++) [-1, 1].forEach(sx => { const rb = facet(new THREE.CylinderGeometry(0.9, 0.9, 7, 6), kit.bone, torso, 0.8); rb.position.set(sx * 4, 30 + i * 5.5, -3); rb.rotation.z = sx * 1.2; });
   } else {
-    torso = facet(loft(T, { n: 10, metric: UVS }), skinUV, hips, 2);
+    torso = facet(loft(T, { n: 16, metric: UVS }), skinUV, hips, 2);
     // the chest's two plates, the navel
-    [-1, 1].forEach(sx => { const pc = facet(knob(7.0, 1.1, 0.5, 0.34, 1), skin, hips, 1); pc.position.set(sx * 8.4, 40.0, -10.2); pc.rotation.set(0.2, -sx * 0.3, sx * 0.1); disc(0.7, 6, kit.ink, hips, sx * 8, 38.8, -13.1, -sx * 0.5); });
+    [-1, 1].forEach(sx => { const pc = facet(knob(7.0, 1.1, 0.5, 0.22, 2), skin, hips, 0); pc.position.set(sx * 8.4, 40.0, -10.2); pc.rotation.set(0.2, -sx * 0.3, sx * 0.1); disc(0.7, 6, kit.ink, hips, sx * 8, 38.8, -13.1, -sx * 0.5); });
     disc(0.8, 6, kit.ink, hips, 0, 12, -11.3);
   }
   // the collarbones: a bar either side from the breastbone to the shoulder's point
-  [-1, 1].forEach(sx => { const c = facet(block(15, 2.0, 2.0, 0), skin, hips, 0.9); c.position.set(sx * 9, 52.4, -6.6); c.rotation.set(0, sx * 0.3, sx * 0.1); });
+  [-1, 1].forEach(sx => { const c = facet(block(12, 1.6, 1.6, 0), skin, hips, 0); c.position.set(sx * 7.6, 50.6, -7.6); c.rotation.set(0, sx * 0.3, sx * 0.14); });
   if (flayed && !o.split) {
     // the ecorche's seams, cut in ink: the linea alba, the rectus bands, the
     // pectorals' lower edge, the ribs' arch, the iliac furrow
@@ -394,25 +404,25 @@ export function buildFigure(kit, rnd, o = {}) {
       seam([[sx * 6, 1, Fz(1) + 1.6], [sx * 11, 6, Fz(6) + 4.0], [sx * 13.5, 12, Fz(12) + 7]], hips, kit.ink, 0.4);
     });
   }
-  if (o.shirt && !flayed) { const sh = facet(loft(T.slice(1, 11).map(s => Object.assign({}, s, { rx: s.rx + 1.4, rz: s.rz + 1.2 })), { n: 10, metric: UVM.linen }), kit.linen, hips, 1.5); sh.position.z = 0.2; }
-  else if (!flayed) { const lc = facet(loft([{ y: -23.2, rx: 15.6, rz: 10.2 }, { y: -16, rx: 17.2, rz: 11.4 }, { y: -8, rx: 17.6, rz: 11.6 }, { y: -2, rx: 16.6, rz: 10.8 }, { y: 2.2, rx: 15.6, rz: 10.2 }], { n: 10, metric: UVM.linen }), kit.linen, hips, 1.4); }
+  if (o.shirt && !flayed) { const sh = facet(loft(T.slice(1, 11).map(s => Object.assign({}, s, { rx: s.rx + 1.4, rz: s.rz + 1.2 })), { n: 16, metric: UVM.linen }), kit.linen, hips, 1.5); sh.position.z = 0.2; }
+  else if (!flayed) { const lc = facet(loft([{ y: -23.2, rx: 15.6, rz: 10.2 }, { y: -16, rx: 17.2, rz: 11.4 }, { y: -8, rx: 17.6, rz: 11.6 }, { y: -2, rx: 16.6, rz: 10.8 }, { y: 2.2, rx: 15.6, rz: 10.2 }], { n: 16, metric: UVM.linen }), kit.linen, hips, 1.4); }
   const neck = G(hips, 0, 55, 0);
-  facet(tube([[0, 4.4, 4.0], [4, 4.0, 3.8], [8.5, 4.2, 4.0]], 8, { metric: UVS }), skinUV, neck, 1.2);
+  facet(tube([[0, 5.4, 5.0], [4, 4.6, 4.3], [8.5, 4.4, 4.1]], 12, { metric: UVS }), skinUV, neck, 1.2);
   const head = G(neck, 0, 9, 0);
   const hd = buildHead(kit, o); head.add(hd);
   const arms = {};
   [-1, 1].forEach(s => {
     const key = s < 0 ? 'r' : 'l';
-    const sh = G(hips, s * 18.5, 49, 0);
+    const sh = G(hips, s * 17.2, 47.5, 0);
     // the deltoid's cap, the upper arm's taper to the elbow
-    const cap = facet(knob(6.4, 1, 1.15, 0.95, 1), skin, sh, 1.2); cap.position.y = -1.5;
-    facet(tube([[-2, 5.6], [-12, 5.4, 5.2, 0.4], [-22, 4.8], [-28, 4.4]], 8, { metric: UVS }), skinUV, sh, 1.8);
+    const cap = facet(knob(7.0, 1, 1.05, 1.0, 2), skin, sh, 0); cap.position.set(s * 0.6, -2.4, 0);   // (the deltoid over the shoulder's point; no line round it: it is part of the arm)
+    facet(tube([[-1, 5.8], [-8, 5.7, 5.5, 0.7], [-16, 5.1, 4.9, 0.5], [-24, 4.3], [-29, 3.9]], 12, { metric: UVS }), skinUV, sh, 1.8);
     if (flayed) { seam([[s * 5.4, -4, -1.5], [s * 5.4, -14, -2.4], [s * 4.6, -26, -1.6]], sh, kit.ink, 0.4); seam([[0, -5, -5.9], [s * 1.5, -15, -5.6], [0, -25, -4.9]], sh, kit.ink, 0.35); }
-    if (o.shirt && !flayed) facet(tube([[0, 7.4], [-10, 7.0], [-20, 6.4]], 8, { metric: UVM.linen }), kit.linen, sh, 1.5);
+    if (o.shirt && !flayed) facet(tube([[0, 7.4], [-10, 7.0], [-20, 6.4]], 12, { metric: UVM.linen }), kit.linen, sh, 1.5);
     const el = G(sh, 0, -30, 0);
-    facet(knob(4.2, 1, 1.1, 1, 1), skin, el, 1).position.y = -0.5;
+    facet(knob(4.0, 1, 1.1, 1, 2), skin, el, 0).position.y = -0.5;
     // the forearm: its belly under the elbow, narrowing to the wrist
-    facet(tube([[-1, 4.2], [-8, 5.0, 4.6, 0, 0.6], [-18, 3.9], [-26, 3.2, 2.4]], 8, { metric: UVS }), skinUV, el, 1.7);
+    facet(tube([[-1, 4.2], [-8, 5.0, 4.6, 0, 0.6], [-18, 3.9], [-26, 3.0, 2.3]], 12, { metric: UVS }), skinUV, el, 1.7);
     if (flayed) seam([[s * 4.4, -3, -0.5], [s * 4.2, -12, -2.2], [s * 2.8, -24, -1.8]], el, kit.ink, 0.35);
     const hand = G(el, 0, -29, 0);
     const hh = buildHand(kit, s, skin, { curl: o.curl }); hand.add(hh); hand.userData.grip = hh.userData.grip;
@@ -424,12 +434,12 @@ export function buildFigure(kit, rnd, o = {}) {
     const key = s < 0 ? 'r' : 'l';
     const hip = G(hips, s * 8.5, -4, 0);
     // the thigh: full under the hip, the quadriceps' swell, the knee's taper
-    facet(tube([[0, 8.8, 9.4, 0, 1.2], [-10, 8.6, 9.0, 1.0], [-22, 7.6, 8.0, 0.8], [-34, 6.4, 6.8], [-41, 5.8, 6.2]], 8, { metric: legUV }), legM, hip, 2);
+    facet(tube([[0, 8.8, 9.4, 0, 1.2], [-10, 8.6, 9.0, 1.0], [-22, 7.4, 7.8, 0.8], [-34, 5.9, 6.4], [-41, 5.2, 5.8]], 12, { metric: legUV }), legM, hip, 2);
     if (flayed) { seam([[s * 6.5, -2, -6.2], [s * 2.5, -16, -8.4], [-s * 3, -32, -6.4], [-s * 3.8, -40, -4.6]], hip, kit.ink, 0.45); seam([[-s * 7.8, -4, -2.6], [-s * 7.2, -20, -3.0], [-s * 5.8, -36, -2.4]], hip, kit.ink, 0.4); }
     const kn = G(hip, 0, -44, 0);
-    facet(knob(6.0, 1, 1.05, 0.9, 1), legS, kn, 1.2).position.set(0, -0.5, -1.2);
+    facet(knob(5.6, 1, 1.05, 0.9, 2), legS, kn, 0).position.set(0, -0.5, -1.0);
     // the shin: the calf's swell behind, the ankle
-    facet(tube([[-1, 5.8, 6.2], [-8, 5.6, 6.6, 0, 1.8], [-20, 4.4, 4.8, 0, 0.6], [-30, 3.8, 4.0], [-37, 3.6, 3.8]], 8, { metric: legUV }), legM, kn, 1.8);
+    facet(tube([[-1, 5.4, 5.8], [-8, 5.4, 6.4, 0, 1.8], [-20, 4.2, 4.6, 0, 0.6], [-30, 3.4, 3.6], [-37, 3.0, 3.2]], 12, { metric: legUV }), legM, kn, 1.8);
     if (flayed) { seam([[s * 2.2, -3, -5.8], [s * 1.2, -16, -4.8], [s * 0.6, -34, -3.6]], kn, kit.ink, 0.4); seam([[0, -4, 8.2], [0, -14, 7.2], [0, -26, 5.0]], kn, kit.ink, 0.4); }
     const foot = G(kn, 0, -41, 0);
     // the foot: the heel's block, the instep's slope out to the toes
@@ -439,6 +449,7 @@ export function buildFigure(kit, rnd, o = {}) {
     legs[key] = { hip, kn, foot };
   });
   root.userData = { hips, torso, neck, head, arms, legs, mouth: hd.userData.mouth, phase: rnd() * 6.28 };
+  SOFT = soft0;
   return root;
 }
 

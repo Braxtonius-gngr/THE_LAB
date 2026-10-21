@@ -98,6 +98,7 @@ const FRAG = /* glsl */`
   varying float vDepth;
   varying vec3 vAxisW;
   varying vec2 vTone;
+  uniform float uBare;     // the tone below which a plane is left as bare paper (a figure's lights held open wider than the land's)
   uniform float uToneMap;  // >0: the tone laid in from aTone (x: the value, y: how much of it) - an engraver's planned passage, the light only modelling it
   uniform vec3 uPaper;
   uniform vec3 uInk;
@@ -174,7 +175,7 @@ const FRAG = /* glsl */`
     // each pair, and the first thin as it does, so the pitch halves and the
     // passage darkens without going to a solid)
     float close_ = smoothstep(0.5, 0.8, t);
-    float w1 = mix(0.0, 0.7, smoothstep(0.14, 0.7, t)) * (1.0 - 0.35 * close_);
+    float w1 = mix(0.0, 0.7, smoothstep(uBare, 0.7, t)) * (1.0 - 0.35 * close_);
     float w1b = 0.42 * close_;
     float w2 = mix(0.0, 0.42, smoothstep(0.62, 0.95, t));
     float w3 = mix(0.0, 0.3, smoothstep(0.8, 1.0, t));
@@ -288,7 +289,7 @@ const FRAG = /* glsl */`
 // A sharable set of uniforms (uTime, uCamPos are driven per frame by
 // burinTick(); the rest are the material's own).
 export function engravingMaterial(opts = {}) {
-  const o = Object.assign({ paper: BONE, ink: INK, blood: BLOOD, freq: 1.1, angle: -0.6, tone: 0.0, wet: 0, bloodOn: false, bloodLo: 0, bloodHi: 1, spill: 0, ember: 0, sky: 0.28, keyI: 1.0, transparent: false, opacity: 1, side: THREE.FrontSide, uv: null, invert: false, wobble: 0.6, scroll: null, steps: 0, toneMap: false, axis: [0, 1, 0], pitch: 4.5 }, opts);
+  const o = Object.assign({ paper: BONE, ink: INK, blood: BLOOD, freq: 1.1, angle: -0.6, tone: 0.0, wet: 0, bloodOn: false, bloodLo: 0, bloodHi: 1, spill: 0, ember: 0, sky: 0.28, keyI: 1.0, transparent: false, opacity: 1, side: THREE.FrontSide, uv: null, invert: false, wobble: 0.6, scroll: null, steps: 0, toneMap: false, bare: 0.14, axis: [0, 1, 0], pitch: 4.5 }, opts);
   const m = new THREE.ShaderMaterial({
     vertexShader: VERT, fragmentShader: FRAG,
     uniforms: {
@@ -298,7 +299,7 @@ export function engravingMaterial(opts = {}) {
       uBloodLo: { value: o.bloodLo }, uBloodHi: { value: o.bloodHi }, uBloodOn: { value: o.bloodOn ? 1 : 0 }, uBloodSpill: { value: o.spill },
       uEmber: { value: o.ember }, uTime: { value: 0 }, uOpacity: { value: o.opacity }, uCamPos: { value: new THREE.Vector3() },
       uInvert: { value: o.invert ? 1 : 0 }, uFlip: { value: 0 }, uGhost: { value: 0 }, uWobble: { value: o.wobble }, uUvMode: { value: o.uv ? 1 : 0 }, uUvScale: { value: new THREE.Vector2(o.uv ? o.uv[0] : 1, o.uv ? o.uv[1] : 1) },
-      uScroll: { value: new THREE.Vector2(o.scroll ? o.scroll[0] : 0, o.scroll ? o.scroll[1] : 0) }, uSteps: { value: o.steps }, uToneMap: { value: o.toneMap ? 1 : 0 },
+      uScroll: { value: new THREE.Vector2(o.scroll ? o.scroll[0] : 0, o.scroll ? o.scroll[1] : 0) }, uSteps: { value: o.steps }, uToneMap: { value: o.toneMap ? 1 : 0 }, uBare: { value: o.bare },
       uAxis: { value: new THREE.Vector3(...(o.axis || [0, 1, 0])) }, uAxisOn: { value: o.axis ? 1 : 0 }, uPitchPx: { value: o.pitch }
     },
     transparent: o.transparent, side: o.side, lights: false, fog: false
@@ -333,20 +334,33 @@ const OUT_VERT = /* glsl */`
   }
 `;
 const OUT_FRAG = /* glsl */`
-  uniform vec3 uInk;
+  uniform vec3 uInk, uNeg;
   uniform float uFlip, uGhost;
   void main() {
-    // (in the freed negative the line is a bone cut between the dark forms;
-    // a ghost's line fades back toward the paper)
+    // (in the freed negative the line is a bone cut between the dark forms,
+    // and a halo the ink the forms are cut from; a ghost's line fades back
+    // toward the paper)
     vec3 bone = vec3(0.91, 0.863, 0.753);
-    vec3 c = mix(uInk, bone, uFlip);
+    vec3 c = mix(uInk, uNeg, uFlip);
     c = mix(c, bone, uGhost * 0.7);
     gl_FragColor = vec4(c, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment> }
 `;
-export function outlineMaterial(px = 2.2, ink = INK) {
-  return new THREE.ShaderMaterial({ vertexShader: OUT_VERT, fragmentShader: OUT_FRAG, uniforms: { uPx: { value: px }, uViewport: { value: new THREE.Vector2(1, 1) }, uInk: { value: ink.clone() }, uFlip: { value: 0 }, uGhost: { value: 0 } }, side: THREE.BackSide, depthWrite: true });
+const NEG_BONE = new THREE.Color(0.91, 0.863, 0.753);
+export function outlineMaterial(px = 2.2, ink = INK, neg = NEG_BONE) {
+  return new THREE.ShaderMaterial({ vertexShader: OUT_VERT, fragmentShader: OUT_FRAG, uniforms: { uPx: { value: px }, uViewport: { value: new THREE.Vector2(1, 1) }, uInk: { value: ink.clone() }, uNeg: { value: neg.clone() }, uFlip: { value: 0 }, uGhost: { value: 0 } }, side: THREE.BackSide, depthWrite: true });
+}
+// a halo: the paper knocked out round a figure where it stands against a
+// dark passage, as an engraver leaves a hair of white along a contour - an
+// inverted hull wider than the outline, behind it, the paper's own colour
+// (the ink in the negative)
+export function haloOf(mesh, px = 7) {
+  const o = new THREE.Mesh(mesh.geometry, outlineMaterial(px, BONE, INK.clone().multiplyScalar(0.85)));
+  o.userData.outline = true; o.userData.halo = true;
+  o.renderOrder = -2;
+  mesh.add(o);
+  return o;
 }
 export function outlineOf(mesh, px = 2.2, ink = INK) {
   const o = new THREE.Mesh(mesh.geometry, outlineMaterial(px, ink));

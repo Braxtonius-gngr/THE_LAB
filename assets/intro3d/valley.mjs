@@ -78,7 +78,10 @@ import * as THREE from '../vendor/three/three.module.js';
 import { CSS3DRenderer, CSS3DObject } from '../vendor/three/three.addons.js';
 import { tableKit as K } from './table.mjs';
 import { engravingMaterial, outlineOf, burinTick, BONE, INK, BLOOD, BLOOD_WET } from './burin.mjs';
-import { buildFigure, buildDeath, buildSkull, BODY_HIPS, GRIP, hold, reach, setArm, lerp3 } from './figure.mjs';
+import { buildFigure, buildDeath, buildSkull, BODY_HIPS, GRIP, hold, reach, setArm, lerp3, setHalo } from './figure.mjs';
+// (the figures stand off the dark hills on a hair of paper: a halo round
+// their main forms, in device pixels)
+setHalo(7);
 // the raw of a flayed man: the blood's red let down a little toward the paper, and its fibres
 const RAW_RED = new THREE.Color('#A8392C'), RAW_INK = new THREE.Color('#3A0D09');
 
@@ -132,7 +135,10 @@ const VIEW = [{ eye: [0, 130, -112], aim: [0, 70, 140], fov: 68 }, { eye: [0, 11
 const T = { fly: 4.8, uiIn: 0.6, lift: 0.55 };
 const SND = { wind: 0.06, bell: 0.22, saw: 0.05, crow: 0.09 };
 // The key: Holbein's light, high from the left and a little in front.
-const KEY_SEAT = new THREE.Vector3(0.82, 0.5, -0.22).normalize();
+// (the key from the plate's upper left and a little before it, as the
+// engraver lights a page: the lights of a figure turned to you left open,
+// its far side cut into shade)
+const KEY_SEAT = new THREE.Vector3(0.68, 0.55, -0.48).normalize();
 
 // ------------------------------------------------------------ helpers
 // (every surface here is the block's: paper left where the light falls,
@@ -1152,17 +1158,17 @@ function valleySound() {
 // figure study page)
 export function valleyKit() {
   const kit = {
-    bone: mat({ freq: 1.2, angle: 1.2, tone: -0.06 }),
+    bone: mat({ freq: 1.2, angle: 1.2, tone: -0.06, bare: 0.24 }),
     // (a long bone: strokes down its length; a joint or a skull: its
     // rings; a rib: strokes along the rib)
-    shaft: mat({ uv: [14, 1], angle: 0, tone: -0.12, wobble: 0.7 }),
-    ball: mat({ freq: 1.3, angle: 1.0, tone: -0.12 }),
+    shaft: mat({ uv: [14, 1], angle: 0, tone: -0.12, wobble: 0.7, bare: 0.24 }),
+    ball: mat({ freq: 1.3, angle: 1.0, tone: -0.12, bare: 0.24 }),
     rib: mat({ uv: [1, 9], angle: HALF, tone: -0.1, wobble: 0.6 }),
-    skull: mat({ freq: 1.25, angle: 1.1, tone: -0.14, keyI: 1.3, sky: 0.24, wobble: 0.5 }),
+    skull: mat({ freq: 1.25, angle: 1.1, tone: -0.14, keyI: 1.3, sky: 0.24, wobble: 0.5, bare: 0.24 }),
     // (flesh: the paper, hatched along the limb; the face in its rings;
     // hair a dark passage; the raw of a wound or a flayed man is blood)
-    flesh: mat({ freq: 1.2, angle: -0.55, tone: -0.14, keyI: 1.4, sky: 0.44, wobble: 0.5 }),
-    fleshUV: mat({ uv: [12, 5], angle: HALF - 0.28, tone: -0.14, keyI: 1.4, sky: 0.44, wobble: 0.4 }),
+    flesh: mat({ freq: 1.2, angle: -0.55, tone: -0.14, keyI: 1.4, sky: 0.44, wobble: 0.5, bare: 0.22 }),
+    fleshUV: mat({ uv: [12, 5], angle: HALF - 0.28, tone: -0.14, keyI: 1.4, sky: 0.44, wobble: 0.4, bare: 0.22 }),
     face: mat({ freq: 1.25, angle: 1.1, tone: -0.12, keyI: 1.4, sky: 0.44, wobble: 0.45 }),
     hair: mat({ uv: [24, 8], angle: 0.3, tone: 0.58, freq: 1.6, wobble: 1.2 }),
     raw: mat({ paper: BLOOD, tone: 0.34, freq: 1.4, angle: -0.4, keyI: 1.2 }),
@@ -1172,7 +1178,7 @@ export function valleyKit() {
     skin: mat({ freq: 1.0, angle: 1.2, tone: -0.02, wobble: 0.8, side: THREE.DoubleSide }),
     river: mat({ paper: BLOOD, uv: [8, 60], angle: 0.1, tone: 0.22, freq: 1.0, wobble: 1.8, scroll: [0, 6], steps: 0 }),
     cloth: mat({ freq: 0.9, angle: 1.3, tone: 0.3, wobble: 0.8, side: THREE.DoubleSide }),
-    linen: mat({ uv: [18, 4], angle: HALF - 0.16, tone: -0.06, sky: 0.36, wobble: 0.5 }),
+    linen: mat({ uv: [18, 4], angle: HALF - 0.16, tone: -0.06, sky: 0.36, wobble: 0.5, bare: 0.26 }),
     // (a plank or a beam, long in x: the grain runs its length; a turned
     // timber - any cylinder, standing or laid - its own length)
     wood: mat({ freq: 0.9, angle: HALF, tone: 0.22, wobble: 0.45, axis: [1, 0, 0] }),
@@ -1736,7 +1742,11 @@ export async function prepareTable(opts) {
       crows.instanceMatrix.needsUpdate = true;
     };
     let lastT = 0;
-    const keyW = KEY_SEAT.clone().applyQuaternion(seat.quaternion);
+    // (the key turns with you: the light falls from the plate's upper left
+    // in every frame, whichever torment you face, as it does in a book of
+    // plates - so every station is lit alike)
+    const keyW = new THREE.Vector3(), KEY_UP = new THREE.Vector3(0, 1, 0);
+    const keyAt = () => keyW.copy(KEY_SEAT).applyAxisAngle(KEY_UP, yaw).applyQuaternion(seat.quaternion);
     // (the freed: the flash's state lives with the flight - it reads the clock)
     let freeing = null, freeQueue = [], freeN = 0;
     const startFreed = p => {
@@ -1792,7 +1802,7 @@ export async function prepareTable(opts) {
       if (!fo.reduced) { sky.userData.tex.offset.x = tt * 0.0025 + w * 0.002; skyNeg.material.map.offset.x = sky.userData.tex.offset.x; }
       placeDrops(tt, fo.reduced ? 0 : dt);
       placeCrows(tt, w);
-      burinTick(seat, camera, world.renderer, tt, keyW);
+      burinTick(seat, camera, world.renderer, tt, keyAt());
       poseCard(tt);
       sheetEl.style.visibility = tt < FLY ? 'hidden' : '';
       const stg = world.canvas.parentElement;
