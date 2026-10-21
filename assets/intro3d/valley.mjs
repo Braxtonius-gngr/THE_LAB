@@ -297,8 +297,9 @@ function vSawyer(kit, rnd) {
   for (let i = -19; i <= 19; i++) { const t = mesh(new THREE.ConeGeometry(1.1, 2.4, 4), kit.steel, saw, 0); t.position.set(0, -5.6, i * 2.1); t.rotation.x = PI; }
   [-1, 1].forEach(s => { const h = mesh(new THREE.CylinderGeometry(1.6, 1.6, 12, 8), kit.post, saw, 1.2); h.position.set(0, 2, s * 42); h.rotation.z = HALF; });
   saw.position.set(-14, 104, -9); saw.rotation.y = HALF; saw.rotation.z = -0.1;
-  bleed(man, 0.5); bands.push([man, 110, 24]);
-  bleed(saw); bands.push([saw, 108, 92]);
+  // (the blood from the kerf a hand's breadth down the halves, no further: the halves read as a body, the cut as the cut)
+  bleed(man, 0.5); bands.push([man, 104, 72]);
+  bleed(saw); bands.push([saw, 101, 93]);
   const hi = 100;
   // both his hands on the near handle, a hand to each end of it: the arms
   // solved at the stroke's two ends and its middle, and read between
