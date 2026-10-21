@@ -60,8 +60,8 @@
 //     letters, nailed at the corners to the rail.
 //
 // The sound: the valley's piece is the homes' music (music.mjs `valley`:
-// a groove-metal procession over a psytrance floor, Base / Main / Lift as
-// the other homes have); under it the valley plays its own ambience - the
+// the owner's take "In the Valley", Base / Main / Lift as the other homes
+// have, the voice in Lift); under it the valley plays its own ambience - the
 // wind, crows, the saw's rasp in time with the sawyer, and far off a bell -
 // gated on the same setting. With motion off nothing moves on its own.
 //
