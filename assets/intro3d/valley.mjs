@@ -165,13 +165,21 @@ function stepSkeleton(sk, w, amp = 1) {
 // the hourglass: two bulbs of glass between two discs on three posts
 function buildHourglass(kit, h = 14) {
   const g = new THREE.Group();
-  const glass = mat({ uv: [20, 8], angle: HALF, tone: -0.22, freq: 1.4, wobble: 0.5 });
+  // (glass as the engraver cuts it: curved lines round the bulb, darker at
+  // its turning edges, a clean upright highlight left in the paper; the
+  // sand a dark mound below and a dark cap draining above, the thread
+  // between - so it reads as a glass, never an empty stool)
+  const glass = mat({ uv: [20, 8], angle: HALF, tone: 0.16, keyI: 1.1, sky: 0.2, freq: 1.6, wobble: 0.4 });
   const bulb = lathe([[0.6, 0], [3.4, 0.8], [4.4, 2.2], [4.2, 4], [2.4, 5.6], [0.9, 6.6], [0.6, 7]], 18);
   const a = mesh(bulb, glass, g, 1.3); a.position.y = 0.6;
   const b = mesh(bulb, glass, g, 1.3); b.position.y = h - 0.6; b.rotation.x = PI;
-  // the sand: in the lower bulb a cone of ink, a thread between
-  const sand = mesh(new THREE.ConeGeometry(3.4, 2.8, 14), mat({ tone: 0.55, freq: 2.4 }), g, 0); sand.position.y = 2.2;
-  mesh(new THREE.CylinderGeometry(0.25, 0.25, 4, 6), kit.ink, g, 0).position.y = h / 2;
+  const sandM = mat({ tone: 0.62, freq: 2.4, keyI: 0.8 });
+  const sand = mesh(new THREE.ConeGeometry(3.6, 3.2, 14), sandM, g, 0.8); sand.position.y = 2.4;
+  const top = mesh(new THREE.ConeGeometry(2.6, 1.8, 14), sandM, g, 0.6); top.position.y = h - 3.8; top.rotation.x = PI;
+  mesh(new THREE.CylinderGeometry(0.3, 0.3, h * 0.5, 6), kit.ink, g, 0).position.y = h / 2;
+  // the highlight: a narrow upright stroke of bare paper down the front of each bulb
+  const hiM = new THREE.MeshBasicMaterial({ color: BONE, toneMapped: false });
+  [a, b].forEach((bb, i) => { const hl = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 3.4), hiM); hl.position.set(-1.6, i ? h - 3.6 : 3.6, -3.9); hl.rotation.y = PI + 0.4; g.add(hl); });
   [0, h].forEach(y => { const d = mesh(new THREE.CylinderGeometry(5.6, 5.6, 1, 16), kit.post, g, 1.2); d.position.y = y; });
   for (let i = 0; i < 3; i++) { const a2 = i / 3 * PI * 2 + 0.4, p = mesh(new THREE.CylinderGeometry(0.5, 0.5, h, 6), kit.post, g, 0.9); p.position.set(Math.cos(a2) * 5, h / 2, Math.sin(a2) * 5); }
   g.userData.sand = sand;
@@ -767,15 +775,22 @@ function dropMesh(n) {
 // blood with the letters left in bone; nailed to the rail at the corners.
 // (laid out as the page's own sheet is - app.css .r3b-* - at SHEET.px to
 // the cm, so the taps land where the print is)
-const SL = { x: 70, rx: 1120, eyebrowY: 110, eyebrow: 52, numY: 560, now: 340, ampm: 64, ready: 420, runY: 760, runH: 240, run: 108, label: 72 };
+const SL = { x: 70, rx: 1120, eyebrowY: 116, eyebrow: 52, numY: 560, now: 340, ampm: 64, ready: 420, valueY: 680, value: 76, runY: 760, runH: 240, run: 108, label: 86 };
 function buildSheetBody() {
   const g = new THREE.Group();
   const c = document.createElement('canvas');
   c.width = 1800; c.height = Math.round(1800 * SHEET.h / SHEET.w);
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
-  const m = new THREE.MeshBasicMaterial({ map: tex, toneMapped: false });
+  const m = new THREE.MeshBasicMaterial({ map: tex, toneMapped: false, transparent: true, alphaTest: 0.5 });
   const face = new THREE.Mesh(new THREE.PlaneGeometry(SHEET.w, SHEET.h), m);
   g.add(face);
+  // the shadow it throws on its board: down and away from the key, cut as
+  // parallel lines as a woodcut throws one (behind the sheet, on the board)
+  const sc = document.createElement('canvas'); sc.width = 512; sc.height = Math.round(512 * SHEET.h / SHEET.w);
+  { const x = sc.getContext('2d'); x.fillStyle = 'rgba(26,15,12,0.55)'; x.fillRect(0, 0, sc.width, sc.height); x.strokeStyle = 'rgba(26,15,12,1)'; x.lineWidth = 3.4; for (let i = -sc.height; i < sc.width; i += 7) { x.beginPath(); x.moveTo(i, sc.height); x.lineTo(i + sc.height, 0); x.stroke(); } }
+  const st = new THREE.CanvasTexture(sc); st.colorSpace = THREE.SRGBColorSpace;
+  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(SHEET.w, SHEET.h), new THREE.MeshBasicMaterial({ map: st, toneMapped: false, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 }));
+  shadow.position.set(4.2, -2.4, -0.12); shadow.renderOrder = 2; g.add(shadow);
   const nm = new THREE.MeshBasicMaterial({ color: INK });
   [[-1, 1], [1, 1], [-1, -1], [1, -1]].forEach(([sx, sy]) => { const n = new THREE.Mesh(new THREE.SphereGeometry(0.7, 10, 8), nm); n.position.set(sx * (SHEET.w / 2 - 2.4), sy * (SHEET.h / 2 - 2.2), -0.4); g.add(n); });
   g.userData.print = { draw: v => { drawSheet(c.getContext('2d'), c.width, c.height, v); tex.needsUpdate = true; } };
@@ -786,7 +801,14 @@ function sheetBackOf(W, H) {
   if (sheetBack && sheetBack.width === W) return sheetBack;
   sheetBack = document.createElement('canvas'); sheetBack.width = W; sheetBack.height = H;
   const g = sheetBack.getContext('2d'), rnd = seeded(13);
-  g.fillStyle = '#E3D6B8'; g.fillRect(0, 0, W, H);
+  // (the sheet's own shape: a deckled edge, a hair ragged, torn a little at
+  // one corner; outside it the canvas stays clear)
+  const D = 9; g.beginPath();
+  const edge = (x0, y0, x1, y1, n) => { for (let i = 0; i <= n; i++) { const t = i / n, x = x0 + (x1 - x0) * t, y = y0 + (y1 - y0) * t, j = (rnd() - 0.5) * D * (i % 3 ? 0.5 : 1); if (y0 === y1) g.lineTo(x, y + j); else g.lineTo(x + j, y); } };
+  g.moveTo(D, D); edge(D, D, W - D, D, 90); edge(W - D, D, W - D, H - D * 3.5, 60); g.lineTo(W - D * 6, H - D); edge(W - D * 6, H - D, D, H - D, 90); edge(D, H - D, D, D, 60); g.closePath(); g.clip();
+  g.fillStyle = '#E8DCC0'; g.fillRect(0, 0, W, H);
+  const tone = g.createLinearGradient(0, 0, W, H); tone.addColorStop(0, 'rgba(255,250,235,0.18)'); tone.addColorStop(0.55, 'rgba(0,0,0,0)'); tone.addColorStop(1, 'rgba(70,45,20,0.16)');
+  g.fillStyle = tone; g.fillRect(0, 0, W, H);
   for (let x = 0; x < W; x += 54) { g.fillStyle = 'rgba(120,100,70,0.08)'; g.fillRect(x, 0, 1.5, H); }
   for (let y = 0; y < H; y += 3) { g.fillStyle = `rgba(120,100,70,${(0.02 + rnd() * 0.04).toFixed(3)})`; g.fillRect(0, y, W, 1); }
   for (let i = 0; i < 70; i++) { const x = rnd() * W, y = rnd() * H, r = 4 + rnd() * 26, gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, `rgba(150,110,60,${(0.08 + rnd() * 0.14).toFixed(2)})`); gr.addColorStop(1, 'rgba(150,110,60,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); }
@@ -809,8 +831,14 @@ function drawSheet(g, W, H, v) {
   type(v.now, P(SL.x), P(SL.numY), nowFont, ink);
   L.font = nowFont; const nowW = L.measureText(v.now).width;
   type(v.ampm, P(SL.x) + nowW + P(16), P(SL.numY), `italic ${P(SL.ampm)}px "IM Fell English", Georgia, serif`, dim);
-  type(v.value > 0 ? `READY · ~$${v.value.toFixed(2)}` : 'READY', P(SL.rx), P(SL.eyebrowY), `${P(SL.label)}px "IM Fell English SC", Georgia, serif`, blood);
-  type(v.ready, P(SL.rx), P(SL.numY), `${P(SL.ready)}px "IM Fell DW Pica", "IM Fell English", Georgia, serif`, ink);
+  // (what is ready: the count of souls, named beside it as the hour's pm is,
+  // and what they are worth under it in the blood)
+  type('READY', P(SL.rx), P(SL.eyebrowY), `${P(SL.label)}px "IM Fell English SC", Georgia, serif`, blood);
+  const readyFont = `${P(SL.ready)}px "IM Fell DW Pica", "IM Fell English", Georgia, serif`;
+  type(v.ready, P(SL.rx), P(SL.numY), readyFont, ink);
+  L.font = readyFont; const readyW = L.measureText(v.ready).width;
+  type(v.ready === '1' ? 'soul' : 'souls', P(SL.rx) + readyW + P(16), P(SL.numY), `italic ${P(SL.ampm + 8)}px "IM Fell English", Georgia, serif`, dim);
+  if (v.value > 0) type(`worth $${v.value.toFixed(2)}`, P(SL.rx), P(SL.valueY), `italic ${P(SL.value)}px "IM Fell English", Georgia, serif`, blood);
   const bx = P(SL.x), by = P(SL.runY), bw = W - 2 * P(SL.x), bh = P(SL.runH);
   // (a letterpress rule box: a heavy rule and a fine one, the words in blood)
   L.strokeStyle = ink; L.lineWidth = P(7); L.strokeRect(bx, by, bw, bh);
@@ -830,7 +858,7 @@ function sheetHTML() {
     <div class="r3b-eyebrow r3b-a">THE VALLEY</div>
     <div class="r3b-clock"><b class="r3b-now">--:--</b><small class="r3b-ampm"></small></div>
     <div class="r3b-eyebrow r3b-b r3b-red">READY</div>
-    <div class="r3b-ready">&mdash;</div>
+    <div class="r3b-ready">&mdash;</div><small class="r3b-souls">souls</small>
     <button type="button" class="r3b-run">Deal your hand</button>
   </div>`;
 }
@@ -1027,6 +1055,10 @@ export async function prepareTable(opts) {
   const gallows = pivots[4] ? pivots[4].userData.v.g.position : V(0, 150, 460);
   const crowP = Array.from({ length: NC }, (_, i) => i < crowSpots.length ? { perch: crowSpots[i], ph: Math.random() * 6, hop: Math.random() * 8 + 3 } : { r: 60 + Math.random() * 90, h: 230 + Math.random() * 60, ph: Math.random() * 6, sp: 0.25 + Math.random() * 0.25, dir: Math.random() < 0.5 ? 1 : -1 });
   const sheetBody = buildSheetBody(); sheetBody.position.set(...SHEET.at); sheetBody.rotation.set(SHEET.lean, PI, SHEET.tilt); seat.add(sheetBody);
+  // (the board it is nailed to: a plank board standing on the rail, a hand's
+  // breadth wider than the sheet all round, just behind it)
+  const board = mesh(new THREE.BoxGeometry(SHEET.w + 16, SHEET.h + 7, 2.2), mat({ freq: 0.75, angle: HALF, tone: -0.06, wobble: 0.4, axis: [1, 0, 0] }), seat, 1.8); board.position.set(SHEET.at[0], SHEET.at[1] + 0.5, SHEET.at[2] + 1.3);
+  [-1, 1].forEach(s2 => { const cleat = mesh(new THREE.BoxGeometry(2.4, SHEET.h + 7, 1.2), kit.post, seat, 1.2); cleat.position.set(SHEET.at[0] + s2 * (SHEET.w / 2 + 6.6), SHEET.at[1] + 0.5, SHEET.at[2] + 0.2); });
 
   const pivotOf = id => pivots.find(p => p.userData.tag.userData.id === id);
   const setSpent = (id, spent) => {
