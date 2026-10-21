@@ -831,7 +831,7 @@ function vDragging(kit, rnd) {
     d.neck.rotation.x = 0.35 + (still ? 0 : Math.sin(wv - 0.6) * 0.1);
     d.arms.l.sh.rotation.z = 0.62 + (still ? 0 : Math.sin(wv + 1) * 0.08);
   };
-  return { g, death, act, bands, drips: [], crows: [[-100, 2, 62]], width: 150, victims: [man], freed: { pose: 'peace', at: [14, 0, -22], beside: [60, -6] } };
+  return { g, death, act, bands, drips: [], crows: [[-100, 2, 62]], width: 150, victims: [man], freed: { pose: 'peace', at: [14, 0, -22], beside: [-60, -6] } };
 }
 const VIGNETTES = [vSawyer, vFlaying, vWheel, vDragging, vGallows, vWindlass, vStake];
 // (the lab: one vignette built alone, for the study page - the kit's
@@ -1448,9 +1448,10 @@ export async function prepareTable(opts) {
       u.arms.l.el.rotation.x = 0.35; u.arms.r.el.rotation.x = 0.42;
       u.legs.l.hip.rotation.set(0.1, 0, -0.02); u.legs.l.kn.rotation.x = KNEE_BACK * 0.16; u.legs.r.hip.rotation.set(-0.02, 0, -0.06);
       u.neck.rotation.set(0.22, 0, -0.05);
-      // (beside him across the line of sight - to your left of him, clear of
-      // his arm and a little nearer you - so he never stands half hidden
-      // behind the man he frees)
+      // (beside him across the line of sight - to your left of him, or to
+      // your right where `beside` is negative (the dragging's placard stands
+      // on his left), clear of his arm and a little nearer you - so he never
+      // stands half hidden behind the man he frees)
       const [kx, kz] = v.freed.beside || [60, -6];
       const fx = cam.x - at[0], fz = cam.z - at[2], fl = Math.hypot(fx, fz) || 1;
       v.death.position.set(at[0] - fz / fl * kx - fx / fl * kz, 0, at[2] + fx / fl * kx - fz / fl * kz); faceTo(v.death, at[0], at[2]);
