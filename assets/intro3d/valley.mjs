@@ -1237,8 +1237,8 @@ export async function prepareTable(opts) {
       // hands open, the face up; his Death kneels by him with the skull bowed
       // (a line of dancers would not fit the dragging's window past the
       // dealer)
-      const f = F.figs[0], u = f.userData;
-      f.position.set(at[0], 0, at[2]); f.rotation.set(0, 0.2, 0);
+      const f = F.figs[0], u = f.userData, cam = camIn(v);
+      f.position.set(at[0], 0, at[2]); f.rotation.set(0, Math.atan2(-(cam.x - at[0]), -(cam.z - at[2])), 0);
       u.hips.position.y = BODY_HIPS + Math.sin(k * 1.6) * 0.6;
       u.arms.l.sh.rotation.set(-0.25, 0, 0.55); u.arms.r.sh.rotation.set(-0.25, 0, -0.55);
       u.arms.l.el.rotation.x = -0.35; u.arms.r.el.rotation.x = -0.35;
