@@ -196,7 +196,7 @@ export function reach(arm, target, root, rounds = 10, o = {}) {
   // (a few starts round the given one, the best kept: coordinate descent
   // can settle in a fold of the arm's space)
   if (o.start && !o.single) {
-    const s0 = o.start, tries = [s0, [s0[0] - 0.5, s0[1], s0[2], s0[3]], [s0[0] + 0.4, s0[1], s0[2], s0[3] - 0.5], [s0[0], s0[1] + 0.4, s0[2], s0[3]], [s0[0], s0[1] - 0.4, s0[2], s0[3]], [s0[0] - 0.9, s0[1], s0[2] * 2, -0.4]];
+    const s0 = o.start, tries = [s0, [s0[0] - 0.5, s0[1], s0[2], s0[3]], [s0[0] + 0.4, s0[1], s0[2], s0[3] - 0.5], [s0[0], s0[1] + 0.4, s0[2], s0[3]], [s0[0], s0[1] - 0.4, s0[2], s0[3]], [s0[0] - 0.9, s0[1], s0[2] * 2, 0.4]];
     let best = null;
     for (const st of tries) { const a = reach(arm, target, root, rounds, Object.assign({}, o, { start: st, single: true })); if (!best || arm.miss < best.miss) best = { a, miss: arm.miss }; }
     setArm(arm, best.a); arm.miss = best.miss; return best.a;
@@ -212,8 +212,10 @@ export function reach(arm, target, root, rounds = 10, o = {}) {
     return d;
   };
   const P = [[sh.rotation, 'x'], [sh.rotation, 'y'], [sh.rotation, 'z'], [el.rotation, 'x']];
-  // (the elbow bends one way only: a skeleton's forearm folds forward, -x)
-  const ok = () => el.rotation.x <= 0.02 && el.rotation.x >= -2.6;
+  // (the elbow bends one way only, the forearm to the body's front: on a
+  // limb that hangs down a joint's +x swings it forward, -z - the knee is the
+  // one that folds back)
+  const ok = () => el.rotation.x >= -0.02 && el.rotation.x <= 2.6;
   let step = 0.6, best = dist();
   for (let r = 0; r < rounds * 4 && best > (o.elbow ? 0.5 : 0.05); r++) {
     let moved = false;
