@@ -811,11 +811,23 @@ function buildGround() {
   geo.computeVertexNormals();
   // (its uv in rings round your feet - u along the ring, v outward, in world
   // units - so its lines run level across the frame whichever way you face)
-  const uv = geo.attributes.uv;
-  for (let i = 0; i < p.count; i++) { const dx = p.getX(i) - RING.c[0], dz = p.getZ(i) - RING.c[1], r = Math.hypot(dx, dz); uv.setXY(i, Math.atan2(dx, dz) * r, r); }
+  // (the strokes open out up the hills, so far off they never close into a
+  // moire: past the ring's floor each stroke stands for more ground)
+  const uv = geo.attributes.uv, tone = new Float32Array(p.count * 2);
+  for (let i = 0; i < p.count; i++) {
+    const dx = p.getX(i) - RING.c[0], dz = p.getZ(i) - RING.c[1], r = Math.hypot(dx, dz);
+    uv.setXY(i, Math.atan2(dx, dz) * r, r < 420 ? r : 420 + (r - 420) * 0.5);
+    // the hills behind the figures laid in as one planned passage, the same
+    // all round: dark at their foot, where the figures stand against them,
+    // opening toward the crest, so every torment has a dark field behind it
+    // whichever way the hill happens to face the light
+    const v = 0.66 - 0.3 * smoother((r - 620) / 300) + (n1(p.getX(i) * 0.006 + 9, p.getZ(i) * 0.006) - 0.5) * 0.08;
+    tone[i * 2] = v; tone[i * 2 + 1] = smoother((r - 430) / 50);
+  }
+  geo.setAttribute('aTone', new THREE.BufferAttribute(tone, 2));
   // the ground's cut: level strokes round the ring at a mid tone, so the
   // figures (their lights bare paper) stand off it, as in his plates
-  const g = new THREE.Mesh(geo, mat({ uv: [1, 1], angle: -HALF, freq: 0.6, tone: 0.42, sky: 0.4, keyI: 1.0, wobble: 0.35, steps: 3 }));
+  const g = new THREE.Mesh(geo, mat({ uv: [1, 1], angle: -HALF, freq: 0.6, tone: 0.42, sky: 0.4, keyI: 1.0, wobble: 0.35, toneMap: true }));
   g.userData.height = (x, z) => groundHeight(x, z, n1, n2);
   return g;
 }
@@ -888,6 +900,17 @@ function skyTex() {
     // birds: a few 'v's
     for (let i = 0; i < 26; i++) { const x = rnd() * W, y = H * (0.3 + rnd() * 0.4), s = 4 + rnd() * 7; g.lineWidth = 1.6; g.beginPath(); g.moveTo(x - s, y - s * 0.4); g.quadraticCurveTo(x - s * 0.4, y + s * 0.3, x, y); g.quadraticCurveTo(x + s * 0.4, y + s * 0.3, x + s, y - s * 0.4); g.stroke(); }
   });
+}
+// a two-colour canvas printed the other way round: the paper as ink, the
+// ink as paper (each pixel swapped between the two, the edges between kept)
+function negativeTex(src) {
+  const c0 = src.image, c = document.createElement('canvas'); c.width = c0.width; c.height = c0.height;
+  const g = c.getContext('2d'); g.drawImage(c0, 0, 0);
+  const im = g.getImageData(0, 0, c.width, c.height), d = im.data;
+  for (let i = 0; i < d.length; i += 4) { d[i] = 258 - d[i]; d[i + 1] = 235 - d[i + 1]; d[i + 2] = 204 - d[i + 2]; }
+  g.putImageData(im, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = src.colorSpace; t.wrapS = src.wrapS; t.wrapT = src.wrapT; t.repeat.copy(src.repeat); t.anisotropy = src.anisotropy;
+  return t;
 }
 function buildSky() {
   const tex = skyTex(); tex.wrapS = THREE.RepeatWrapping; tex.repeat.set(4, 1);
@@ -1388,6 +1411,31 @@ export async function prepareTable(opts) {
     t.plate.material.map = spent ? t.spentTex : t.liveTex; t.plate.material.needsUpdate = true;
   };
   cards.forEach(c => { if (c.spent) setSpent(c.id, true); });
+  // ---------------------------------------------------------- the negative
+  // While a soul stands freed the whole valley prints in the negative - the
+  // block left standing as the ground, the light cut out of it in bone -
+  // and only your desk (the hands, the table, the broadside) stays a print.
+  // The desk takes its own copies of the plates, so the valley's flip alone.
+  ownMats(desk);
+  const inDesk = new Set(); desk.traverse(o => inDesk.add(o));
+  const inVig = new Set(); pivots.forEach(p => p.userData.v.g.traverse(o => inVig.add(o)));
+  const worldPlates = { mats: [], outs: [] }, seenPl = new Set();
+  seat.traverse(o => {
+    if (!o.isMesh || inDesk.has(o) || inVig.has(o) || seenPl.has(o.material)) return;
+    const m = o.material; if (!m.uniforms || !m.uniforms.uFlip) return;
+    seenPl.add(m); (o.userData.outline ? worldPlates.outs : worldPlates.mats).push(m);
+  });
+  // (the sky its own negative: a second dome inside it, faded in)
+  const skyNeg = new THREE.Mesh(sky.geometry, new THREE.MeshBasicMaterial({ map: negativeTex(sky.userData.tex), side: THREE.BackSide, toneMapped: false, fog: false, transparent: true, opacity: 0, depthWrite: false }));
+  skyNeg.position.copy(sky.position); skyNeg.scale.setScalar(0.995); skyNeg.visible = false; sky.parent.add(skyNeg);
+  const inkC = new THREE.Color(INK), boneC = new THREE.Color(BONE);
+  const setNegative = f => {
+    setPlates(worldPlates, f, 0);
+    pivots.forEach(p => { setPlates(p.userData.v.plates, f, 0); setPlates(p.userData.v.deathPlates, f, 0); });
+    skyNeg.visible = f > 0.002; skyNeg.material.opacity = f;
+    crows.material.color.copy(inkC).lerp(boneC, f);
+    drops.visible = f < 0.5;
+  };
   const sound = valleySound();
 
   async function fly(world, flyOpts = {}) {
@@ -1657,13 +1705,13 @@ export async function prepareTable(opts) {
     const stepFreed = tt => {
       const F = freeing, v = F.p.userData.v, k = tt - F.t0;
       const f = k < FREE.IN ? smoother(k / FREE.IN) : k < FREE.IN + FREE.HOLD ? 1 : 1 - smoother((k - FREE.IN - FREE.HOLD) / FREE.OUT);
-      setPlates(v.plates, f, 0); setPlates(v.deathPlates, 0, f);
+      setNegative(f);
       F.figs.forEach(fg => setPlates(fg.userData.plates, f, 0));
       const on = f >= 0.5;
       if (on !== F.swapped) { swapFreed(F, on); F.swapped = on; }
       if (on) poseFreed(F, k);
       if (k >= FREE.IN + FREE.HOLD + FREE.OUT) {
-        setPlates(v.plates, 0, 0); setPlates(v.deathPlates, 0, 0);
+        setNegative(0);
         if (F.swapped) swapFreed(F, false);
         freeing = null;
         if (freeQueue.length) startFreed(freeQueue.shift());
@@ -1698,7 +1746,7 @@ export async function prepareTable(opts) {
       });
       if (freeing) stepFreed(tt);
       // the sky drifts
-      if (!fo.reduced) sky.userData.tex.offset.x = tt * 0.0025 + w * 0.002;
+      if (!fo.reduced) { sky.userData.tex.offset.x = tt * 0.0025 + w * 0.002; skyNeg.material.map.offset.x = sky.userData.tex.offset.x; }
       placeDrops(tt, fo.reduced ? 0 : dt);
       placeCrows(tt, w);
       burinTick(seat, camera, world.renderer, tt, keyW);

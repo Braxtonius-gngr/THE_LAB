@@ -64,6 +64,8 @@ const VERT = /* glsl */`
   varying vec2 vUv;
   varying float vDepth;
   varying vec3 vAxisW;
+  varying vec2 vTone;
+  attribute vec2 aTone;
   uniform vec3 uAxis;
   #include <common>
   #include <skinning_pars_vertex>
@@ -81,6 +83,7 @@ const VERT = /* glsl */`
     vNormalW = normalize(mat3(modelMatrix) * objectNormal);
     vAxisW = normalize(mat3(modelMatrix) * uAxis);
     vUv = uv;
+    vTone = aTone;
     vec4 mv = viewMatrix * w;
     vDepth = -mv.z;
     gl_Position = projectionMatrix * mv;
@@ -94,6 +97,8 @@ const FRAG = /* glsl */`
   varying vec2 vUv;
   varying float vDepth;
   varying vec3 vAxisW;
+  varying vec2 vTone;
+  uniform float uToneMap;  // >0: the tone laid in from aTone (x: the value, y: how much of it) - an engraver's planned passage, the light only modelling it
   uniform vec3 uPaper;
   uniform vec3 uInk;
   uniform vec3 uBlood;
@@ -193,7 +198,7 @@ const FRAG = /* glsl */`
     // stipple in the light: a dot where the line would be too thin to cut
     vec2 cell = p * uFreq * 1.6;
     float dot_ = length(fract(cell) - 0.5);
-    float sp = step(0.965, hash(floor(cell))) * (1.0 - smoothstep(0.12, 0.2, dot_)) * smoothstep(0.3, 0.12, t) * smoothstep(0.04, 0.1, t) * 0.6;
+    float sp = step(0.965, hash(floor(cell))) * (1.0 - smoothstep(0.12, 0.2, dot_)) * smoothstep(0.3, 0.12, t) * smoothstep(0.04, 0.1, t) * 0.6 * (1.0 - uFlip);   // (no flecks in the negative: they print as salt)
     return max(ink, sp);
   }
   void main() {
@@ -212,6 +217,9 @@ const FRAG = /* glsl */`
     vec3 v = normalize(uCamPos - vWorld);
     float rim = pow(1.0 - max(dot(n, v), 0.0), 3.0);
     t = clamp(t + (uInvert > 0.5 ? -rim * 0.3 : -rim * 0.07), 0.0, 1.0);
+    // a planned passage (the hills behind the figures): the value laid in
+    // where the engraver wants it, the light left only to model it
+    if (uToneMap > 0.5) t = clamp(mix(t, vTone.x + (t - 0.45) * 0.3, vTone.y), 0.0, 0.9);
     // the tone in steps: a woodcutter turns a form in a few clear planes
     if (uSteps > 0.5) t = mix(t, floor(t * uSteps + 0.5) / uSteps, 0.7);
     // triplanar: the face's dominant axis picks the plane the lines lie on
@@ -280,7 +288,7 @@ const FRAG = /* glsl */`
 // A sharable set of uniforms (uTime, uCamPos are driven per frame by
 // burinTick(); the rest are the material's own).
 export function engravingMaterial(opts = {}) {
-  const o = Object.assign({ paper: BONE, ink: INK, blood: BLOOD, freq: 1.1, angle: -0.6, tone: 0.0, wet: 0, bloodOn: false, bloodLo: 0, bloodHi: 1, spill: 0, ember: 0, sky: 0.28, keyI: 1.0, transparent: false, opacity: 1, side: THREE.FrontSide, uv: null, invert: false, wobble: 0.6, scroll: null, steps: 0, axis: [0, 1, 0], pitch: 4.5 }, opts);
+  const o = Object.assign({ paper: BONE, ink: INK, blood: BLOOD, freq: 1.1, angle: -0.6, tone: 0.0, wet: 0, bloodOn: false, bloodLo: 0, bloodHi: 1, spill: 0, ember: 0, sky: 0.28, keyI: 1.0, transparent: false, opacity: 1, side: THREE.FrontSide, uv: null, invert: false, wobble: 0.6, scroll: null, steps: 0, toneMap: false, axis: [0, 1, 0], pitch: 4.5 }, opts);
   const m = new THREE.ShaderMaterial({
     vertexShader: VERT, fragmentShader: FRAG,
     uniforms: {
@@ -290,7 +298,7 @@ export function engravingMaterial(opts = {}) {
       uBloodLo: { value: o.bloodLo }, uBloodHi: { value: o.bloodHi }, uBloodOn: { value: o.bloodOn ? 1 : 0 }, uBloodSpill: { value: o.spill },
       uEmber: { value: o.ember }, uTime: { value: 0 }, uOpacity: { value: o.opacity }, uCamPos: { value: new THREE.Vector3() },
       uInvert: { value: o.invert ? 1 : 0 }, uFlip: { value: 0 }, uGhost: { value: 0 }, uWobble: { value: o.wobble }, uUvMode: { value: o.uv ? 1 : 0 }, uUvScale: { value: new THREE.Vector2(o.uv ? o.uv[0] : 1, o.uv ? o.uv[1] : 1) },
-      uScroll: { value: new THREE.Vector2(o.scroll ? o.scroll[0] : 0, o.scroll ? o.scroll[1] : 0) }, uSteps: { value: o.steps },
+      uScroll: { value: new THREE.Vector2(o.scroll ? o.scroll[0] : 0, o.scroll ? o.scroll[1] : 0) }, uSteps: { value: o.steps }, uToneMap: { value: o.toneMap ? 1 : 0 },
       uAxis: { value: new THREE.Vector3(...(o.axis || [0, 1, 0])) }, uAxisOn: { value: o.axis ? 1 : 0 }, uPitchPx: { value: o.pitch }
     },
     transparent: o.transparent, side: o.side, lights: false, fog: false
