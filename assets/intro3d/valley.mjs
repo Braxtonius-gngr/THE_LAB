@@ -103,10 +103,12 @@ const TABLE = { w: 120, d: 64, z0: -4, slab: 4 };
 // front of you. The souls stand on a half ring ahead (RING: its centre your
 // feet, the eye's foot), one torment framed at a time - the best straight
 // ahead, the rest alternating right and left of it, a step apart wide
-// enough that only an edge of the next one shows. A swipe turns you to the
+// enough that the next one stays out of the frame. A swipe turns you to the
 // next; left alone, you look slowly from one to the next.
-const RING = { c: [0, -112], r: 330, step: 30 * DEG };
-const ringAngle = k => RING.step * Math.ceil(k / 2) * (k % 2 ? -1 : 1);
+const RING = { c: [0, -112], r: 330, step: 30 * DEG, end: 10 * DEG };
+// (the two at the ends a step and a little more out: the windlass and the
+// stake are wide, and a step alone would leave their parts in the next frame)
+const ringAngle = k => (RING.step * Math.ceil(k / 2) + (k >= 5 ? RING.end : 0)) * (k % 2 ? -1 : 1);
 const ringAt = (th, r = RING.r) => [RING.c[0] + Math.sin(th) * r, RING.c[1] + Math.cos(th) * r];
 // (the taller torments a little further off, so each fills its frame alike)
 const RING_DR = [0, 0, 0, 0, 40, 0, 22];
@@ -430,7 +432,7 @@ function vWindlass(kit, rnd) {
   };
   // (the whole of it drawn in toward the middle of its window: the crank
   // end and Death at it otherwise stand in the next station's)
-  const IN = 46;
+  const IN = 30;
   g.children.forEach(c => { c.position.x -= IN; });
   return { g, death, act, bands, drips: [[V(-12 - IN, TH + 2, -20), V(-10 - IN, 2, -22)]], crows: [], width: 130, victims: [man], freed: { pose: 'dance', at: [-10 - IN, 0, -56] } };
 }
@@ -799,9 +801,11 @@ function vnoise2(seed) {
 }
 function buildGround() {
   const n1 = vnoise2(5), n2 = vnoise2(11);
-  const geo = new THREE.PlaneGeometry(1800, 1600, 150, 140);
+  // (out past the half ring's ends on both sides and behind you, so a
+  // landscape frame turned to an end station still has hills to its edge)
+  const geo = new THREE.PlaneGeometry(1800, 2240, 150, 190);
   geo.rotateX(-HALF);
-  geo.translate(0, 0, 560);
+  geo.translate(0, 0, 260);
   const p = geo.attributes.position;
   for (let i = 0; i < p.count; i++) p.setY(i, groundHeight(p.getX(i), p.getZ(i), n1, n2));
   geo.computeVertexNormals();
@@ -819,7 +823,7 @@ function buildGround() {
 function buildRiver(kit, height) {
   const pts = [];
   // (an arc round the shelf, through the half ring's width and on past it)
-  for (let th = -2.0; th <= 2.0001; th += 0.04) { const [x, z] = ringAt(th, RIVER.r + Math.sin(th * 4.2) * 12); pts.push(V(x, height(x, z) + 5, z)); }
+  for (let th = -2.7; th <= 2.7001; th += 0.04) { const [x, z] = ringAt(th, RIVER.r + Math.sin(th * 4.2) * 12); pts.push(V(x, height(x, z) + 5, z)); }
   const curve = new THREE.CatmullRomCurve3(pts);
   const n = 120, w = RIVER.w * 0.62;
   const pos = [], uv = [], idx = [];
@@ -1347,15 +1351,15 @@ export async function prepareTable(opts) {
   const dress = new THREE.Group(); seat.add(dress);
   const stoneGeo = new THREE.IcosahedronGeometry(1, 1);
   const clearOf = (x, z, m) => PADS.every(([px, pz]) => Math.hypot(x - px, z - pz) > m);
-  const floorAt = (rLo, rHi) => { const th = (rnd() - 0.5) * 3.5, r = rLo + rnd() * (rHi - rLo); return ringAt(th, r); };
-  for (let i = 0; i < 34; i++) {
+  const floorAt = (rLo, rHi) => { const th = (rnd() - 0.5) * 4.6, r = rLo + rnd() * (rHi - rLo); return ringAt(th, r); };
+  for (let i = 0; i < 44; i++) {
     const [x, z] = floorAt(SHELF + 20, 470); if (!clearOf(x, z, 70)) continue;
     const st = mesh(stoneGeo, kit.stone, dress, 1.2); const sc = 3 + rnd() * 7; st.scale.set(sc * (0.8 + rnd() * 0.6), sc * 0.55, sc * (0.8 + rnd() * 0.6)); st.rotation.set(rnd(), rnd() * 6, rnd()); st.position.set(x, height(x, z) + sc * 0.2, z);
   }
-  for (let i = 0; i < 16; i++) { const [x, z] = floorAt(SHELF + 30, 440); if (!clearOf(x, z, 64)) continue; const b = mesh(boneGeo(18 + rnd() * 20, 1.6), kit.shaft, dress, 1.2); b.rotation.set(HALF + (rnd() - 0.5) * 0.2, 0, rnd() * 6); b.position.set(x, height(x, z) + 1.5, z); }
-  for (let i = 0; i < 6; i++) { const [x, z] = floorAt(SHELF + 40, 440); if (!clearOf(x, z, 64)) continue; const sk = buildSkull(kit); sk.rotation.set(rnd() * 0.8 - 0.2, rnd() * 6, rnd() * 0.6 - 0.3); sk.position.set(x, height(x, z) + 7, z); dress.add(sk); }
+  for (let i = 0; i < 21; i++) { const [x, z] = floorAt(SHELF + 30, 440); if (!clearOf(x, z, 64)) continue; const b = mesh(boneGeo(18 + rnd() * 20, 1.6), kit.shaft, dress, 1.2); b.rotation.set(HALF + (rnd() - 0.5) * 0.2, 0, rnd() * 6); b.position.set(x, height(x, z) + 1.5, z); }
+  for (let i = 0; i < 8; i++) { const [x, z] = floorAt(SHELF + 40, 440); if (!clearOf(x, z, 64)) continue; const sk = buildSkull(kit); sk.rotation.set(rnd() * 0.8 - 0.2, rnd() * 6, rnd() * 0.6 - 0.3); sk.position.set(x, height(x, z) + 7, z); dress.add(sk); }
   // the scarps: boulders along the rise behind the stations and the shelf's lip
-  [[452, 9, 11], [SHELF + 6, 5, 6]].forEach(([r0, s0, s1]) => { for (let th = -1.9; th <= 1.9; th += (40 + rnd() * 50) / r0) { if (rnd() < 0.35) continue; const [x, z] = ringAt(th, r0 + (rnd() - 0.5) * 20); if (!clearOf(x, z, 58)) continue; const st = mesh(stoneGeo, kit.stone, dress, 1.4); const sc = s0 + rnd() * s1; st.scale.set(sc * (1 + rnd() * 0.8), sc * (0.6 + rnd() * 0.5), sc * 0.8); st.rotation.set(rnd() * 0.6, rnd() * 6, rnd() * 0.6); st.position.set(x, height(x, z) + sc * 0.1, z); } });
+  [[452, 9, 11], [SHELF + 6, 5, 6]].forEach(([r0, s0, s1]) => { for (let th = -2.6; th <= 2.6; th += (40 + rnd() * 50) / r0) { if (rnd() < 0.35) continue; const [x, z] = ringAt(th, r0 + (rnd() - 0.5) * 20); if (!clearOf(x, z, 58)) continue; const st = mesh(stoneGeo, kit.stone, dress, 1.4); const sc = s0 + rnd() * s1; st.scale.set(sc * (1 + rnd() * 0.8), sc * (0.6 + rnd() * 0.5), sc * 0.8); st.rotation.set(rnd() * 0.6, rnd() * 6, rnd() * 0.6); st.position.set(x, height(x, z) + sc * 0.1, z); } });
   // dead trees between the stations, on the rise, as a woodcutter fills to the border
   STATIONS.forEach((st, i) => { if (i === 0 || rnd() < 0.3) return; const th = st.th + Math.sign(st.th) * RING.step * 0.5, [x, z] = ringAt(th, 470 + rnd() * 40), t = buildTree(kit, rnd); t.scale.setScalar(0.75 + rnd() * 0.35); t.position.set(x, height(x, z) - 2, z); t.rotation.y = rnd() * 6; dress.add(t); });
   // the drops and the crows
