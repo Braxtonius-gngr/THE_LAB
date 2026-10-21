@@ -329,7 +329,7 @@ function vSawyer(kit, rnd) {
     d.arms.r.sh.rotation.x = 0.5 + (still ? 0 : Math.sin(tt * 1.3) * 0.15);
     beam.position.y = H + (still ? 0 : Math.abs(c) * -0.6);
   };
-  return { g, death, act, bands, drips: [[V(2, hi - 64, -10), V(0, 2, -8)], [V(-5, hi - 50, -12), V(2, 2, -4)]], crows: [] , width: 120 };
+  return { g, death, act, bands, drips: [[V(2, hi - 64, -10), V(0, 2, -8)], [V(-5, hi - 50, -12), V(2, 2, -4)]], crows: [] , width: 120, victims: [man], freed: { pose: 'dance', at: [0, 0, -58] } };
 }
 // II. THE WINDLASS. A man on his back on a plank table, opened; his bowels
 // drawn out of him onto a windlass that Death turns by its crank.
@@ -411,7 +411,7 @@ function vWindlass(kit, rnd) {
     d.arms.r.el.rotation.x = -1.1 + (still ? 0 : Math.max(0, Math.sin(tt * 0.9)) * 0.6);
     d.neck.rotation.z = still ? 0 : Math.sin(tt * 0.6) * 0.3;
   };
-  return { g, death, act, bands, drips: [[V(-12, TH + 2, -20), V(-10, 2, -22)]], crows: [], width: 130 };
+  return { g, death, act, bands, drips: [[V(-12, TH + 2, -20), V(-10, 2, -22)]], crows: [], width: 130, victims: [man], freed: { pose: 'dance', at: [-10, 0, -56] } };
 }
 // III. THE FLAYING. A man bound to a dead tree, the skin off him; Death
 // beside with the knife, holding the skin up by a hand; the rest of it
@@ -456,7 +456,7 @@ function vFlaying(kit, rnd) {
     dd.arms.r.el.rotation.x = -1.4 + (still ? 0 : Math.sin(tt * 1.9) * 0.2);
     dd.neck.rotation.y = still ? 0 : Math.sin(tt * 0.3) * 0.2;
   };
-  return { g, death, act, bands, drips: [[V(-4, 120, -20), V(0, 2, -16)]], crows: [[-20, 212, 2], [26, 198, -8]], width: 120 };
+  return { g, death, act, bands, drips: [[V(-4, 120, -20), V(0, 2, -16)]], crows: [[-20, 212, 2], [26, 198, -8]], width: 120, victims: [man, skin, belt], freed: { pose: 'dance', at: [-18, 0, -46] } };
 }
 // a dead tree: a trunk with a lean, two or three bare branches
 function buildTree(kit, rnd) {
@@ -523,7 +523,7 @@ function vWheel(kit, rnd) {
     wh.rotation.z = (still ? 0 : Math.sin(tt * 0.3) * 0.03) + rec + w * 0.05;
     d.arms.l.sh.rotation.z = 2.15 + (still ? 0 : Math.sin(tt * 2.3) * 0.05);   // (a twitch)
   };
-  return { g, death, act, bands, drips: [[V(6, P + 10, -16), V(6, 2, -10)]], crows: [[R - 6, P + R * 0.55 + 30, 4], [-R + 4, P + R * 0.55 + 26, 10]], width: 140 };
+  return { g, death, act, bands, drips: [[V(6, P + 10, -16), V(6, 2, -10)]], crows: [[R - 6, P + R * 0.55 + 30, 4], [-R + 4, P + R * 0.55 + 26, 10]], width: 140, victims: [man], freed: { pose: 'walk', at: [84, 0, -30] } };
 }
 // V. THE GALLOWS. A beam on two posts, two hanged - one long dead, one not
 // - crows on the beam; Death under them with the drum, dancing.
@@ -582,7 +582,7 @@ function vGallows(kit, rnd) {
     dd.neck.rotation.set(0.25, still ? 0 : Math.sin(wv * 0.5) * 0.4, still ? 0 : Math.sin(wv) * 0.15);
     hanged.forEach((h, i) => { h.piv.rotation.z = (still ? 0 : Math.sin(tt * 0.8 + h.ph) * 0.05) + w * 0.22 * (i ? 0.7 : 1); h.piv.rotation.x = (still ? 0 : Math.sin(tt * 0.6 + h.ph) * 0.03) + w * 0.06; h.b.rotation.y = h.face + (still ? 0 : Math.sin(tt * 0.31 + h.ph) * 0.32) + w * 0.4 * (i ? -1 : 1); });   // (they turn on the rope a little, and back - never round to show their backs)
   };
-  return { g, death, act, bands, drips: [[V(-30, H - 170, -4), V(-30, 2, 2)]], crows: [[-50, H + 6, 0], [0, H + 6, 0], [44, H + 6, 0], [-W / 2, H + 5, 0]], width: 160 };
+  return { g, death, act, bands, drips: [[V(-30, H - 170, -4), V(-30, 2, 2)]], crows: [[-50, H + 6, 0], [0, H + 6, 0], [44, H + 6, 0], [-W / 2, H + 5, 0]], width: 160, victims: hanged.map(h => h.b), freed: { pose: 'dance', at: [0, 0, -30], two: true } };
 }
 // VI. THE STAKE. A man on the stake, run through; Death at its foot
 // holding his glass up to him.
@@ -628,7 +628,7 @@ function vStake(kit, rnd) {
     dd.neck.rotation.y = still ? 0 : Math.sin(tt * 0.4) * 0.15;
     dd.arms.r.sh.rotation.x = -2.2 + (still ? 0 : Math.sin(tt * 0.7) * 0.06);
   };
-  return { g, death, act, bands, drips: [[V(-2, FORK - 6, -2), V(-2, 2, 2)]], crows: [[13, TIP + 2, 3]], width: 100 };
+  return { g, death, act, bands, drips: [[V(-2, FORK - 6, -2), V(-2, 2, 2)]], crows: [[13, TIP + 2, 3]], width: 100, victims: [man], freed: { pose: 'peace', at: [-22, 0, -26] } };
 }
 // VII. THE DRAGGING. Death bent to it, a man by the hair behind him, the
 // smear of him on the ground.
@@ -659,7 +659,7 @@ function vDragging(kit, rnd) {
     man.position.x = 22 - j; d.neck.rotation.x = -1.0 + (still ? 0 : Math.sin(wv) * 0.1);
     d.arms.r.sh.rotation.x = 0.3 + (still ? 0 : Math.sin(wv + 1) * 0.2);
   };
-  return { g, death, act, bands, drips: [], crows: [[60, 2, 12]], width: 130 };
+  return { g, death, act, bands, drips: [], crows: [[60, 2, 12]], width: 130, victims: [man], freed: { pose: 'peace', at: [14, 0, -30] } };
 }
 const VIGNETTES = [vSawyer, vFlaying, vWheel, vDragging, vGallows, vWindlass, vStake];
 // (the lab: one vignette built alone, for the study page - the kit's
@@ -1115,13 +1115,156 @@ export async function prepareTable(opts) {
     const pivot = new THREE.Group(); pivot.add(v.g); pivot.add(pl); soulsG.add(pivot);
     pivot.userData = { v, placard: pl, plate: pl.userData.plate, tag: { userData: { id: cards[i].id, plate: pl.userData.plate, card: cards[i], n: i, spentTex: null, liveTex: pl.userData.liveTex } }, look: 0, lookTo: 0, deathYaw: v.death.rotation.y, toSeat: 0 };
     pivots.push(pivot); vigs.push(v);
-    v.drips.forEach(([a, b]) => drips.push({ from: a.clone().add(v.g.position), to: b.clone().add(v.g.position) }));
+    v.drips.forEach(([a, b]) => drips.push({ from: a.clone().add(v.g.position), to: b.clone().add(v.g.position), v }));
     v.crows.forEach(([x, y, z]) => crowSpots.push(V(x, y, z).add(v.g.position)));
     await breathe();
   }
   // the blood bands, in world y (the seat sits at y 0, so its y is the world's)
   seat.updateMatrixWorld(true);
   vigs.forEach(v => v.bands.forEach(([root, hiOff, loOff]) => { setBleedBand(root, v.g.position.y + hiOff, v.g.position.y + loOff); }));
+  // ---------------------------------------------------------- the freed
+  // A collect frees a soul for a moment: its vignette dissolves into the
+  // white-line negative (burin.mjs uFlip - the forms print dark, the light
+  // cut out in thin bone lines, no blood), its Death washes back toward the
+  // paper (uGhost), the tormented body and its gore are gone, and the man
+  // stands whole - dancing with his Death (most), at peace by the empty
+  // stake, walking off from beside the wheel toward the hills. Then it all
+  // comes back.
+  // Each vignette (and its Death apart from it) takes its own copies of the
+  // kit's plates, so one soul flips alone; the copies share the shader.
+  const GORE = new Set([kit.raw, kit.rawUV, kit.gut, kit.pool, kit.rawCap]);
+  const ownMats = (root, skip) => {
+    const map = new Map(), mats = [], outs = [];
+    const walk = o => {
+      if (skip && skip.has(o)) return;
+      if (o.isMesh) {
+        if (o.userData.outline) outs.push(o.material);
+        else if (o.material.userData && o.material.userData.burin) { let c = map.get(o.material); if (!c) { c = o.material.clone(); c.userData.burin = true; map.set(o.material, c); mats.push(c); } o.material = c; }
+      }
+      o.children.forEach(walk);
+    };
+    walk(root);
+    return { mats, outs };
+  };
+  pivots.forEach(p => {
+    const v = p.userData.v;
+    v.gore = []; v.g.traverse(o => { if (o.isMesh && !o.userData.outline && GORE.has(o.material)) v.gore.push(o); });
+    const dset = new Set(); v.death.traverse(o => dset.add(o));
+    v.deathPlates = ownMats(v.death);
+    v.plates = ownMats(v.g, dset);
+  });
+  const freedRnd = seeded(77);
+  const freedFigs = [0, 1].map(k => { const f = buildFigure(kit, freedRnd, { shirt: true, hose: true, beard: k === 0 }); restBody(f); f.visible = false; f.userData.plates = ownMats(f); return f; });
+  const setPlates = (pl, flip, ghost) => { pl.mats.forEach(m => { m.uniforms.uFlip.value = flip; m.uniforms.uGhost.value = ghost; }); pl.outs.forEach(m => { m.uniforms.uFlip.value = flip; m.uniforms.uGhost.value = ghost; }); };
+  const FREE = { IN: 0.8, HOLD: 3.8, OUT: 1.1 };
+  const snapOf = root => { const out = []; root.traverse(o => out.push([o, o.position.clone(), o.quaternion.clone()])); return out; };
+  const swapFreed = (F, on) => {
+    const v = F.p.userData.v;
+    v.victims.forEach(b => { b.visible = !on; });
+    v.gore.forEach(m => { m.visible = !on; });
+    if (on) {
+      F.snap = snapOf(v.death);
+      F.figs.forEach(f => { v.g.add(f); f.visible = true; });
+    } else {
+      F.figs.forEach(f => { f.visible = false; });
+      F.snap.forEach(([o, pp, q]) => { o.position.copy(pp); o.quaternion.copy(q); });
+    }
+  };
+  const faceTo = (obj, x, z) => { obj.rotation.set(0, Math.atan2(-(x - obj.position.x), -(z - obj.position.z)), 0); };
+  const stepLegs = (u, ph, amp, hipsY) => {
+    const sn = Math.sin(ph);
+    u.hips.position.y = hipsY + Math.abs(sn) * 2.4 * amp;
+    u.legs.l.hip.rotation.set(sn * 0.5 * amp, 0, 0.04); u.legs.r.hip.rotation.set(-sn * 0.5 * amp, 0, -0.04);
+    u.legs.l.kn.rotation.x = KNEE_BACK * -Math.max(0, -sn) * 0.9 * amp; u.legs.r.kn.rotation.x = KNEE_BACK * -Math.max(0, sn) * 0.9 * amp;
+    u.legs.l.foot.rotation.x = 0; u.legs.r.foot.rotation.x = 0;
+  };
+  // the dance as the Totentanz cuts it: a line toward you, hand in hand,
+  // each turned a little in to the next, the inner hands joined at the
+  // shoulder before the line and the outer ones flung up. The arms are
+  // solved once a line (the hands meet where the line says), then ride the
+  // bodies, the whole line swaying and skipping as one so the joined hands
+  // never part.
+  // (where each stands along the line, and how far each turns in toward
+  // the next: a turn of +y faces them to -x)
+  const LINE = { 2: [-42, 42], 3: [-66, 0, 66] }, TURN = { 2: [-0.3, 0.42], 3: [-0.25, 0, 0.25] };
+  const lineOf = (F, v) => F.figs.length === 2 ? [F.figs[0], v.death, F.figs[1]] : [F.figs[0], v.death];
+  const camIn = v => v.camL || (v.camL = v.g.worldToLocal(seat.localToWorld(V(0, 0, -116))));
+  const solveLine = (line, xs, turn) => {
+    const _s = V(0, 0, 0), _c = V(0, 0, 0);
+    return line.map((o, i) => {
+      const par = o.parent, u = o.userData, keep = [o.position.clone(), o.rotation.clone()];
+      o.position.set(xs[i], 0, 0); o.rotation.set(0, turn[i], 0); restSkeleton(o); u.hips.position.y = 92; o.updateMatrixWorld(true);
+      par.worldToLocal(o.getWorldPosition(_c));
+      const out = {};
+      ['l', 'r'].forEach(s => {
+        const arm = u.arms[s]; par.worldToLocal(arm.sh.getWorldPosition(_s));
+        const side = Math.sign(_s.x - _c.x) || 1, nb = xs[i + side];
+        // (toward a neighbour the hands meet halfway, at the shoulder and a
+        // forearm before the line; with none on that side it goes up and out)
+        const tgt = nb !== undefined ? [(xs[i] + nb) / 2, _s.y - 2, -16] : [_s.x + side * 24, _s.y + 46, -10];
+        out[s] = reach(arm, tgt, o, 8, { start: nb !== undefined ? [-0.5, 0, side * 1.25, -0.6] : [-0.2, 0, side * 2.3, -0.3] });
+      });
+      o.position.copy(keep[0]); o.rotation.copy(keep[1]);
+      return out;
+    });
+  };
+  const poseFreed = (F, k) => {
+    const v = F.p.userData.v, at = v.freed.at, du = v.death.userData;
+    if (v.freed.pose === 'dance') {
+      const line = lineOf(F, v), xs = LINE[line.length], turn = TURN[line.length];
+      // (solved once for each vignette's Death, the first time it is freed)
+      const key = 'arms' + line.length;
+      if (!v[key]) v[key] = solveLine(line, xs, turn);
+      const cam = camIn(v);
+      const face = Math.atan2(-(cam.x - at[0]), -(cam.z - at[2]));
+      // the line sways round as it goes, and drifts a step side to side
+      const yaw = face + Math.sin(k * 1.3) * 0.32, cy = Math.cos(yaw), sy = Math.sin(yaw);
+      const drift = Math.sin(k * 0.9) * 7;
+      line.forEach((o, i) => {
+        const x = xs[i] + drift, u = o.userData;
+        o.position.set(at[0] + x * cy, 0, at[2] - x * sy); o.rotation.set(0, yaw + turn[i], 0);
+        restSkeleton(o);
+        // (a skip, all in step: the hips rise together, so the hands hold)
+        stepLegs(u, k * 6.4, 0.9, 92);
+        setArm(u.arms.l, v[key][i].l); setArm(u.arms.r, v[key][i].r);
+        // the freed look up and at their Death (a turn of +y looks to -x);
+        // Death looks from one to the other
+        const dx = xs[1] - xs[i];
+        u.neck.rotation.set(o === v.death ? 0.08 : 0.26, o === v.death ? Math.sin(k * 1.7) * 0.5 : -Math.sign(dx) * 0.25, 0);
+      });
+    } else if (v.freed.pose === 'peace') {
+      // he stands whole by the empty stake (or where he was dragged), the
+      // hands open, the face up; his Death kneels by him with the skull bowed
+      // (a line of dancers would not fit the dragging's window past the
+      // dealer)
+      const f = F.figs[0], u = f.userData;
+      f.position.set(at[0], 0, at[2]); f.rotation.set(0, 0.2, 0);
+      u.hips.position.y = BODY_HIPS + Math.sin(k * 1.6) * 0.6;
+      u.arms.l.sh.rotation.set(-0.25, 0, 0.55); u.arms.r.sh.rotation.set(-0.25, 0, -0.55);
+      u.arms.l.el.rotation.x = -0.35; u.arms.r.el.rotation.x = -0.35;
+      u.legs.l.hip.rotation.set(0, 0, 0.04); u.legs.r.hip.rotation.set(0, 0, -0.04);
+      u.neck.rotation.set(0.34, 0, 0);
+      v.death.position.set(at[0] + 26, 0, at[2] + 8); faceTo(v.death, at[0], at[2]);
+      restSkeleton(v.death);
+      // (down on one knee: the near thigh forward, its shin planted; the far
+      // knee on the ground, its shin laid back; a joint's +x tips back, so
+      // the bow is -x)
+      du.hips.position.y = 47;
+      du.legs.l.hip.rotation.x = 1.5; du.legs.l.kn.rotation.x = KNEE_BACK * 1.5;
+      du.legs.r.hip.rotation.x = 0; du.legs.r.kn.rotation.x = KNEE_BACK * 1.57;
+      du.neck.rotation.set(-0.55, 0, 0); du.spine.rotation.x = -0.22;
+    } else {
+      // he walks off from beside the wheel toward the hills, his back to
+      // you, clear of its rim; his Death stands where he was and watches
+      const f = F.figs[0], u = f.userData, go = Math.max(0, k - FREE.IN * 0.5);
+      f.position.set(at[0] + go * 9, 0, at[2] + go * 14); f.rotation.set(0, Math.atan2(-9, -14), 0);
+      stepLegs(u, go * 6.5, 0.9, BODY_HIPS);
+      u.arms.l.sh.rotation.set(Math.sin(go * 6.5) * 0.45, 0, 0.08); u.arms.r.sh.rotation.set(-Math.sin(go * 6.5) * 0.45, 0, -0.08);
+      u.arms.l.el.rotation.x = -0.2; u.arms.r.el.rotation.x = -0.2;
+      restSkeleton(v.death);
+      faceTo(v.death, f.position.x, f.position.z);
+    }
+  };
   // how far each Death turns his skull to look at you
   pivots.forEach(p => { const d = p.userData.v.death; const wp = d.getWorldPosition(V(0, 0, 0)); seat.worldToLocal(wp); const want = Math.atan2(wp.x, wp.z + 116); p.userData.toSeat = ((want - p.userData.deathYaw + PI) % (2 * PI) + 2 * PI) % (2 * PI) - PI; });
   // far off on the hills: more gallows, in silhouette
@@ -1339,7 +1482,8 @@ export async function prepareTable(opts) {
       dropP.forEach((d, i) => {
         if (fo.reduced) { drops.setMatrixAt(i, zero); return; }
         const e = drips[d.e]; d.t += dt * 0.9; if (d.t >= 1) d.t = -Math.random() * 1.5;
-        if (d.t < 0) { drops.setMatrixAt(i, zero); return; }
+        // (a freed soul does not bleed)
+        if (d.t < 0 || freeing && freeing.swapped && freeing.p.userData.v === e.v) { drops.setMatrixAt(i, zero); return; }
         const k = d.t * d.t;   // falling
         ep.lerpVectors(e.from, e.to, k); es.set(1, 1 + k * 1.2, 1);
         drops.setMatrixAt(i, em4.compose(ep, eq, es));
@@ -1369,6 +1513,29 @@ export async function prepareTable(opts) {
     };
     let lastT = 0;
     const keyW = KEY_SEAT.clone().applyQuaternion(seat.quaternion);
+    // (the freed: the flash's state lives with the flight - it reads the clock)
+    let freeing = null, freeQueue = [], freeN = 0;
+    const startFreed = p => {
+      if (!p || fo.reduced) return;
+      if (freeing) { if (freeQueue.length < 2) freeQueue.push(p); return; }
+      const v = p.userData.v;
+      freeing = { p, t0: tNow, swapped: false, figs: v.freed.two ? freedFigs : [freedFigs[0]] };
+    };
+    const stepFreed = tt => {
+      const F = freeing, v = F.p.userData.v, k = tt - F.t0;
+      const f = k < FREE.IN ? smoother(k / FREE.IN) : k < FREE.IN + FREE.HOLD ? 1 : 1 - smoother((k - FREE.IN - FREE.HOLD) / FREE.OUT);
+      setPlates(v.plates, f, 0); setPlates(v.deathPlates, 0, f);
+      F.figs.forEach(fg => setPlates(fg.userData.plates, f, 0));
+      const on = f >= 0.5;
+      if (on !== F.swapped) { swapFreed(F, on); F.swapped = on; }
+      if (on) poseFreed(F, k);
+      if (k >= FREE.IN + FREE.HOLD + FREE.OUT) {
+        setPlates(v.plates, 0, 0); setPlates(v.deathPlates, 0, 0);
+        if (F.swapped) swapFreed(F, false);
+        freeing = null;
+        if (freeQueue.length) startFreed(freeQueue.shift());
+      }
+    };
     const update = tt => {
       const dt = Math.min(0.1, Math.max(0, tt - lastT)); lastT = tt;
       tNow = tt;
@@ -1394,6 +1561,7 @@ export async function prepareTable(opts) {
         // the placard knocks in the wind
         d.placard.rotation.x = w * 0.06;
       });
+      if (freeing) stepFreed(tt);
       // the dealer breathes (which he does not), and turns his skull to the soul you took
       const dd = dealer.userData, look = pivots.reduce((a, p) => Math.max(a, p.userData.look), 0);
       dd.sk.userData.spine.rotation.x = dd.lean + (fo.reduced ? 0 : Math.sin(tt * 0.6 + dd.phase) * 0.012);   // (the breath small: his hands are set on the ledge)
@@ -1499,6 +1667,11 @@ export async function prepareTable(opts) {
       swing(amp = 1, dir = 1) { gust(amp, dir); update(tNow); show(); },
       pickUpPhone(on = true) { holdPhone(on); },
       tags: cards.map(c => c.id),
+      // a collect: that soul freed for a moment (a platform not on the
+      // board frees the next soul in turn, so every collect shows one)
+      collected(id) { startFreed(pivotOf(id) || pivots[freeN++ % pivots.length]); },
+      freeSoul(n) { startFreed(pivots[n]); },
+      get freeing() { return freeing ? { n: pivots.indexOf(freeing.p), t: +(tNow - freeing.t0).toFixed(2) } : null; },
       screenOf(id) {
         const r = css.domElement.getBoundingClientRect();
         if (id === 'run') { const b = sheetEl.querySelector('.r3b-run').getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }

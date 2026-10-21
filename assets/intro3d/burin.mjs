@@ -113,6 +113,8 @@ const FRAG = /* glsl */`
   uniform vec3 uCamPos;
   uniform float uWobble;   // the hand's drift along a line (0 ruled .. 3 loose)
   uniform float uInvert;   // 1: a white-line plate - the lines swell in the LIGHT (the ground is the ink)
+  uniform float uFlip;     // 0..1: dissolved to the freed negative - the ground ink, the light cut in bone lines, no blood
+  uniform float uGhost;    // 0..1: faded into the ground (Death, while a soul stands freed)
   uniform float uUvMode;   // 1: the lines follow the mesh's own UVs (a lathe's rings, a sphere's meridians), scaled by uUvScale
   uniform vec2 uUvScale;
   uniform vec2 uScroll;    // the lines' drift along the plane (a river's current, smoke)
@@ -240,6 +242,18 @@ const FRAG = /* glsl */`
     // wet blood: a sheen across it, toward the lens
     float sheen = uWet * bm * pow(max(dot(reflect(-normalize(uKey), n), v), 0.0), 18.0) * 0.5;
     col += sheen;
+    if (uFlip > 0.001) {
+      // the freed: the same form as a white-line cut - the block left
+      // standing as the ground, so the figure prints dark, and only the
+      // light cut out of it in bone lines, thin in the half tones, gone in
+      // the shade (the tone before the blood: no blood, no plate tone)
+      float inkN = hatch(p, along, mix(0.02, 0.3, 1.0 - t), uWobble);
+      vec3 bone = vec3(0.91, 0.863, 0.753);
+      col = mix(col, mix(uInk * 0.85, bone, inkN), uFlip);
+    }
+    // a ghost: the cut washed back toward the paper, a faint proof of itself
+    // (Death, while his soul stands freed)
+    col = mix(col, uPaper, uGhost * 0.7);
     gl_FragColor = vec4(col, uOpacity);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
@@ -258,7 +272,7 @@ export function engravingMaterial(opts = {}) {
       uFreq: { value: o.freq }, uAngle: { value: o.angle }, uTone: { value: o.tone }, uWet: { value: o.wet },
       uBloodLo: { value: o.bloodLo }, uBloodHi: { value: o.bloodHi }, uBloodOn: { value: o.bloodOn ? 1 : 0 }, uBloodSpill: { value: o.spill },
       uEmber: { value: o.ember }, uTime: { value: 0 }, uOpacity: { value: o.opacity }, uCamPos: { value: new THREE.Vector3() },
-      uInvert: { value: o.invert ? 1 : 0 }, uWobble: { value: o.wobble }, uUvMode: { value: o.uv ? 1 : 0 }, uUvScale: { value: new THREE.Vector2(o.uv ? o.uv[0] : 1, o.uv ? o.uv[1] : 1) },
+      uInvert: { value: o.invert ? 1 : 0 }, uFlip: { value: 0 }, uGhost: { value: 0 }, uWobble: { value: o.wobble }, uUvMode: { value: o.uv ? 1 : 0 }, uUvScale: { value: new THREE.Vector2(o.uv ? o.uv[0] : 1, o.uv ? o.uv[1] : 1) },
       uScroll: { value: new THREE.Vector2(o.scroll ? o.scroll[0] : 0, o.scroll ? o.scroll[1] : 0) }, uSteps: { value: o.steps },
       uAxis: { value: new THREE.Vector3(...(o.axis || [0, 1, 0])) }, uAxisOn: { value: o.axis ? 1 : 0 }, uPitchPx: { value: o.pitch }
     },
@@ -295,12 +309,19 @@ const OUT_VERT = /* glsl */`
 `;
 const OUT_FRAG = /* glsl */`
   uniform vec3 uInk;
-  void main() { gl_FragColor = vec4(uInk, 1.0);
+  uniform float uFlip, uGhost;
+  void main() {
+    // (in the freed negative the line is a bone cut between the dark forms;
+    // a ghost's line fades back toward the paper)
+    vec3 bone = vec3(0.91, 0.863, 0.753);
+    vec3 c = mix(uInk, bone, uFlip);
+    c = mix(c, bone, uGhost * 0.7);
+    gl_FragColor = vec4(c, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment> }
 `;
 export function outlineMaterial(px = 2.2, ink = INK) {
-  return new THREE.ShaderMaterial({ vertexShader: OUT_VERT, fragmentShader: OUT_FRAG, uniforms: { uPx: { value: px }, uViewport: { value: new THREE.Vector2(1, 1) }, uInk: { value: ink.clone() } }, side: THREE.BackSide, depthWrite: true });
+  return new THREE.ShaderMaterial({ vertexShader: OUT_VERT, fragmentShader: OUT_FRAG, uniforms: { uPx: { value: px }, uViewport: { value: new THREE.Vector2(1, 1) }, uInk: { value: ink.clone() }, uFlip: { value: 0 }, uGhost: { value: 0 } }, side: THREE.BackSide, depthWrite: true });
 }
 export function outlineOf(mesh, px = 2.2, ink = INK) {
   const o = new THREE.Mesh(mesh.geometry, outlineMaterial(px, ink));
