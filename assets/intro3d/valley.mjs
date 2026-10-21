@@ -338,8 +338,10 @@ function vSawyer(kit, rnd) {
   // the saw: a broad toothed blade on a slant, its lower end sunk in the
   // cut, a cross handle at its upper end; it works along its own length
   const saw = new THREE.Group(); g.add(saw);
-  const blade = mesh(new THREE.BoxGeometry(SAW.len, 10, 0.8), kit.steel, saw, 1.6); blade.position.x = -SAW.len / 2;
-  for (let i = 0; i < 27; i++) { const t = mesh(new THREE.ConeGeometry(1.1, 2.4, 4), kit.steel, saw, 0); t.position.set(-4 - i * 2.1, -6.1, 0); t.rotation.x = PI; }
+  // (the blade in ink, its teeth a pale saw-edge along its foot: against the
+  // pale legs it must read as iron, not a third leg)
+  const blade = mesh(new THREE.BoxGeometry(SAW.len, 10, 0.8), kit.iron, saw, 1.6); blade.position.x = -SAW.len / 2;
+  for (let i = 0; i < 27; i++) { const t = mesh(new THREE.ConeGeometry(1.3, 2.8, 4), kit.steel, saw, 0.6); t.position.set(-4 - i * 2.1, -6.1, 0); t.rotation.x = PI; }
   const grip = mesh(new THREE.CylinderGeometry(1.7, 1.7, 15, 8), kit.post, saw, 1.2); grip.position.set(-SAW.len - 1, 1, 0); grip.rotation.x = HALF;
   const SAW0 = V(0, 98, -8), SAWD = V(-Math.cos(SAW.tilt), Math.sin(SAW.tilt), 0).applyAxisAngle(V(0, 1, 0), SAW.yaw);
   saw.quaternion.setFromUnitVectors(V(-1, 0, 0), SAWD);
@@ -483,7 +485,12 @@ function vFlaying(kit, rnd) {
   // (hung by its arms from the end of the low branch, face to you, pale
   // against the dark hill: a man's whole outline, emptied)
   const SKIN_Y = PI - 0.25;
-  const skin = mesh(sg, kit.skin, g, 0); skin.position.set(-52, 152, 4); skin.rotation.y = SKIN_Y; skin.scale.setScalar(0.82);
+  // (its own plate: a hide has a tone, hatched in its folds, never bare
+  // paper - a white cut-out read as a hole in the print)
+  const hideM = mat({ freq: 1.1, angle: 1.35, tone: 0.24, wobble: 0.9, side: THREE.DoubleSide });
+  const skin = mesh(sg, hideM, g, 0); skin.position.set(-52, 158, 4); skin.rotation.y = SKIN_Y; skin.scale.setScalar(0.8);
+  // the cord it hangs by, up to the branch, and its feet well clear of the ground
+  { const cord = mesh(new THREE.CylinderGeometry(0.5, 0.5, 12, 5), kit.rope, g, 0.6); cord.position.set(-52, 164, 4); }
   // (a flat skin has no hull for an outline: its edge drawn as a line, a
   // little proud of both faces, so its arms, legs and head read)
   { const pts = skinShape.getPoints(6).map(q => V(q.x, q.y, Math.sin(q.y * 0.06) * 3 + Math.sin(q.x * 0.2) * 1.5)); pts.push(pts[0].clone());
@@ -678,7 +685,12 @@ function vStake(kit, rnd) {
   for (let k = 0; k < 4; k++) { g.updateMatrixWorld(true); const sh = g.worldToLocal(d.arms.l.sh.getWorldPosition(V(0, 0, 0))); piv.rotation.z += Math.atan2(sh.x - 0, sh.y - FORK); }
   // (the legs hang straight down from the fork either side of the shaft,
   // whatever the lean of the body above them)
-  d.legs.l.hip.rotation.set(0.1, 0, -piv.rotation.z + 0.16); d.legs.r.hip.rotation.set(-0.12, 0, -piv.rotation.z - 0.13);
+  d.legs.l.hip.rotation.set(0.42, 0, -piv.rotation.z + 0.34); d.legs.r.hip.rotation.set(0.3, 0, -piv.rotation.z - 0.3);
+  // (slumped on it: the knees fallen open and bent, the feet hanging back,
+  // the head dropped forward, the arms hanging dead)
+  d.legs.l.kn.rotation.x = KNEE_BACK * 0.85; d.legs.r.kn.rotation.x = KNEE_BACK * 0.7;
+  d.neck.rotation.set(-0.55, 0.2, -0.45);
+  d.arms.l.sh.rotation.set(0.1, 0, 0.12); d.arms.r.sh.rotation.set(0.15, 0, -0.14); d.arms.l.el.rotation.x = 0.2; d.arms.r.el.rotation.x = 0.25;
   // Death with the glass, looking up
   const death = buildDeath(kit, rnd); g.add(death); restSkeleton(death);
   // (stepped out to the side and toward you, clear of him, facing up at
@@ -691,15 +703,15 @@ function vStake(kit, rnd) {
   dd.neck.rotation.x = 0.5; dd.spine.rotation.x = 0.12;
   // the glass held up to his face at arm's length, as far as the arm goes
   const raised = reach(dd.arms.r, [face.x - 32, Math.min(face.y - 8, 194), face.z - 20], death, 12, { start: [2.4, 0, -0.2, 0.3] });
-  const glass = buildHourglass(kit, 20); glass.position.set(0, -12, -4); glass.rotation.x = 0.3; dd.arms.r.hand.add(glass); dd.arms.r.hand.userData.grip(0.45);
+  const glass = buildHourglass(kit, 26); glass.position.set(0, -15, -4); glass.rotation.x = 0.3; dd.arms.r.hand.add(glass); dd.arms.r.hand.userData.grip(0.45);
   g.add(pool(kit, rnd, 20)).position.set(-6, 0, 4);
   // (the blood from where the point came out, down his breast; the shaft
   // red from his fork to the ground)
   bleed(man, 0.17); bands.push([man, SHOULDER + 6, SHOULDER - 26]);
   bleed(stake, 0.95); bands.push([stake, FORK + 4, 0]);
   const act = (tt, dt, w, still) => {
-    d.arms.l.sh.rotation.x = (still ? 0 : Math.sin(tt * 0.5) * 0.06);
-    d.neck.rotation.z = -0.75 + (still ? 0 : Math.sin(tt * 0.35) * 0.08);
+    d.arms.l.sh.rotation.x = 0.1 + (still ? 0 : Math.sin(tt * 0.5) * 0.06);
+    d.neck.rotation.z = -0.45 + (still ? 0 : Math.sin(tt * 0.35) * 0.08);
     dd.neck.rotation.y = still ? 0 : Math.sin(tt * 0.4) * 0.15;
     setArm(dd.arms.r, raised); dd.arms.r.sh.rotation.x += still ? 0 : Math.sin(tt * 0.7) * 0.05;
   };
@@ -781,7 +793,7 @@ function vDragging(kit, rnd) {
     d.neck.rotation.x = 0.35 + (still ? 0 : Math.sin(wv - 0.6) * 0.1);
     d.arms.l.sh.rotation.z = 0.62 + (still ? 0 : Math.sin(wv + 1) * 0.08);
   };
-  return { g, death, act, bands, drips: [], crows: [[-100, 2, 62]], width: 150, victims: [man], freed: { pose: 'peace', at: [22, 0, -26], kneel: [44, 4] } };
+  return { g, death, act, bands, drips: [], crows: [[-100, 2, 62]], width: 150, victims: [man], freed: { pose: 'peace', at: [26, 0, -22], beside: [36, 4] } };
 }
 const VIGNETTES = [vSawyer, vFlaying, vWheel, vDragging, vGallows, vWindlass, vStake];
 // (the lab: one vignette built alone, for the study page - the kit's
@@ -1302,7 +1314,7 @@ export async function prepareTable(opts) {
     v.plates = ownMats(v.g, dset);
   });
   const freedRnd = seeded(77);
-  const freedFigs = [0, 1].map(k => { const f = buildFigure(kit, freedRnd, { shirt: true, hose: true, beard: k === 0 }); restBody(f); f.visible = false; f.userData.plates = ownMats(f); return f; });
+  const freedFigs = [0, 1].map(k => { const f = buildFigure(kit, freedRnd, { calm: true, shirt: true, hose: true, beard: k === 0 }); restBody(f); f.visible = false; f.userData.plates = ownMats(f); return f; });
   const setPlates = (pl, flip, ghost) => { pl.mats.forEach(m => { m.uniforms.uFlip.value = flip; m.uniforms.uGhost.value = ghost; }); pl.outs.forEach(m => { m.uniforms.uFlip.value = flip; m.uniforms.uGhost.value = ghost; }); };
   const FREE = { IN: 0.8, HOLD: 3.8, OUT: 1.1 };
   const snapOf = root => { const out = []; root.traverse(o => out.push([o, o.position.clone(), o.quaternion.clone()])); return out; };
@@ -1385,27 +1397,32 @@ export async function prepareTable(opts) {
         u.neck.rotation.set(o === v.death ? 0.08 : 0.26, o === v.death ? Math.sin(k * 1.7) * 0.5 : -Math.sign(dx) * 0.25, 0);
       });
     } else if (v.freed.pose === 'peace') {
-      // he stands whole by the empty stake (or where he was dragged), the
-      // hands open, the face up; his Death kneels by him with the skull bowed
-      // (a line of dancers would not fit the dragging's window past the
-      // dealer)
+      // he stands whole by the empty stake (or where he was dragged), his
+      // weight on one leg, the hands open at his sides, the face lifted; his
+      // Death stands by him, turned to him, the skull bowed, a hand laid on
+      // his shoulder (a line of dancers would not fit the dragging's window)
       const f = F.figs[0], u = f.userData, cam = camIn(v);
       f.position.set(at[0], 0, at[2]); f.rotation.set(0, Math.atan2(-(cam.x - at[0]), -(cam.z - at[2])), 0);
-      u.hips.position.y = BODY_HIPS + Math.sin(k * 1.6) * 0.6;
-      u.arms.l.sh.rotation.set(0.15, 0, 0.55); u.arms.r.sh.rotation.set(0.15, 0, -0.55);
-      u.arms.l.el.rotation.x = 0.4; u.arms.r.el.rotation.x = 0.4;
-      u.legs.l.hip.rotation.set(0, 0, 0.04); u.legs.r.hip.rotation.set(0, 0, -0.04);
-      u.neck.rotation.set(0.34, 0, 0);
-      const [kx, kz] = v.freed.kneel || [26, 8];
+      u.hips.position.y = BODY_HIPS - 1.2 + Math.sin(k * 1.6) * 0.6; u.hips.rotation.z = 0.05;
+      u.arms.l.sh.rotation.set(0.22, 0, 0.3); u.arms.r.sh.rotation.set(0.28, 0, -0.34);
+      u.arms.l.el.rotation.x = 0.35; u.arms.r.el.rotation.x = 0.42;
+      u.legs.l.hip.rotation.set(0.1, 0, -0.02); u.legs.l.kn.rotation.x = KNEE_BACK * 0.16; u.legs.r.hip.rotation.set(-0.02, 0, -0.06);
+      u.neck.rotation.set(0.22, 0, -0.05);
+      const [kx, kz] = v.freed.beside || [30, 6];
       v.death.position.set(at[0] + kx, 0, at[2] + kz); faceTo(v.death, at[0], at[2]);
       restSkeleton(v.death);
-      // (down on one knee: the near thigh forward, its shin planted; the far
-      // knee on the ground, its shin laid back; a joint's +x tips back, so
-      // the bow is -x)
-      du.hips.position.y = 47;
-      du.legs.l.hip.rotation.x = 1.5; du.legs.l.kn.rotation.x = KNEE_BACK * 1.5;
-      du.legs.r.hip.rotation.x = 0; du.legs.r.kn.rotation.x = KNEE_BACK * 1.57;
-      du.neck.rotation.set(-0.55, 0, 0); du.spine.rotation.x = -0.22;
+      du.neck.rotation.set(-0.45, 0, 0); du.spine.rotation.x = -0.1;
+      // (the hand on his shoulder: solved once, the nearer of Death's arms)
+      if (!v.peaceArm) {
+        v.g.updateMatrixWorld(true);
+        const best = ['l', 'r'].map(sd => {
+          const t = v.g.worldToLocal(u.arms[sd === 'l' ? 'r' : 'l'].sh.getWorldPosition(V(0, 0, 0)));
+          const an = reach(du.arms[sd], [t.x, t.y + 3, t.z - 1], v.death, 10, { start: [0.9, 0, sd === 'l' ? 0.2 : -0.2, 0.5] });
+          return { sd, an, miss: du.arms[sd].miss };
+        }).sort((a2, b2) => a2.miss - b2.miss)[0];
+        v.peaceArm = best; restSkeleton(v.death); du.neck.rotation.set(-0.45, 0, 0); du.spine.rotation.x = -0.1;
+      }
+      setArm(du.arms[v.peaceArm.sd], v.peaceArm.an); du.arms[v.peaceArm.sd].hand.userData.grip(0.3);
     } else {
       // he walks off from beside the wheel toward the hills, his back to
       // you, clear of its rim; his Death stands where he was and watches

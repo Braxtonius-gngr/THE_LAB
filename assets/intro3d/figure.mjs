@@ -319,12 +319,13 @@ function buildHead(kit, o = {}) {
     if (!flayed) { const eye = facet(knob(0.9, 1, 1, 0.6, 0), kit.bone, head, 0); eye.position.set(sx * 3.3, 3.9, F(3.9) + 0.5); eye.rotation.y = sx * 0.4; disc(0.45, 6, kit.ink, head, sx * 3.3, 3.9, F(3.9) - 0.15, -sx * 0.4); }
   });
   // the brow: a ridge over the sockets, narrow, following the shelf
-  [-1, 1].forEach(sx => { const brow = facet(block(5.6, 1.2, 2.2, 0.5), skin, head, 0.8); brow.position.set(sx * 3.4, 6.2, F(6.2) + 0.4); brow.rotation.set(0.5, sx * 0.4, sx * 0.12); });
+  // (o.calm: a freed face - the brow eased, the mouth closed)
+  [-1, 1].forEach(sx => { const brow = facet(block(5.6, 1.2, 2.2, 0.5), skin, head, 0.8); brow.position.set(sx * 3.4, 6.2, F(6.2) + 0.4); brow.rotation.set(0.5, sx * 0.4, o.calm ? -sx * 0.08 : sx * 0.12); });
   // the mouth open: the hollow, the teeth's edge above, the lip below, the tongue
-  const mouth = disc(2.4, 8, kit.ink, head, 0, -2.4, F(-2.4) - 0.1); mouth.scale.set(1.3, 1.1, 1);
-  const teeth = facet(block(4.2, 0.9, 0.7, 0), kit.bone, head, 0); teeth.position.set(0, -1.3, F(-1.3) - 0.3);
+  const mouth = disc(2.4, 8, kit.ink, head, 0, -2.4, F(-2.4) - 0.1); mouth.scale.set(1.3, o.calm ? 0.22 : 1.1, 1);
+  const teeth = facet(block(4.2, 0.9, 0.7, 0), kit.bone, head, 0); teeth.position.set(0, -1.3, F(-1.3) - 0.3); teeth.visible = !o.calm;
   const lip = facet(block(5.4, 1.1, 1.6, 0.6), skin, head, 0.7); lip.position.set(0, -4.0, F(-4) - 0.3);
-  const tongue = facet(knob(1.1, 1, 0.55, 1.2, 0), kit.raw, head, 0); tongue.position.set(0, -3.3, F(-3.3) + 0.2);
+  const tongue = facet(knob(1.1, 1, 0.55, 1.2, 0), kit.raw, head, 0); tongue.position.set(0, -3.3, F(-3.3) + 0.2); tongue.visible = !o.calm;
   // the ears: flat shells at the sides
   [-1, 1].forEach(sx => { const ear = facet(loft([{ y: -1.8, rx: 1.2, rz: 1.6 }, { y: 0.4, rx: 1.7, rz: 2.4 }, { y: 2.8, rx: 1.3, rz: 2.0 }], { n: 6 }), skin, head, 0.9); ear.position.set(sx * 8.6, 2.4, 1.6); ear.scale.set(0.45, 1, 1); ear.rotation.z = -sx * 0.15; });
   if (!flayed) {
