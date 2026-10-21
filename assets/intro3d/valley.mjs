@@ -266,6 +266,9 @@ function buildPlacard(kit, card, i, h = 96, bw = 30) {
 // Each is built facing -z at its own origin on the ground; the caller
 // places it and sets its blood bands in world y.
 
+// the sense in which a knee or an elbow bends back (the shin or forearm to
+// the body's back, +z): set once from the figure's joints
+const KNEE_BACK = -1;
 // I. THE SAWYER. A man hung by the ankles from an A-frame, spread; Death
 // at the saw, the cut from the fork down into the belly; what is in him
 // hanging out of it; the blood running down him to the pool round his head.
@@ -347,33 +350,61 @@ function vWindlass(kit, rnd) {
   wound(d.hips, 22, 8, 20, 0, 26, -8, kit);
   // the windlass: a frame of two uprights with the drum between, the
   // crank at the near end
-  const wl = G(g, 44, 0, -34);
-  [-1, 1].forEach(s => { const u = mesh(new THREE.BoxGeometry(6, 92, 6), kit.post, wl, 1.6); u.position.set(0, 46, s * 16); });
-  const drum = G(wl, 0, 90, 0);
-  const dr = mesh(new THREE.CylinderGeometry(7, 7, 30, 14), kit.post, drum, 1.6); dr.rotation.x = HALF;
-  // the bowels wound on the drum: a spiral tube
+  // (a well's windlass, big enough to read across the valley: two posts on
+  // a sill with a cross-piece, the drum between them turned side-on to you,
+  // a great crank at its near end; the bowels wound fat round the drum and
+  // running in a red rope from his open belly up to it)
+  const wl = G(g, 62, 0, -10); wl.rotation.y = 0.35;
+  const WH = 118, DR = 13, DL = 40;
+  mesh(new THREE.BoxGeometry(10, 8, DL + 22), kit.wood, wl, 1.6).position.set(0, 4, 0);
+  [-1, 1].forEach(s => { const u = mesh(new THREE.BoxGeometry(8, WH, 8), kit.post, wl, 1.8); u.position.set(0, WH / 2, s * (DL / 2 + 6)); const br = mesh(new THREE.BoxGeometry(5, 40, 5), kit.post, wl, 1.2); br.position.set(14, 22, s * (DL / 2 + 6)); br.rotation.z = 0.55; });
+  mesh(new THREE.BoxGeometry(7, 7, DL + 22), kit.wood, wl, 1.5).position.set(0, WH + 3, 0);
+  const drum = G(wl, 0, WH - 22, 0);
+  const dr = mesh(new THREE.CylinderGeometry(DR, DR, DL, 16), kit.woodRing, drum, 1.8); dr.rotation.x = HALF;
+  [-1, 1].forEach(s => { const cap = mesh(new THREE.CylinderGeometry(DR + 2.5, DR + 2.5, 2, 16), kit.post, drum, 1.3); cap.rotation.x = HALF; cap.position.z = s * DL / 2; });
+  // the bowels wound on the drum: a fat coil, three turns
   const sp = [];
-  for (let i = 0; i <= 40; i++) { const a = i / 40 * PI * 2 * 3, z = -10 + i / 40 * 18; sp.push([Math.cos(a) * 8.6, Math.sin(a) * 8.6, z]); }
-  mesh(gutGeo(sp, 2.2), kit.gut, drum, 1.2);
-  const crank = mesh(new THREE.BoxGeometry(2.4, 20, 2.4), kit.iron, drum, 1.2); crank.position.set(0, 10, -22);
-  const handle = mesh(new THREE.CylinderGeometry(1.4, 1.4, 12, 8), kit.post, drum, 1.1); handle.position.set(0, 20, -28); handle.rotation.x = HALF;
-  // the free run of the bowels, from the belly up to the drum
-  mesh(gutGeo([[5, TH + 24, -4], [16, TH + 30, -10], [28, 80, -20], [38, 92, -28], [44, 99, -34]]), kit.gut, g, 1.2);
+  for (let i = 0; i <= 60; i++) { const a = i / 60 * PI * 2 * 4, z = -DL / 2 + 6 + i / 60 * (DL - 12); sp.push([Math.cos(a) * (DR + 3.2), Math.sin(a) * (DR + 3.2), z]); }
+  mesh(gutGeo(sp, 3.4), kit.gut, drum, 1.3);
+  const crank = mesh(new THREE.BoxGeometry(3.2, 30, 3.2), kit.iron, drum, 1.3); crank.position.set(0, 15, -(DL / 2 + 8));
+  const axle = mesh(new THREE.CylinderGeometry(2.2, 2.2, 10, 8), kit.iron, drum, 1.1); axle.rotation.x = HALF; axle.position.z = -(DL / 2 + 4);
+  const handle = mesh(new THREE.CylinderGeometry(2, 2, 16, 8), kit.post, drum, 1.2); handle.position.set(0, 30, -(DL / 2 + 15)); handle.rotation.x = HALF;
+  // the free run of the bowels, from the belly up to the drum's coil, sagging
+  wl.updateMatrix(); drum.updateMatrix();
+  const coil = new THREE.Vector3(-(DR + 3), WH - 22, 0).applyMatrix4(wl.matrix);
+  mesh(gutGeo([[4, TH + 22, -4], [16, TH + 28, -8], [32, TH + 30, -10], [coil.x - 10, (TH + 30 + coil.y) / 2 + 2, (coil.z - 10) / 2], [coil.x, coil.y, coil.z]], 3.4), kit.gut, g, 1.3);
   // Death at the crank, side on, one hand on the handle, the other on the frame
   const death = buildDeath(kit, rnd); g.add(death); restSkeleton(death);
-  death.position.set(50, 0, -70); death.rotation.y = -0.2;
+  // (beside the crank, outside it, turned to it: so the drum and the coil
+  // are never behind him; his right hand on the handle the whole way round
+  // - the arm solved at eight places on the turn at build, and read between)
+  death.position.set(104, 0, -50); death.rotation.y = HALF - 0.45;
   const dd = death.userData;
-  dd.spine.rotation.x = 0.1; dd.legs.l.hip.rotation.x = -0.2; dd.legs.r.hip.rotation.x = 0.25; dd.legs.r.kn.rotation.x = 0.3;
-  dd.arms.l.sh.rotation.set(-0.6, 0, 0.9); dd.arms.l.el.rotation.x = -0.5;
+  dd.spine.rotation.x = -0.12; dd.legs.l.hip.rotation.x = -0.25; dd.legs.r.hip.rotation.x = 0.3; dd.legs.r.kn.rotation.x = 0.3;
+  const turn = [];
+  for (let n = 0; n < 8; n++) {
+    drum.rotation.z = -n / 8 * PI * 2;
+    g.updateMatrixWorld(true);
+    const hp = handle.getWorldPosition(new THREE.Vector3()); g.worldToLocal(hp);
+    turn.push(reach(dd.arms.r, [hp.x, hp.y, hp.z], death, 10, { start: [-0.9, 0, -0.3, -0.9] }));
+  }
+  drum.rotation.z = 0;
+  // the left hand on the near post's top
+  g.updateMatrixWorld(true);
+  const postTop = new THREE.Vector3(0, WH - 6, -(DL / 2 + 6)).applyMatrix4(wl.matrix);
+  reach(dd.arms.l, [postTop.x + 2, postTop.y, postTop.z - 4], death, 10, { start: [-0.8, 0, 0.4, -0.6] });
+  dd.arms.r.hand.userData.grip(1); dd.arms.l.hand.userData.grip(0.8);
   // the pool under the table's edge, where it drips
   g.add(pool(kit, rnd, 22)).position.set(-10, 0, -22);
-  bleed(man, 0.7); bands.push([man, TH + 28, TH + 10]);
+  // (a lying body: a band by height would redden all of him - the open belly,
+  // the bowels and the table's edge carry the blood)
   bleed(top); bands.push([top, TH + 3, TH - 3]);
   const act = (tt, dt, w, still) => {
     const a = still ? 0 : tt * 1.7;
     drum.rotation.z = -a;
     // the arm follows the crank's handle: the shoulder and elbow swing round
-    dd.arms.r.sh.rotation.x = -1.1 + Math.sin(a) * 0.45; dd.arms.r.el.rotation.x = -0.9 + Math.cos(a) * 0.5; dd.arms.r.sh.rotation.z = -0.35 - Math.cos(a) * 0.1;
+    const f = ((a / (PI * 2)) % 1 + 1) % 1 * 8, n0 = Math.floor(f) % 8, n1 = (n0 + 1) % 8, k = f - Math.floor(f);
+    setArm(dd.arms.r, turn[n0].map((v, j) => v + (turn[n1][j] - v) * k));
     dd.spine.rotation.z = still ? 0 : Math.cos(a) * 0.05;
     dd.neck.rotation.y = 0.5 + (still ? 0 : Math.sin(tt * 0.5) * 0.15);
     // the man: a hand lifts and falls, the head rolls
@@ -445,30 +476,41 @@ function buildTree(kit, rnd) {
 // limbs through the spokes, broken; Death below it with the bar, raised.
 function vWheel(kit, rnd) {
   const g = new THREE.Group(), bands = [];
-  const P = 118, R = 42;
-  mesh(new THREE.CylinderGeometry(4, 5.5, P, 10), kit.post, g, 2).position.y = P / 2;
-  const wh = G(g, 0, P + 2, 0); wh.rotation.x = 2.6;   // (its face tilted down toward you)
-  mesh(new THREE.TorusGeometry(R, 3.2, 8, 36), kit.woodRing, wh, 1.8);
-  for (let k = 0; k < 8; k++) { const sp = mesh(new THREE.CylinderGeometry(1.6, 2, R - 4, 8), kit.post, wh, 1.3); const a = k / 8 * PI * 2; sp.position.set(Math.cos(a) * R / 2, Math.sin(a) * R / 2, 0); sp.rotation.z = a + HALF; }
-  mesh(new THREE.CylinderGeometry(7, 7, 9, 12), kit.post, wh, 1.5).rotation.x = HALF;
-  // the man: on his back over the hub, the limbs bent back through the
-  // spokes (a knee the wrong way, an elbow the wrong way)
+  const P = 104, R = 60;
+  mesh(new THREE.CylinderGeometry(4.5, 6, P, 10), kit.post, g, 2).position.y = P / 2;
+  // (the wheel's face turned up to you: its camera side is -z, up +y)
+  const wh = G(g, 0, P + R * 0.55, 0); wh.rotation.x = 0.42;
+  mesh(new THREE.TorusGeometry(R, 3.4, 8, 40), kit.woodRing, wh, 1.8);
+  // (a felloe's second ring inside the rim, so it reads as a cart wheel)
+  mesh(new THREE.TorusGeometry(R - 5, 1.4, 6, 40), kit.woodRing, wh, 1.1);
+  for (let k = 0; k < 10; k++) { const sp = mesh(new THREE.CylinderGeometry(1.5, 2, R - 6, 8), kit.post, wh, 1.2); const a = k / 10 * PI * 2 + 0.16; sp.position.set(Math.cos(a) * R / 2, Math.sin(a) * R / 2, 0.8); sp.rotation.z = a + HALF; }
+  mesh(new THREE.CylinderGeometry(8, 8, 11, 12), kit.post, wh, 1.5).rotation.x = HALF;
+  // the man, broken on it: on his back on the face, his hips at the hub and
+  // his head thrown back over the top rim; the thighs out to the rim and the
+  // shins snapped back behind it through the spokes; the arms out along the
+  // upper spokes, the forearms broken back over the rim; lashed at wrist
+  // and knee
   const man = buildFigure(kit, rnd, { hose: true }); wh.add(man); restBody(man);
-  shade(g, 0, 0, 30, 22, 70); shade(g, -46, 10, 22, 12);
-  man.position.set(0, BODY_HIPS, 10); man.rotation.set(0, PI, PI + 0.25);   // (on his back on the face, his head over the top rim, toward you)
+  shade(g, 0, 0, 40, 26, 70); shade(g, -58, 10, 22, 12);
+  man.position.set(0, -BODY_HIPS + 4, -5);
   const d = man.userData;
-  d.legs.l.hip.rotation.set(0.9, 0, 0.6); d.legs.r.hip.rotation.set(0.6, 0, -0.9); d.legs.l.kn.rotation.x = -1.9; d.legs.r.kn.rotation.x = -2.1;
-  d.arms.l.sh.rotation.set(0.4, 0, 1.9); d.arms.r.sh.rotation.set(0.9, 0, -2.3); d.arms.l.el.rotation.set(0, 0, 1.6); d.arms.r.el.rotation.set(0, 0, -1.9);
-  d.neck.rotation.set(-0.6, 0, 0.5);
-  wound(d.legs.l.kn, 5, 7, 9, 0, -2, -2, kit); wound(d.arms.r.el, 4, 6, 7, 0, -1, 0, kit); wound(d.hips, 9, 5, 8, -4, 30, -10, kit);
+  d.legs.l.hip.rotation.set(0, 0, 0.42); d.legs.r.hip.rotation.set(0, 0, -0.42);
+  d.legs.l.kn.rotation.x = KNEE_BACK * 1.7; d.legs.r.kn.rotation.x = KNEE_BACK * 1.9;
+  d.arms.l.sh.rotation.set(0, 0, 2.15); d.arms.r.sh.rotation.set(0, 0, -2.05);
+  d.arms.l.el.rotation.x = KNEE_BACK * 1.45; d.arms.r.el.rotation.x = KNEE_BACK * 1.25;
+  d.neck.rotation.set(-0.85, 0, 0.35);
+  // the lashings: a rope round each wrist and each knee, out to the rim
+  const lash = (part, y) => { const r = mesh(new THREE.TorusGeometry(4.6, 0.9, 6, 12), kit.rope, part, 0.9); r.position.y = y; r.rotation.x = HALF; };
+  lash(d.arms.l.hand, 1); lash(d.arms.r.hand, 1); lash(d.legs.l.kn, -1); lash(d.legs.r.kn, -1);
+  wound(d.legs.l.kn, 5, 7, 9, 0, -2, -2, kit); wound(d.legs.r.kn, 5, 6, 8, 0, -2, -2, kit); wound(d.arms.r.el, 4, 6, 7, 0, -1, 0, kit); wound(d.arms.l.el, 4, 5, 6, 0, -1, 0, kit);
   // Death with the bar: both hands, raised over his head
   const death = buildDeath(kit, rnd); g.add(death); restSkeleton(death);
-  death.position.set(-46, 0, 10); death.rotation.y = 0.75;
+  death.position.set(-62, 0, -6); death.rotation.y = 0.75;
   const dd = death.userData;
   const bar = mesh(new THREE.CylinderGeometry(1.8, 2.2, 88, 8), kit.iron, g, 1.4); bar.position.y = 12; hold(dd.arms.r.hand, bar); dd.arms.l.hand.userData.grip(1);   // (across both fists, raised)
   dd.legs.l.hip.rotation.x = -0.4; dd.legs.r.hip.rotation.x = 0.35; dd.legs.r.kn.rotation.x = 0.4;
   g.add(pool(kit, rnd, 18)).position.set(6, 0, 16);
-  bleed(man, 0.3); bands.push([man, P + 30, P - 30]);
+  bleed(man, 0.35); bands.push([man, P + R * 0.55 + 30, P + R * 0.55 - 40]);
   const act = (tt, dt, w, still) => {
     // the blow: a long wind-up, the bar brought down, a settle (a 3.4 s cycle)
     const c = still ? 0.3 : (tt % 3.4) / 3.4;
@@ -479,9 +521,9 @@ function vWheel(kit, rnd) {
     dd.spine.rotation.x = -0.2 + up * -0.25 + down * 0.45;
     dd.hips.position.y = 92 - down * 5 + up * 1.5;
     wh.rotation.z = (still ? 0 : Math.sin(tt * 0.3) * 0.03) + rec + w * 0.05;
-    d.arms.l.el.rotation.z = 1.6 + (still ? 0 : Math.sin(tt * 2.3) * 0.08);
+    d.arms.l.sh.rotation.z = 2.15 + (still ? 0 : Math.sin(tt * 2.3) * 0.05);   // (a twitch)
   };
-  return { g, death, act, bands, drips: [[V(10, P - 4, 20), V(6, 2, 16)]], crows: [[R - 6, P + 2 + 16, 4], [-R + 4, P + 2 + 12, 10]], width: 120 };
+  return { g, death, act, bands, drips: [[V(6, P + 10, -16), V(6, 2, -10)]], crows: [[R - 6, P + R * 0.55 + 30, 4], [-R + 4, P + R * 0.55 + 26, 10]], width: 140 };
 }
 // V. THE GALLOWS. A beam on two posts, two hanged - one long dead, one not
 // - crows on the beam; Death under them with the drum, dancing.
@@ -494,15 +536,30 @@ function vGallows(kit, rnd) {
   // the hanged: a man, fresh, and a skeleton in rags; each on its rope
   const hanged = [];
   [[-30, 0], [30, 1]].forEach(([x, k]) => {
+    // (a hanged body: the rope taut from the beam to the knot under one
+    // ear, the head thrown over to the other side by it, the shoulders
+    // dropped, the arms bound behind, the legs long and loose, the feet
+    // pointed down - his weight is all on the rope, nothing under him)
     const piv = G(g, x, H - 4, 0);
-    mesh(new THREE.CylinderGeometry(0.9, 0.9, 44, 6), kit.rope, piv, 0.9).position.y = -22;
+    const ROPE = 40;
+    mesh(new THREE.CylinderGeometry(1.0, 1.0, ROPE, 6), kit.rope, piv, 1.0).position.y = -ROPE / 2;
     const b = buildFigure(kit, rnd, { shirt: true, hose: k === 1, beard: k === 0 }); restBody(b);
-    b.position.y = -44 - 150; b.rotation.y = (rnd() - 0.5) * 1.2 + (k ? 0.5 : -0.4); piv.add(b);
+    const face = k ? -0.22 : 0.18;
+    // (the knot at the rope's end: the neck joint is 147 up the body, the coil 5 above it)
+    b.position.y = -(ROPE + 152); b.rotation.y = face; piv.add(b);
     const d = b.userData;
-    d.neck.rotation.set(0.5, 0, 0.6); d.arms.l.sh.rotation.z = 0.12; d.arms.r.sh.rotation.z = -0.12; d.legs.l.hip.rotation.x = 0.05; d.legs.r.hip.rotation.x = -0.05;
-    d.mouth.scale.set(1.2, 1.6, 0.5); d.arms.l.sh.rotation.x = 0.1; d.arms.l.el.rotation.z = 0.3; d.arms.r.el.rotation.z = -0.3;   // (the hands bound before him)
-    if (k) { d.legs.l.kn.rotation.x = 0.3; d.neck.rotation.z = -0.6; }
-    hanged.push({ piv, b, k, ph: rnd() * 6 });
+    const side = k ? -1 : 1;
+    d.neck.rotation.set(0.42, 0, side * 0.95);
+    // the noose: a coil round the neck and the knot standing out under the ear
+    const coil = mesh(new THREE.TorusGeometry(5.2, 1.2, 6, 14), kit.rope, d.neck, 1.0); coil.position.y = 5; coil.rotation.x = HALF;
+    const knot = mesh(new THREE.CylinderGeometry(1.9, 1.9, 6, 7), kit.rope, d.neck, 1.0); knot.position.set(-side * 5.6, 7.5, 0.5);
+    d.arms.l.sh.rotation.set(KNEE_BACK * -0.38, 0, -0.16); d.arms.r.sh.rotation.set(KNEE_BACK * -0.38, 0, 0.16);
+    d.arms.l.el.rotation.x = KNEE_BACK * 0.55; d.arms.r.el.rotation.x = KNEE_BACK * 0.55;
+    d.legs.l.hip.rotation.set(0.04, 0, 0.05); d.legs.r.hip.rotation.set(-0.06, 0, -0.04);
+    d.legs.l.kn.rotation.x = KNEE_BACK * (k ? 0.35 : 0.12); d.legs.r.kn.rotation.x = KNEE_BACK * 0.08;
+    d.legs.l.foot.rotation.x = -0.95; d.legs.r.foot.rotation.x = -0.85;
+    d.mouth.scale.set(1.2, 1.6, 0.5);
+    hanged.push({ piv, b, k, ph: rnd() * 6, face });
   });
   // Death the drummer: the drum slung at his hip, a stick in each hand
   const death = buildDeath(kit, rnd); g.add(death); restSkeleton(death);
@@ -523,7 +580,7 @@ function vGallows(kit, rnd) {
     dd.arms.l.sh.rotation.set(-0.9 + (still ? 0 : Math.sin(wv * 2) * 0.5), 0, 0.5); dd.arms.r.sh.rotation.set(-0.9 + (still ? 0 : Math.cos(wv * 2) * 0.5), 0, -0.5);
     dd.arms.l.el.rotation.x = -1.3; dd.arms.r.el.rotation.x = -1.3;
     dd.neck.rotation.set(0.25, still ? 0 : Math.sin(wv * 0.5) * 0.4, still ? 0 : Math.sin(wv) * 0.15);
-    hanged.forEach((h, i) => { h.piv.rotation.z = (still ? 0 : Math.sin(tt * 0.8 + h.ph) * 0.05) + w * 0.22 * (i ? 0.7 : 1); h.piv.rotation.x = (still ? 0 : Math.sin(tt * 0.6 + h.ph) * 0.03) + w * 0.06; h.b.rotation.y += (still ? 0 : (0.12 + w * 0.5) * dt) * (i ? -1 : 1); });
+    hanged.forEach((h, i) => { h.piv.rotation.z = (still ? 0 : Math.sin(tt * 0.8 + h.ph) * 0.05) + w * 0.22 * (i ? 0.7 : 1); h.piv.rotation.x = (still ? 0 : Math.sin(tt * 0.6 + h.ph) * 0.03) + w * 0.06; h.b.rotation.y = h.face + (still ? 0 : Math.sin(tt * 0.31 + h.ph) * 0.32) + w * 0.4 * (i ? -1 : 1); });   // (they turn on the rope a little, and back - never round to show their backs)
   };
   return { g, death, act, bands, drips: [[V(-30, H - 170, -4), V(-30, 2, 2)]], crows: [[-50, H + 6, 0], [0, H + 6, 0], [44, H + 6, 0], [-W / 2, H + 5, 0]], width: 160 };
 }
@@ -531,17 +588,28 @@ function vGallows(kit, rnd) {
 // holding his glass up to him.
 function vStake(kit, rnd) {
   const g = new THREE.Group(), bands = [];
-  const H = 230;
-  const stake = mesh(new THREE.CylinderGeometry(2.6, 5, H, 9), kit.post, g, 2); stake.position.y = H / 2; stake.rotation.z = 0.06;
-  mesh(new THREE.ConeGeometry(2.6, 12, 9), kit.post, g, 1.5).position.set(-H * 0.06 * 0.5 - 6.5, H + 5, 0);
+  // (run through from the fork to the left shoulder: the man hangs on the
+  // stake, his feet well off the ground, the shaft seen below him between
+  // his legs and its point standing out of him by his neck; the stake leans
+  // so it passes through both)
+  const FEET = 74, FORK = FEET + BODY_HIPS - 9, SHOULDER = FEET + BODY_HIPS + 50, TIP = SHOULDER + 22;
+  const lean = 13 / (SHOULDER - FORK);                     // (x it gains each unit up)
+  const H = TIP;
+  const stakeGeo = new THREE.CylinderGeometry(1.7, 5, TIP - 10, 9); stakeGeo.translate(0, (TIP - 10) / 2, 0);
+  const stake = mesh(stakeGeo, kit.post, g, 2); stake.position.set(-FORK * lean, 0, 3); stake.rotation.z = -Math.atan(lean);
+  const point = mesh(new THREE.ConeGeometry(1.7, 10, 9), kit.post, stake, 1.4); point.position.y = TIP - 5;
   const man = buildFigure(kit, rnd, { hose: true, beard: true }); g.add(man); restBody(man);
-  man.position.set(-8, H - 170, 2); man.rotation.set(0.35, 0.3, 0.1);
-  shade(g, 0, 0, 10, 8, 40); shade(g, -40, 16, 22, 12);
+  man.position.set(0, FEET, 0); man.rotation.set(0.06, 0.18, 0.05);
+  shade(g, 0, 0, 12, 9, 40); shade(g, -48, 16, 22, 12); shade(g, 0, 0, 16, 10, 120);
   const d = man.userData;
-  d.arms.l.sh.rotation.set(0.2, 0, 0.35); d.arms.r.sh.rotation.set(-0.1, 0, -0.25); d.arms.l.el.rotation.x = 0.3;
-  d.legs.l.hip.rotation.x = 0.3; d.legs.r.hip.rotation.x = -0.1; d.legs.l.kn.rotation.x = 0.4; d.legs.r.kn.rotation.x = 0.7;
-  d.neck.rotation.set(0.8, 0.4, 0.3);
-  wound(d.hips, 9, 10, 14, 0, 40, -6, kit);
+  // the slump: the head fallen away from the point, the arms hanging, one
+  // hand at the shaft below him; the legs dangling apart either side of it
+  d.arms.l.sh.rotation.set(0, 0, 0.18); d.arms.r.sh.rotation.set(KNEE_BACK * 0.5, 0, -0.3); d.arms.r.el.rotation.x = KNEE_BACK * -0.6;
+  d.legs.l.hip.rotation.set(0.1, 0, 0.3); d.legs.r.hip.rotation.set(-0.15, 0, -0.26); d.legs.l.kn.rotation.x = KNEE_BACK * 0.35; d.legs.r.kn.rotation.x = KNEE_BACK * 0.55;
+  d.legs.l.foot.rotation.x = -0.7; d.legs.r.foot.rotation.x = -0.6;
+  d.neck.rotation.set(0.5, 0.2, -0.75);
+  wound(d.hips, 8, 7, 10, 0, -6, -4, kit);   // (where it went in)
+  wound(d.hips, 7, 7, 9, 12, 51, 0, kit);    // (where it came out)
   // Death with the glass, looking up
   const death = buildDeath(kit, rnd); g.add(death); restSkeleton(death);
   death.position.set(-40, 0, 16); death.rotation.y = 0.9;
@@ -550,15 +618,17 @@ function vStake(kit, rnd) {
   dd.neck.rotation.x = -0.55; dd.spine.rotation.x = -0.15;
   const glass = buildHourglass(kit, 12); glass.position.set(0, -8, -4); glass.rotation.x = 0.3; dd.arms.r.hand.add(glass); dd.arms.r.hand.userData.grip(0.45);
   g.add(pool(kit, rnd, 20)).position.set(-6, 0, 4);
-  bleed(man, 0.6); bands.push([man, H - 60, H - 170]);
-  bleed(stake, 0.7); bands.push([stake, H - 100, 0]);
+  // (the blood from where the point came out, down his breast; the shaft
+  // red from his fork to the ground)
+  bleed(man, 0.17); bands.push([man, SHOULDER + 6, FEET]);
+  bleed(stake, 0.95); bands.push([stake, FORK + 4, 0]);
   const act = (tt, dt, w, still) => {
-    d.arms.l.sh.rotation.x = 0.2 + (still ? 0 : Math.sin(tt * 0.5) * 0.08);
-    d.neck.rotation.z = 0.3 + (still ? 0 : Math.sin(tt * 0.35) * 0.15);
+    d.arms.l.sh.rotation.x = (still ? 0 : Math.sin(tt * 0.5) * 0.06);
+    d.neck.rotation.z = -0.75 + (still ? 0 : Math.sin(tt * 0.35) * 0.08);
     dd.neck.rotation.y = still ? 0 : Math.sin(tt * 0.4) * 0.15;
     dd.arms.r.sh.rotation.x = -2.2 + (still ? 0 : Math.sin(tt * 0.7) * 0.06);
   };
-  return { g, death, act, bands, drips: [[V(-6, H - 110, -2), V(-6, 2, 4)]], crows: [[-14, H + 2, 0]], width: 90 };
+  return { g, death, act, bands, drips: [[V(-2, FORK - 6, -2), V(-2, 2, 2)]], crows: [[13, TIP + 2, 3]], width: 100 };
 }
 // VII. THE DRAGGING. Death bent to it, a man by the hair behind him, the
 // smear of him on the ground.
@@ -592,7 +662,15 @@ function vDragging(kit, rnd) {
   return { g, death, act, bands, drips: [], crows: [[60, 2, 12]], width: 130 };
 }
 const VIGNETTES = [vSawyer, vFlaying, vWheel, vDragging, vGallows, vWindlass, vStake];
+// (the lab: one vignette built alone, for the study page - the kit's
+// shadow plate set as prepareTable sets it)
+export function labVignette(n, kit, seed = 23) { shade.mat = kit.shadow; return VIGNETTES[n](kit, seeded(seed)); }
+export const VIGNETTE_NAMES = ['sawyer', 'flaying', 'wheel', 'dragging', 'gallows', 'windlass', 'stake'];
 // where each stands: [x, tier, placard x offset, placard height]
+// The stations' x were chosen by measuring each vignette's visible share
+// from the seat (an id pass with depth against the vignette alone; the
+// harness is pw/occl.mjs in the session scratchpad): every station at least
+// 0.6 seen, the wheel out right so the stake on the terrace behind shows.
 // The stations' places: [x, tier, the placard's x off the station, the
 // placard's post height, the placard's z off the station]. The placards'
 // places were searched from the seat's own camera (portrait), seven souls
@@ -601,14 +679,15 @@ const VIGNETTES = [vSawyer, vFlaying, vWheel, vDragging, vGallows, vWindlass, vS
 // its station, every post clear of the other boards - every order of the
 // seven tried and the best kept (the
 // harness is pw/placards2.mjs in the session scratchpad; re-run it after
-// moving a station). Laid out for the portrait frame (about ±136 wide on
+// moving a station). The gallows' is set by hand, high on its left post
+// under the beam, clear of the hanged: no free ground near it shows. Laid out for the portrait frame (about ±136 wide on
 // the first terrace, ±195 on the second, ±268 on the third): the sawyer
 // and the dragging on the first, either side of centre; the flaying and
 // the wheel on the second, out to either side; the gallows centre on the
 // third with the windlass and the stake either side of it, in the gap the
 // second terrace leaves. The third terrace stands high enough that its
 // figures show over the second's.
-const SPOTS = [[48, 0, 20, 60, -34], [138, 1, -80, 75, 20], [-108, 1, 40, 60, 44], [-98, 0, 104, 180, 44], [0, 2, -90, 105, 44], [118, 2, -20, 180, 20], [-118, 2, -90, 160, 0]];
+const SPOTS = [[48, 0, 20, 60, -34], [138, 1, -80, 75, 20], [-150, 1, 20, 75, 44], [-98, 0, 50, 180, 0], [0, 2, -74, 200, -8], [70, 2, 30, 180, 20], [-118, 2, 20, 60, 44]];
 
 // Death at the table: seated on a stool across from you, bare, the rag over
 // his shoulder, leaning in on his own plank ledge - both forearms down on
