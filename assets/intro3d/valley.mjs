@@ -111,7 +111,7 @@ const RING = { c: [0, -112], r: 330, step: 30 * DEG, end: 10 * DEG };
 const ringAngle = k => (RING.step * Math.ceil(k / 2) + (k >= 5 ? RING.end : 0)) * (k % 2 ? -1 : 1);
 const ringAt = (th, r = RING.r) => [RING.c[0] + Math.sin(th) * r, RING.c[1] + Math.cos(th) * r];
 // (the taller torments a little further off, so each fills its frame alike)
-const RING_DR = [0, 0, 0, 0, 40, 0, 22];
+const RING_DR = [0, 0, 0, 0, 40, 34, 22];
 // (and the dragging on a low mound: what it drags lies on the ground, which
 // the broadside would otherwise cover)
 const RING_UP = [0, 0, 0, 30, 0, 0, 0];
