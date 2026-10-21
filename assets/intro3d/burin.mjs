@@ -36,7 +36,8 @@
 //     iron-gall black of the valley, or the arterial red of what bleeds
 //     (opts.blood blends the two by a mask, so blood can run down a form);
 //   - a wet pass (opts.wet 0..1): fresh ink that has not dried - the lines
-//     bleed a little wider and a sheen crosses them.
+//     bleed a little wider and the passage darkens (no sheen: a print has
+//     no specular).
 // Outlines: outlineOf(mesh) makes the inverted-hull line round a form, the
 // engraver's contour, thick in the near foreground, a hair in the distance
 // (sized in screen space).
@@ -128,12 +129,16 @@ const FRAG = /* glsl */`
     return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
   }
   // one set of lines across coordinate s: ink coverage 0..1 for width w
-  // (as a share of the pitch), anti-aliased by the pixel's footprint
+  // (as a share of the pitch), box-filtered over the pixel's footprint - so
+  // a line thinner than a pixel greys in proportion and never widens (a
+  // smoothstep edge turned every hairline into a half-grey band the width
+  // of a pixel, and ruled the lights that a cutter leaves as bare paper)
   float lines(float s, float w) {
     float d = abs(fract(s) - 0.5);          // 0 at the line's centre
-    float aa = fwidth(s) * 0.9;
+    float aa = max(fwidth(s), 1e-4);        // the pixel's width, in pitches
     float edge = w * 0.5;
-    return 1.0 - smoothstep(edge - aa, edge + aa, d);
+    float lo = max(d - aa * 0.5, -edge), hi = min(d + aa * 0.5, edge);
+    return clamp((hi - lo) / aa, 0.0, 1.0);
   }
   vec2 rot2(vec2 d, float a) { float c = cos(a), sn = sin(a); return vec2(c * d.x - sn * d.y, sn * d.x + c * d.y); }
   // one octave of the three sets at frequency f over planar coords p,
@@ -141,9 +146,12 @@ const FRAG = /* glsl */`
   // (a cutter crosses his lines square, at the same pitch, and only in the
   // deep passages; a third set, on the diagonal, only in the darkest - sets
   // at odd angles and pitches beat against each other into a moire)
-  float sets(vec2 p, vec2 d1, float f, float w1, float w2, float w3, float wob) {
+  float sets(vec2 p, vec2 d1, float f, float w1, float w1b, float w2, float w3, float wob) {
     vec2 d2 = vec2(-d1.y, d1.x), d3 = normalize(d1 + d2);
     float ink = lines(dot(p, d1) * f + wob, w1);
+    // (into the shade the cutter closes his lines up: a line between each
+    // pair of the first set, so the pitch halves before any set crosses)
+    ink = max(ink, lines(dot(p, d1) * f + 0.5 + wob, w1b) * step(0.001, w1b));
     ink = max(ink, lines(dot(p, d2) * f + wob * 0.7, w2) * step(0.001, w2));
     ink = max(ink, lines(dot(p, d3) * f * 1.4142 - wob * 0.5, w3) * step(0.001, w3));
     return ink;
@@ -157,8 +165,13 @@ const FRAG = /* glsl */`
     // the first set from a hairline to a fat cut; the second comes in past
     // the middle tone, the third in the deep dark
     // (the lit plane is left as paper: no line at all until the form turns)
-    float w1 = mix(0.0, 0.7, smoothstep(0.1, 0.7, t));
-    float w2 = mix(0.0, 0.42, smoothstep(0.56, 0.92, t));
+    // (and into the shade the lines close up: a second line comes between
+    // each pair, and the first thin as it does, so the pitch halves and the
+    // passage darkens without going to a solid)
+    float close_ = smoothstep(0.5, 0.8, t);
+    float w1 = mix(0.0, 0.7, smoothstep(0.14, 0.7, t)) * (1.0 - 0.35 * close_);
+    float w1b = 0.42 * close_;
+    float w2 = mix(0.0, 0.42, smoothstep(0.62, 0.95, t));
     float w3 = mix(0.0, 0.3, smoothstep(0.8, 1.0, t));
     float ink;
     if (uPitchPx > 0.0) {
@@ -169,12 +182,12 @@ const FRAG = /* glsl */`
       float k = max(0.0, log2(max(lpp * uPitchPx, 1e-5)));
       float k0 = floor(k), fr = k - k0;
       float f0 = uFreq * exp2(-k0), f1 = f0 * 0.5;
-      ink = mix(sets(p, d1, f0, w1, w2, w3, wob), sets(p, d1, f1, w1, w2, w3, wob), smoothstep(0.0, 1.0, fr));
+      ink = mix(sets(p, d1, f0, w1, w1b, w2, w3, wob), sets(p, d1, f1, w1, w1b, w2, w3, wob), smoothstep(0.0, 1.0, fr));
     } else {
-      ink = sets(p, d1, uFreq, w1, w2, w3, wob);
+      ink = sets(p, d1, uFreq, w1, w1b, w2, w3, wob);
       // where the lines fall under a pixel they dissolve into their mean
       float px = fwidth(dot(p, d1) * uFreq);
-      float mean = clamp(w1 + w2 * 0.6 + w3 * 0.4, 0.0, 1.0);
+      float mean = clamp(w1 + w1b + w2 * 0.6 + w3 * 0.4, 0.0, 1.0);
       ink = mix(ink, mean, smoothstep(0.45, 1.0, px));
     }
     // stipple in the light: a dot where the line would be too thin to cut
@@ -215,13 +228,15 @@ const FRAG = /* glsl */`
     along = normalize(along);
     p += uScroll * uTime;
     // blood: a mask by height that runs down with spill, its edge ragged
+    // (as a second block is cut: a broad wavering edge and a few long runs,
+    // never a fine noise - at the screen's pitch that prints as a dither)
     float bm = 0.0;
     if (uBloodOn > 0.5) {
       float h = (vWorld.y - uBloodLo) / max(0.001, uBloodHi - uBloodLo);  // 1 at the wound (the top of the band), 0 at its foot
       float run = uBloodSpill;                                           // how far down the band it has got (0 none .. 1 to the foot)
-      float rag = (vnoise(p * 2.1 + 7.0) - 0.5) * 0.3 + (vnoise(p * 9.0) - 0.5) * 0.08;
+      float rag = (vnoise(p * 1.6 + 7.0) - 0.5) * 0.32;
       // runs: narrow streaks that go further than the body of it
-      float streak = pow(vnoise(vec2(p.x * 6.0, 3.0)), 3.0) * 0.9;
+      float streak = pow(vnoise(vec2(p.x * 1.4, 3.0)), 3.0) * 0.9;
       bm = smoothstep(-0.02, 0.02, h - (1.0 - run) + rag + streak * run * 0.5);
       bm *= 1.0 - smoothstep(1.0, 1.06, h + rag * 0.3);
     }
@@ -239,9 +254,8 @@ const FRAG = /* glsl */`
     // plate tone an engraver leaves in the shadows
     vec3 paper = mix(mix(uPaper, uBlood, bm), uPaper * 0.86, smoothstep(0.5, 1.0, dark) * 0.6 * (1.0 - bm));
     vec3 col = mix(paper, inkCol, ink);
-    // wet blood: a sheen across it, toward the lens
-    float sheen = uWet * bm * pow(max(dot(reflect(-normalize(uKey), n), v), 0.0), 18.0) * 0.5;
-    col += sheen;
+    // (no sheen on the wet blood: a print has no specular, and a gloss
+    // streak across a torso read as plastic)
     if (uFlip > 0.001) {
       // the freed: the same form as a white-line cut - the block left
       // standing as the ground, so the figure prints dark, and only the
