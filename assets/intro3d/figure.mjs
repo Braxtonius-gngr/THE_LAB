@@ -327,12 +327,15 @@ function buildHead(kit, o = {}) {
   });
   // the brow: a ridge over the sockets, narrow, following the shelf
   // (o.calm: a freed face - the brow eased, the mouth closed)
-  [-1, 1].forEach(sx => { const brow = facet(block(5.6, 1.2, 2.2, 0.5), skin, head, 0.8); brow.position.set(sx * 3.4, 6.2, F(6.2) + 0.4); brow.rotation.set(0.5, sx * 0.4, o.calm ? -sx * 0.08 : sx * 0.12); });
+  // (o.pained: the brows drawn up in the middle, the jaw slack, no teeth -
+  // a brow cut down into a V over bared teeth read as a devil's snarl)
+  const easy = o.calm || o.pained;
+  [-1, 1].forEach(sx => { const brow = facet(block(5.6, 1.2, 2.2, 0.5), skin, head, 0.8); brow.position.set(sx * 3.4, 6.2, F(6.2) + 0.4); brow.rotation.set(0.5, sx * 0.4, easy ? -sx * (o.pained ? 0.16 : 0.08) : sx * 0.12); });
   // the mouth open: the hollow, the teeth's edge above, the lip below, the tongue
-  const mouth = disc(2.4, 8, kit.ink, head, 0, -2.4, F(-2.4) - 0.1); mouth.scale.set(1.3, o.calm ? 0.22 : 1.1, 1);
-  const teeth = facet(block(4.2, 0.9, 0.7, 0), kit.bone, head, 0); teeth.position.set(0, -1.3, F(-1.3) - 0.3); teeth.visible = !o.calm;
+  const mouth = disc(2.4, 8, kit.ink, head, 0, -2.4, F(-2.4) - 0.1); mouth.scale.set(o.calm ? 0.9 : 1.3, o.calm ? 0.16 : o.pained ? 0.7 : 1.1, 1);
+  const teeth = facet(block(4.2, 0.9, 0.7, 0), kit.bone, head, 0); teeth.position.set(0, -1.3, F(-1.3) - 0.3); teeth.visible = !easy;
   const lip = facet(block(5.4, 1.1, 1.6, 0.6), skin, head, 0.7); lip.position.set(0, -4.0, F(-4) - 0.3);
-  const tongue = facet(knob(1.1, 1, 0.55, 1.2, 0), kit.raw, head, 0); tongue.position.set(0, -3.3, F(-3.3) + 0.2); tongue.visible = !o.calm;
+  const tongue = facet(knob(1.1, 1, 0.55, 1.2, 0), kit.raw, head, 0); tongue.position.set(0, -3.3, F(-3.3) + 0.2); tongue.visible = !easy;
   // the ears: flat shells at the sides
   [-1, 1].forEach(sx => { const ear = facet(loft([{ y: -1.8, rx: 1.2, rz: 1.6 }, { y: 0.4, rx: 1.7, rz: 2.4 }, { y: 2.8, rx: 1.3, rz: 2.0 }], { n: 6 }), skin, head, 0.9); ear.position.set(sx * 8.6, 2.4, 1.6); ear.scale.set(0.45, 1, 1); ear.rotation.z = -sx * 0.15; });
   if (!flayed) {
@@ -395,8 +398,8 @@ export function buildFigure(kit, rnd, o = {}) {
       const capGeo = new THREE.ShapeGeometry(sh, 2); capGeo.rotateY(k ? -HALF : HALF);
       const cap = new THREE.Mesh(capGeo, kit.rawCap); cap.position.x = (k ? -1 : 1) * 0.3; h.add(cap);
     });
-    for (let i = 0; i < 9; i++) { const v = facet(new THREE.CylinderGeometry(2.2, 2.4, 2.6, 8), kit.ball, torso, 0.8); v.position.set(0, -4 + i * 5.2, 5); }
-    for (let i = 0; i < 4; i++) [-1, 1].forEach(sx => { const rb = facet(new THREE.CylinderGeometry(0.9, 0.9, 7, 6), kit.bone, torso, 0.8); rb.position.set(sx * 4, 30 + i * 5.5, -3); rb.rotation.z = sx * 1.2; });
+    // (no spine or rib-ends drawn in the kerf: white blocks down it read as
+    // a corset's lacing - the cut is the raw of the two faces)
   } else {
     torso = facet(loft(T, { n: 16, metric: UVS }), skinUV, hips, 2);
     // the chest's two plates, the navel
@@ -420,8 +423,12 @@ export function buildFigure(kit, rnd, o = {}) {
   // (the shirt follows the trunk up over the shoulders to an open collar at
   // the neck: cut off flat across the chest it read as square pads and a
   // seam)
-  if (o.shirt && !flayed) { const sh = facet(loft(T.slice(3, 15).map(s => Object.assign({}, s, { rx: s.rx + 1.4, rz: s.rz + 1.2 })), { n: 16, metric: UVM.linen, cap: false }), kit.linen, hips, 1.5); sh.position.z = 0.2; }
-  else if (!flayed) { const lc = facet(loft([{ y: -23.2, rx: 15.6, rz: 10.2 }, { y: -16, rx: 17.2, rz: 11.4 }, { y: -8, rx: 17.6, rz: 11.6 }, { y: -2, rx: 16.6, rz: 10.8 }, { y: 2.2, rx: 15.6, rz: 10.2 }], { n: 16, metric: UVM.linen }), kit.linen, hips, 1.4); }
+  // (its collar closed round the neck: left open, the gap printed as a black
+  // wedge under the chin, a gaping jaw)
+  if (o.shirt && !flayed) { const sh = facet(loft([...T.slice(3, 15).map(s => Object.assign({}, s, { rx: s.rx + 1.4, rz: s.rz + 1.2 })), { y: 56.2, rx: 6.6, rz: 6.0 }], { n: 16, metric: UVM.linen, cap: false }), kit.linen, hips, 1.5); sh.position.z = 0.2; }
+  // (the cloth gathered closed under the fork: its flat end printed as a
+  // black hole where a body bent or lying shows it from below)
+  else if (!flayed) { const lc = facet(loft([{ y: -26.4, rx: 0.2, rz: 0.2 }, { y: -25.8, rx: 6.0, rz: 4.0 }, { y: -24.6, rx: 12.0, rz: 8.0 }, { y: -22.6, rx: 15.6, rz: 10.2 }, { y: -16, rx: 17.2, rz: 11.4 }, { y: -8, rx: 17.6, rz: 11.6 }, { y: -2, rx: 16.6, rz: 10.8 }, { y: 2.2, rx: 15.6, rz: 10.2 }], { n: 16, metric: UVM.linen }), kit.linen, hips, 1.4); }
   const neck = G(hips, 0, 55, 0);
   facet(tube([[0, 5.6, 5.2], [5, 4.6, 4.3], [10.5, 4.4, 4.1]], 12, { metric: UVS }), skinUV, neck, 1.2);
   const head = G(neck, 0, 11, 0);
