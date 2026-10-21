@@ -234,9 +234,12 @@ const FRAG = /* glsl */`
     if (uBloodOn > 0.5) {
       float h = (vWorld.y - uBloodLo) / max(0.001, uBloodHi - uBloodLo);  // 1 at the wound (the top of the band), 0 at its foot
       float run = uBloodSpill;                                           // how far down the band it has got (0 none .. 1 to the foot)
-      float rag = (vnoise(p * 1.6 + 7.0) - 0.5) * 0.32;
+      // (in world units: p is the plate's line space, where a body's uv
+      // runs several lines to a unit and any noise in it is fine-grained)
+      vec2 wq = vec2(vWorld.x + vWorld.z, vWorld.y) * 0.09;
+      float rag = (vnoise(wq + 7.0) - 0.5) * 0.32;
       // runs: narrow streaks that go further than the body of it
-      float streak = pow(vnoise(vec2(p.x * 1.4, 3.0)), 3.0) * 0.9;
+      float streak = pow(vnoise(vec2((vWorld.x - vWorld.z) * 0.32, 3.0)), 3.0) * 0.9;
       bm = smoothstep(-0.02, 0.02, h - (1.0 - run) + rag + streak * run * 0.5);
       bm *= 1.0 - smoothstep(1.0, 1.06, h + rag * 0.3);
     }
