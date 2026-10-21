@@ -97,7 +97,7 @@ const TABLE = { w: 120, d: 64, z0: -4, slab: 4 };
 // The shelf: flat round the table, falling to the first terrace beyond its lip.
 const ROCK = { lip: 95 };
 // The dealer, across the table to your right.
-const DEALER = { at: [-22, 0, 104], yaw: -0.38 };
+const DEALER = { at: [-36, 0, 104], yaw: -0.38 };   // (right of the sawyer, so the two skulls and his table stand clear of it)
 // The terraces (their floors) and the river's trough between the first and
 // the second; the far hills beyond the third.
 const TIER = [{ z: 300, y: -34 }, { z: 480, y: 70 }, { z: 700, y: 188 }];
@@ -590,7 +590,8 @@ const VIGNETTES = [vSawyer, vFlaying, vWheel, vDragging, vGallows, vWindlass, vS
 // places were searched from the seat's own camera (portrait), seven souls
 // at rest: each board clear of a mask of the figures and of the stations'
 // timber, of the other boards, inside the frame above the broadside, near
-// its station - every order of the seven tried and the best kept (the
+// its station, every post clear of the other boards - every order of the
+// seven tried and the best kept (the
 // harness is pw/placards2.mjs in the session scratchpad; re-run it after
 // moving a station). Laid out for the portrait frame (about ±136 wide on
 // the first terrace, ±195 on the second, ±268 on the third): the sawyer
@@ -599,7 +600,7 @@ const VIGNETTES = [vSawyer, vFlaying, vWheel, vDragging, vGallows, vWindlass, vS
 // third with the windlass and the stake either side of it, in the gap the
 // second terrace leaves. The third terrace stands high enough that its
 // figures show over the second's.
-const SPOTS = [[48, 0, 20, 60, -50], [138, 1, -85, 75, 20], [-108, 1, 22, 60, 20], [-98, 0, 0, 75, 20], [0, 2, 100, 180, 20], [118, 2, -20, 120, 0], [-118, 2, 40, 90, -16]];
+const SPOTS = [[48, 0, 20, 60, -34], [138, 1, -80, 75, 20], [-108, 1, 40, 60, 44], [-98, 0, 104, 180, 44], [0, 2, -90, 105, 44], [118, 2, -20, 180, 20], [-118, 2, -90, 160, 0]];
 
 // Death at the table: seated on a stool across from you, bare, the rag over
 // his shoulder, leaning in on his own plank ledge - both forearms down on
@@ -616,18 +617,18 @@ function buildDealer(kit, rnd) {
   const LEAN = -0.22; sk.userData.spine.rotation.x = LEAN;
   // the ledge: a small plank table on two trestles at his elbows, its back
   // edge against his ribs, deep enough for a forearm laid on it
-  const LY = 62, Z0 = -8, Z1 = -48, LZ = (Z0 + Z1) / 2;
-  const top = mesh(new THREE.BoxGeometry(48, 2.6, Z0 - Z1), kit.wood, g, 1.6); top.position.set(0, LY - 1.3, LZ);
+  const LY = 62, Z0 = -8, Z1 = -36, LZ = (Z0 + Z1) / 2;
+  const top = mesh(new THREE.BoxGeometry(36, 2.6, Z0 - Z1), kit.wood, g, 1.6); top.position.set(0, LY - 1.3, LZ);
   // (four turned legs, splayed a little, and a stretcher: light under the top)
-  [-1, 1].forEach(s => [Z0 - 5, Z1 + 5].forEach(z => { const lg = mesh(new THREE.CylinderGeometry(1.4, 1.9, LY - 2.6, 7), kit.post, g, 1.1); lg.position.set(s * 20, (LY - 2.6) / 2, z); lg.rotation.z = s * 0.06; }));
-  [-1, 1].forEach(s => { const sr = mesh(new THREE.BoxGeometry(2, 2, Z0 - Z1 - 10), kit.wood, g, 1); sr.position.set(s * 21, 16, LZ); });
-  shade(g, 0, LZ, 28, 22, 20);
-  const glass = buildHourglass(kit, 13); glass.position.set(-11, LY, -40); g.add(glass);
-  shade(g, -11, -40, 6, 5, LY + 0.3);
+  [-1, 1].forEach(s => [Z0 - 4, Z1 + 4].forEach(z => { const lg = mesh(new THREE.CylinderGeometry(1.3, 1.7, LY - 2.6, 7), kit.post, g, 1.1); lg.position.set(s * 15, (LY - 2.6) / 2, z); lg.rotation.z = s * 0.05; }));
+  [-1, 1].forEach(s => { const sr = mesh(new THREE.BoxGeometry(2, 2, Z0 - Z1 - 8), kit.wood, g, 1); sr.position.set(s * 15.5, 16, LZ); });
+  shade(g, 0, LZ, 21, 17, 20);
+  const glass = buildHourglass(kit, 13); glass.position.set(-9, LY, -29); g.add(glass);
+  shade(g, -9, -29, 6, 5, LY + 0.3);
   // the forearms laid on the wood: each elbow on the plank by his side, the
   // left hand flat ahead of it, the right on the glass's top
-  reach(a.l, [11, LY + 2.6, -42], sk, 10, { elbow: [15, LY + 1.6, -12], start: [-0.4, 0, 0.15, -1.2] });
-  reach(a.r, [-11, LY + 13 + 1.2, -40], sk, 10, { elbow: [-15, LY + 1.6, -12], start: [-0.4, 0, -0.15, -1.2] });
+  reach(a.l, [9, LY + 2.6, -31], sk, 10, { elbow: [13, LY + 1.6, -11], start: [-0.4, 0, 0.15, -1.2] });
+  reach(a.r, [-9, LY + 13 + 1.2, -29], sk, 10, { elbow: [-13, LY + 1.6, -11], start: [-0.4, 0, -0.15, -1.2] });
   a.l.hand.userData.grip(0.1); a.r.hand.userData.grip(0.55);
   // the stool
   const st = mesh(new THREE.CylinderGeometry(14, 12, 4, 12), kit.post, g, 1.6); st.position.set(0, 42, 8);
