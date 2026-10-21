@@ -136,11 +136,14 @@ const FRAG = /* glsl */`
   vec2 rot2(vec2 d, float a) { float c = cos(a), sn = sin(a); return vec2(c * d.x - sn * d.y, sn * d.x + c * d.y); }
   // one octave of the three sets at frequency f over planar coords p,
   // the first set across direction d1 (its lines run along perp(d1))
+  // (a cutter crosses his lines square, at the same pitch, and only in the
+  // deep passages; a third set, on the diagonal, only in the darkest - sets
+  // at odd angles and pitches beat against each other into a moire)
   float sets(vec2 p, vec2 d1, float f, float w1, float w2, float w3, float wob) {
-    vec2 d2 = rot2(d1, 1.0472), d3 = rot2(d1, -1.0472);
+    vec2 d2 = vec2(-d1.y, d1.x), d3 = normalize(d1 + d2);
     float ink = lines(dot(p, d1) * f + wob, w1);
-    ink = max(ink, lines(dot(p, d2) * f * 0.93 + wob * 0.7, w2) * step(0.001, w2));
-    ink = max(ink, lines(dot(p, d3) * f * 1.07 - wob * 0.5, w3) * step(0.001, w3));
+    ink = max(ink, lines(dot(p, d2) * f + wob * 0.7, w2) * step(0.001, w2));
+    ink = max(ink, lines(dot(p, d3) * f * 1.4142 - wob * 0.5, w3) * step(0.001, w3));
     return ink;
   }
   // the hatch at tone t (0 light .. 1 dark) over planar coords p, the
@@ -152,9 +155,9 @@ const FRAG = /* glsl */`
     // the first set from a hairline to a fat cut; the second comes in past
     // the middle tone, the third in the deep dark
     // (the lit plane is left as paper: no line at all until the form turns)
-    float w1 = mix(0.0, 0.66, smoothstep(0.1, 0.74, t));
-    float w2 = mix(0.0, 0.5, smoothstep(0.42, 0.9, t));
-    float w3 = mix(0.0, 0.4, smoothstep(0.7, 1.0, t));
+    float w1 = mix(0.0, 0.7, smoothstep(0.1, 0.7, t));
+    float w2 = mix(0.0, 0.42, smoothstep(0.56, 0.92, t));
+    float w3 = mix(0.0, 0.3, smoothstep(0.8, 1.0, t));
     float ink;
     if (uPitchPx > 0.0) {
       // the pitch held on screen: where uFreq would put more than one
@@ -285,7 +288,7 @@ const OUT_VERT = /* glsl */`
     vec4 clip = projectionMatrix * mv;
     // push along the screen-space normal by uPx pixels, thinning far off
     vec2 off = normalize(nv.xy + vec2(1e-5)) * uPx * clip.w / uViewport * 2.0;
-    float far = clamp(1.0 - (-mv.z) / 900.0, 0.35, 1.0);
+    float far = clamp(1.45 - (-mv.z) / 520.0, 0.4, 1.35);
     clip.xy += off * far;
     gl_Position = clip;
   }
