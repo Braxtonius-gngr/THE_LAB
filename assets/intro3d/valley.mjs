@@ -735,7 +735,7 @@ function vDragging(kit, rnd) {
     d.neck.rotation.x = 0.35 + (still ? 0 : Math.sin(wv - 0.6) * 0.1);
     d.arms.l.sh.rotation.z = 0.62 + (still ? 0 : Math.sin(wv + 1) * 0.08);
   };
-  return { g, death, act, bands, drips: [], crows: [[-100, 2, 62]], width: 150, victims: [man], freed: { pose: 'peace', at: [14, 0, -30] } };
+  return { g, death, act, bands, drips: [], crows: [[-100, 2, 62]], width: 150, victims: [man], freed: { pose: 'peace', at: [22, 0, -26], kneel: [44, 4] } };
 }
 const VIGNETTES = [vSawyer, vFlaying, vWheel, vDragging, vGallows, vWindlass, vStake];
 // (the lab: one vignette built alone, for the study page - the kit's
@@ -1240,9 +1240,13 @@ export async function prepareTable(opts) {
     v.gore.forEach(m => { m.visible = !on; });
     if (on) {
       F.snap = snapOf(v.death);
+      // (a Death built inside a turned group - the dragging's slant - is
+      // posed in the vignette's own frame while freed, then put back)
+      F.home = v.death.parent; if (F.home !== v.g) v.g.attach(v.death);
       F.figs.forEach(f => { v.g.add(f); f.visible = true; });
     } else {
       F.figs.forEach(f => { f.visible = false; });
+      if (F.home && F.home !== v.g) F.home.attach(v.death);
       F.snap.forEach(([o, pp, q]) => { o.position.copy(pp); o.quaternion.copy(q); });
     }
   };
@@ -1251,7 +1255,7 @@ export async function prepareTable(opts) {
     const sn = Math.sin(ph);
     u.hips.position.y = hipsY + Math.abs(sn) * 2.4 * amp;
     u.legs.l.hip.rotation.set(sn * 0.5 * amp, 0, 0.04); u.legs.r.hip.rotation.set(-sn * 0.5 * amp, 0, -0.04);
-    u.legs.l.kn.rotation.x = KNEE_BACK * -Math.max(0, -sn) * 0.9 * amp; u.legs.r.kn.rotation.x = KNEE_BACK * -Math.max(0, sn) * 0.9 * amp;
+    u.legs.l.kn.rotation.x = KNEE_BACK * Math.max(0, -sn) * 0.9 * amp; u.legs.r.kn.rotation.x = KNEE_BACK * Math.max(0, sn) * 0.9 * amp;
     u.legs.l.foot.rotation.x = 0; u.legs.r.foot.rotation.x = 0;
   };
   // the dance as the Totentanz cuts it: a line toward you, hand in hand,
@@ -1320,7 +1324,8 @@ export async function prepareTable(opts) {
       u.arms.l.el.rotation.x = 0.4; u.arms.r.el.rotation.x = 0.4;
       u.legs.l.hip.rotation.set(0, 0, 0.04); u.legs.r.hip.rotation.set(0, 0, -0.04);
       u.neck.rotation.set(0.34, 0, 0);
-      v.death.position.set(at[0] + 26, 0, at[2] + 8); faceTo(v.death, at[0], at[2]);
+      const [kx, kz] = v.freed.kneel || [26, 8];
+      v.death.position.set(at[0] + kx, 0, at[2] + kz); faceTo(v.death, at[0], at[2]);
       restSkeleton(v.death);
       // (down on one knee: the near thigh forward, its shin planted; the far
       // knee on the ground, its shin laid back; a joint's +x tips back, so
