@@ -100,7 +100,7 @@ const ROCK = { lip: 95 };
 const DEALER = { at: [-22, 0, 104], yaw: -0.38 };
 // The terraces (their floors) and the river's trough between the first and
 // the second; the far hills beyond the third.
-const TIER = [{ z: 300, y: -34 }, { z: 480, y: 70 }, { z: 700, y: 150 }];
+const TIER = [{ z: 300, y: -34 }, { z: 480, y: 70 }, { z: 700, y: 188 }];
 const RIVER = { z: 206, w: 56 };
 const SKY = 1100;
 // The broadside: a printed sheet nailed to the table's back rail, under
@@ -585,10 +585,26 @@ function vDragging(kit, rnd) {
 }
 const VIGNETTES = [vSawyer, vFlaying, vWheel, vDragging, vGallows, vWindlass, vStake];
 // where each stands: [x, tier, placard x offset, placard height]
-const SPOTS = [[50, 0, 82, 96], [150, 1, -92, 104], [-140, 1, -56, 104], [-62, 1, 58, 104], [0, 2, -104, 116], [170, 2, -80, 116], [-170, 2, 76, 116]];
+// The stations' places: [x, tier, the placard's x off the station, the
+// placard's post height, the placard's z off the station]. The placards'
+// places were searched from the seat's own camera (portrait), seven souls
+// at rest: each board clear of a mask of the figures and of the stations'
+// timber, of the other boards, inside the frame above the broadside, near
+// its station - every order of the seven tried and the best kept (the
+// harness is pw/placards2.mjs in the session scratchpad; re-run it after
+// moving a station). Laid out for the portrait frame (about ±136 wide on
+// the first terrace, ±195 on the second, ±268 on the third): the sawyer
+// and the dragging on the first, either side of centre; the flaying and
+// the wheel on the second, out to either side; the gallows centre on the
+// third with the windlass and the stake either side of it, in the gap the
+// second terrace leaves. The third terrace stands high enough that its
+// figures show over the second's.
+const SPOTS = [[48, 0, 20, 60, -50], [138, 1, -85, 75, 20], [-108, 1, 22, 60, 20], [-98, 0, 0, 75, 20], [0, 2, 100, 180, 20], [118, 2, -20, 120, 0], [-118, 2, 40, 90, -16]];
 
 // Death at the table: seated on a stool across from you, bare, the rag over
-// his shoulder, the hourglass under his right hand, the left on the cloth.
+// his shoulder, leaning in on his own plank ledge - both forearms down on
+// the wood, the left hand flat, the right resting on his hourglass (the
+// arms reached to those points at build).
 function buildDealer(kit, rnd) {
   const g = new THREE.Group();
   const sk = buildDeath(kit, rnd); restSkeleton(sk);
@@ -596,12 +612,28 @@ function buildDealer(kit, rnd) {
   g.add(sk);
   const a = sk.userData.arms, l = sk.userData.legs;
   l.l.hip.rotation.x = -1.45; l.r.hip.rotation.x = -1.45; l.l.kn.rotation.x = 1.5; l.r.kn.rotation.x = 1.5;
-  a.l.sh.rotation.set(0.55, 0, 0.1); a.r.sh.rotation.set(0.5, 0, -0.2); a.l.el.rotation.x = 1.0; a.r.el.rotation.x = 1.05;
+  // the lean: the trunk forward over the ledge (he faces -z: forward is -x)
+  const LEAN = -0.22; sk.userData.spine.rotation.x = LEAN;
+  // the ledge: a small plank table on two trestles at his elbows, its back
+  // edge against his ribs, deep enough for a forearm laid on it
+  const LY = 62, Z0 = -8, Z1 = -48, LZ = (Z0 + Z1) / 2;
+  const top = mesh(new THREE.BoxGeometry(48, 2.6, Z0 - Z1), kit.wood, g, 1.6); top.position.set(0, LY - 1.3, LZ);
+  // (four turned legs, splayed a little, and a stretcher: light under the top)
+  [-1, 1].forEach(s => [Z0 - 5, Z1 + 5].forEach(z => { const lg = mesh(new THREE.CylinderGeometry(1.4, 1.9, LY - 2.6, 7), kit.post, g, 1.1); lg.position.set(s * 20, (LY - 2.6) / 2, z); lg.rotation.z = s * 0.06; }));
+  [-1, 1].forEach(s => { const sr = mesh(new THREE.BoxGeometry(2, 2, Z0 - Z1 - 10), kit.wood, g, 1); sr.position.set(s * 21, 16, LZ); });
+  shade(g, 0, LZ, 28, 22, 20);
+  const glass = buildHourglass(kit, 13); glass.position.set(-11, LY, -40); g.add(glass);
+  shade(g, -11, -40, 6, 5, LY + 0.3);
+  // the forearms laid on the wood: each elbow on the plank by his side, the
+  // left hand flat ahead of it, the right on the glass's top
+  reach(a.l, [11, LY + 2.6, -42], sk, 10, { elbow: [15, LY + 1.6, -12], start: [-0.4, 0, 0.15, -1.2] });
+  reach(a.r, [-11, LY + 13 + 1.2, -40], sk, 10, { elbow: [-15, LY + 1.6, -12], start: [-0.4, 0, -0.15, -1.2] });
+  a.l.hand.userData.grip(0.1); a.r.hand.userData.grip(0.55);
   // the stool
   const st = mesh(new THREE.CylinderGeometry(14, 12, 4, 12), kit.post, g, 1.6); st.position.set(0, 42, 8);
   for (let i = 0; i < 3; i++) { const lg = mesh(new THREE.CylinderGeometry(1.8, 2.2, 44, 8), kit.post, g, 1.3); const an = i / 3 * PI * 2 + 0.5; lg.position.set(Math.cos(an) * 10, 20, 8 + Math.sin(an) * 10); lg.rotation.z = -Math.cos(an) * 0.12; lg.rotation.x = Math.sin(an) * 0.12; }
   shade(g, 0, 8, 26, 18); shade(g, -8, -4, 6, 5, 20);
-  g.userData = { sk, phase: rnd() * 6 };
+  g.userData = { sk, phase: rnd() * 6, lean: LEAN };
   return g;
 }
 
@@ -636,7 +668,7 @@ function buildGround() {
   geo.computeVertexNormals();
   // the ground's cut: broken horizontals, the hills a lighter tone (the
   // block's distance)
-  const g = new THREE.Mesh(geo, mat({ freq: 0.5, angle: 0.04, tone: -0.14, sky: 0.45, keyI: 1.0, wobble: 0.6, steps: 3, axis: [1, 0, 0] }));
+  const g = new THREE.Mesh(geo, mat({ freq: 0.6, angle: 0.04, tone: 0.0, sky: 0.4, keyI: 1.0, wobble: 0.35, steps: 3, axis: [1, 0, 0] }));
   g.userData.height = (x, z) => groundHeight(x, z, n1, n2);
   return g;
 }
@@ -871,34 +903,34 @@ export function valleyKit() {
     bone: mat({ freq: 1.2, angle: 1.2, tone: -0.06 }),
     // (a long bone: strokes down its length; a joint or a skull: its
     // rings; a rib: strokes along the rib)
-    shaft: mat({ uv: [14, 1], angle: 0, tone: -0.12, wobble: 1.4 }),
+    shaft: mat({ uv: [14, 1], angle: 0, tone: -0.12, wobble: 0.7 }),
     ball: mat({ freq: 1.3, angle: 1.0, tone: -0.12 }),
-    rib: mat({ uv: [1, 9], angle: HALF, tone: -0.1, wobble: 1.2 }),
-    skull: mat({ freq: 1.25, angle: 1.1, tone: -0.14, keyI: 1.3, sky: 0.24, wobble: 0.8 }),
+    rib: mat({ uv: [1, 9], angle: HALF, tone: -0.1, wobble: 0.6 }),
+    skull: mat({ freq: 1.25, angle: 1.1, tone: -0.14, keyI: 1.3, sky: 0.24, wobble: 0.5 }),
     // (flesh: the paper, hatched along the limb; the face in its rings;
     // hair a dark passage; the raw of a wound or a flayed man is blood)
-    flesh: mat({ freq: 1.2, angle: -0.55, tone: -0.14, keyI: 1.4, sky: 0.44, wobble: 0.8 }),
-    fleshUV: mat({ uv: [12, 5], angle: 0.08, tone: -0.14, keyI: 1.4, sky: 0.44, wobble: 0.6 }),
-    face: mat({ freq: 1.25, angle: 1.1, tone: -0.12, keyI: 1.4, sky: 0.44, wobble: 0.7 }),
-    hair: mat({ uv: [24, 8], angle: 0.2, tone: 0.58, freq: 1.6, wobble: 2 }),
+    flesh: mat({ freq: 1.2, angle: -0.55, tone: -0.14, keyI: 1.4, sky: 0.44, wobble: 0.5 }),
+    fleshUV: mat({ uv: [12, 5], angle: 0.08, tone: -0.14, keyI: 1.4, sky: 0.44, wobble: 0.4 }),
+    face: mat({ freq: 1.25, angle: 1.1, tone: -0.12, keyI: 1.4, sky: 0.44, wobble: 0.45 }),
+    hair: mat({ uv: [24, 8], angle: 0.2, tone: 0.58, freq: 1.6, wobble: 1.2 }),
     raw: mat({ paper: BLOOD, tone: 0.34, freq: 1.4, angle: -0.4, keyI: 1.2 }),
     rawUV: mat({ paper: BLOOD, uv: [12, 5], angle: 0.1, tone: 0.34, freq: 1.3, keyI: 1.2 }),
     gut: mat({ paper: BLOOD, uv: [40, 5], angle: HALF, tone: 0.46, freq: 1.0 }),
     pool: mat({ paper: BLOOD, tone: 0.42, freq: 1.0, angle: 0.1, side: THREE.DoubleSide }),
-    skin: mat({ freq: 1.0, angle: 1.2, tone: -0.02, wobble: 1.4, side: THREE.DoubleSide }),
+    skin: mat({ freq: 1.0, angle: 1.2, tone: -0.02, wobble: 0.8, side: THREE.DoubleSide }),
     river: mat({ paper: BLOOD, uv: [8, 60], angle: 0.1, tone: 0.22, freq: 1.0, wobble: 1.8, scroll: [0, 6], steps: 0 }),
-    cloth: mat({ freq: 0.9, angle: 1.3, tone: 0.3, wobble: 1.6, side: THREE.DoubleSide }),
-    linen: mat({ uv: [18, 4], angle: 0.1, tone: -0.06, sky: 0.36, wobble: 0.8 }),
+    cloth: mat({ freq: 0.9, angle: 1.3, tone: 0.3, wobble: 0.8, side: THREE.DoubleSide }),
+    linen: mat({ uv: [18, 4], angle: 0.1, tone: -0.06, sky: 0.36, wobble: 0.5 }),
     // (a plank or a beam, long in x: the grain runs its length; a turned
     // timber - any cylinder, standing or laid - its own length)
-    wood: mat({ freq: 0.8, angle: HALF, tone: 0.2, wobble: 1.2, axis: [1, 0, 0] }),
-    post: mat({ freq: 0.8, angle: 0, tone: 0.2, wobble: 1.2 }),
-    woodRing: mat({ uv: [1, 10], angle: HALF, tone: 0.2, freq: 0.8, wobble: 1.2 }),
-    bark: mat({ uv: [12, 4], angle: 0.12, tone: 0.44, freq: 1.4, wobble: 2.2 }),
+    wood: mat({ freq: 0.9, angle: HALF, tone: 0.22, wobble: 0.45, axis: [1, 0, 0] }),
+    post: mat({ freq: 0.9, angle: 0, tone: 0.22, wobble: 0.45 }),
+    woodRing: mat({ uv: [1, 10], angle: HALF, tone: 0.22, freq: 0.9, wobble: 0.5 }),
+    bark: mat({ uv: [12, 4], angle: 0.12, tone: 0.44, freq: 1.4, wobble: 1.1 }),
     iron: mat({ freq: 1.6, angle: 0.3, tone: 0.5 }),
     steel: mat({ freq: 1.8, angle: 0.02, tone: 0.1, wobble: 0.3, axis: [0, 0, 1] }),
     rope: mat({ uv: [6, 1], angle: 0.9, tone: 0.3, freq: 2 }),
-    stone: mat({ freq: 1.3, angle: 0.5, tone: 0.1, wobble: 1.6, steps: 3 }),
+    stone: mat({ freq: 1.3, angle: 0.5, tone: 0.1, wobble: 0.8, steps: 3 }),
     hollow: mat({ freq: 1.8, angle: 0.9, tone: 0.56, keyI: 0.3 }),
     // (a flayed man: the muscle in its fibres, fine lines along the limb over the red)
     rawCap: mat({ paper: BLOOD, tone: 0.4, freq: 1.6, angle: 0.4, side: THREE.DoubleSide }),
@@ -951,12 +983,12 @@ export async function prepareTable(opts) {
   const soulsG = new THREE.Group(); seat.add(soulsG);
   const pivots = [], vigs = [], drips = [], crowSpots = [];
   for (let i = 0; i < cards.length; i++) {
-    const [sx, ti, px, ph] = SPOTS[i];
+    const [sx, ti, px, ph, pz = -34] = SPOTS[i];
     const v = VIGNETTES[i](kit, rnd);
     const gy = height(sx, TIER[ti].z);
     v.g.position.set(sx, gy, TIER[ti].z);
     const pl = buildPlacard(kit, cards[i], i, ph, 30 + ti * 11);
-    pl.position.set(sx + px, height(sx + px, TIER[ti].z - 20), TIER[ti].z - 20); pl.rotation.y = (rnd() - 0.5) * 0.3;
+    pl.position.set(sx + px, height(sx + px, TIER[ti].z + pz), TIER[ti].z + pz); pl.rotation.y = (rnd() - 0.5) * 0.2;   // (clear of the station's posts)
     const pivot = new THREE.Group(); pivot.add(v.g); pivot.add(pl); soulsG.add(pivot);
     pivot.userData = { v, placard: pl, plate: pl.userData.plate, tag: { userData: { id: cards[i].id, plate: pl.userData.plate, card: cards[i], n: i, spentTex: null, liveTex: pl.userData.liveTex } }, look: 0, lookTo: 0, deathYaw: v.death.rotation.y, toSeat: 0 };
     pivots.push(pivot); vigs.push(v);
@@ -1237,7 +1269,7 @@ export async function prepareTable(opts) {
       });
       // the dealer breathes (which he does not), and turns his skull to the soul you took
       const dd = dealer.userData, look = pivots.reduce((a, p) => Math.max(a, p.userData.look), 0);
-      dd.sk.userData.spine.rotation.x = fo.reduced ? 0 : Math.sin(tt * 0.6 + dd.phase) * 0.025;
+      dd.sk.userData.spine.rotation.x = dd.lean + (fo.reduced ? 0 : Math.sin(tt * 0.6 + dd.phase) * 0.012);   // (the breath small: his hands are set on the ledge)
       dd.sk.userData.neck.rotation.y = lerp(0, 0.7, look) + (fo.reduced ? 0 : Math.sin(tt * 0.27) * 0.08);
       dd.sk.userData.neck.rotation.x = fo.reduced ? 0 : Math.sin(tt * 0.4 + 2) * 0.03;
       dd.sk.userData.rag.rotation.z = -0.25 + w * 0.3;
@@ -1350,7 +1382,7 @@ export async function prepareTable(opts) {
       get state() { return { card: cardId, lift: +lift.toFixed(3), wind: +windAt(tNow).toFixed(3), running }; },
       get programs() { return world.renderer.info.programs.length; },
       setFelt() {}, setTrim() {},
-      lab: () => ({ seat, ground, sky, river, dealer, table, soulsG, pivots, vigs, far, crows, drops, sheetBody }),
+      lab: () => ({ seat, ground, sky, river, dealer, table, soulsG, pivots, vigs, far, crows, drops, sheetBody, camera, renderer: world.renderer }),
       dispose() {
         disposed = true; running = false; cancelAnimationFrame(raf);
         clearInterval(clock);

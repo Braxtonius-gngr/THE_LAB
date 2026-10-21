@@ -152,6 +152,22 @@ function seam(pts, parent, m, r = 0.45) {
   const c = new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(...p)));
   const x = new THREE.Mesh(new THREE.TubeGeometry(c, Math.max(4, pts.length * 3), r, 4, false), m); parent.add(x); return x;
 }
+// a stave: a flat strap swept along points, its broad face turned out from
+// `axis` (a point the cage curls round): w the strap's width, t its thickness
+function stave(pts, w, t, axis) {
+  const c = new THREE.CatmullRomCurve3(pts), n = Math.max(6, pts.length * 2), P = c.getSpacedPoints(n), pos = [], idx = [];
+  for (let i = 0; i <= n; i++) {
+    const p = P[i], T = c.getTangentAt(i / n).normalize();
+    const out = new THREE.Vector3(p.x - axis.x, 0, p.z - axis.z); out.addScaledVector(T, -out.dot(T)); if (out.lengthSq() < 1e-6) out.set(0, 0, -1); out.normalize();
+    const up = new THREE.Vector3().crossVectors(T, out).normalize();
+    const taper = 0.75 + 0.25 * Math.sin(Math.PI * Math.min(1, (i / n) * 1.6 + 0.2));
+    [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([u, v]) => { const q = p.clone().addScaledVector(up, u * w * taper / 2).addScaledVector(out, v * t / 2); pos.push(q.x, q.y, q.z); });
+  }
+  for (let i = 0; i < n; i++) for (let k = 0; k < 4; k++) { const a = i * 4 + k, b = i * 4 + (k + 1) % 4, c2 = a + 4, d = b + 4; idx.push(a, c2, b, b, c2, d); }
+  // the ends
+  idx.push(0, 1, 2, 0, 2, 3); const L = n * 4; idx.push(L, L + 2, L + 1, L, L + 3, L + 2);
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); return g;
+}
 const knob = (r, sx = 1, sy = 1, sz = 1, detail = 1) => { const g = new THREE.IcosahedronGeometry(r, detail); g.scale(sx, sy, sz); return g; };
 
 // where a shaft lies in a closed hand (hand space): across the palm, under
@@ -172,21 +188,49 @@ export function hold(hand, tool, o = {}) {
 // `target` (in root's own frame; root is updated as it goes). Returns the
 // four angles, for a pose lerped later.
 const _gp = new THREE.Vector3(), _t = new THREE.Vector3();
-export function reach(arm, target, root, rounds = 10) {
+// o.elbow: where the elbow should lie as well (a forearm laid on a table);
+// o.start: the four angles to begin from (a natural pose, so the search
+// settles into it and not into an elbow-up one).
+const _ep = new THREE.Vector3(), _te = new THREE.Vector3();
+export function reach(arm, target, root, rounds = 10, o = {}) {
+  // (a few starts round the given one, the best kept: coordinate descent
+  // can settle in a fold of the arm's space)
+  if (o.start && !o.single) {
+    const s0 = o.start, tries = [s0, [s0[0] - 0.5, s0[1], s0[2], s0[3]], [s0[0] + 0.4, s0[1], s0[2], s0[3] - 0.5], [s0[0], s0[1] + 0.4, s0[2], s0[3]], [s0[0], s0[1] - 0.4, s0[2], s0[3]], [s0[0] - 0.9, s0[1], s0[2] * 2, -0.4]];
+    let best = null;
+    for (const st of tries) { const a = reach(arm, target, root, rounds, Object.assign({}, o, { start: st, single: true })); if (!best || arm.miss < best.miss) best = { a, miss: arm.miss }; }
+    setArm(arm, best.a); arm.miss = best.miss; return best.a;
+  }
   const { sh, el, hand } = arm;
-  _t.set(...target);
-  const dist = () => { root.updateMatrixWorld(true); _gp.set(...GRIP); hand.localToWorld(_gp); if (root.parent) root.parent.worldToLocal(_gp); return _gp.distanceTo(_t); };
+  _t.set(...target); if (o.elbow) _te.set(...o.elbow);
+  if (o.start) { sh.rotation.set(o.start[0], o.start[1], o.start[2]); el.rotation.x = o.start[3]; }
+  const toRoot = (v) => { if (root.parent) root.parent.worldToLocal(v); return v; };
+  const dist = () => {
+    root.updateMatrixWorld(true); _gp.set(...GRIP); hand.localToWorld(_gp); toRoot(_gp);
+    let d = _gp.distanceTo(_t);
+    if (o.elbow) { _ep.set(0, 0, 0); el.localToWorld(_ep); toRoot(_ep); d += 0.8 * _ep.distanceTo(_te); }
+    return d;
+  };
   const P = [[sh.rotation, 'x'], [sh.rotation, 'y'], [sh.rotation, 'z'], [el.rotation, 'x']];
-  let step = 0.5, best = dist();
-  for (let r = 0; r < rounds; r++) {
+  // (the elbow bends one way only: a skeleton's forearm folds forward, -x)
+  const ok = () => el.rotation.x <= 0.02 && el.rotation.x >= -2.6;
+  let step = 0.6, best = dist();
+  for (let r = 0; r < rounds * 4 && best > (o.elbow ? 0.5 : 0.05); r++) {
+    let moved = false;
     for (const [rot, k] of P) {
       for (const dir of [1, -1]) {
-        const was = rot[k]; rot[k] = was + dir * step; const d = dist();
-        if (d < best - 1e-4) { best = d; break; } rot[k] = was;
+        // (a line search: keep stepping while it helps)
+        for (;;) {
+          const was = rot[k]; rot[k] = was + dir * step;
+          const d = ok() ? dist() : Infinity;
+          if (d < best - 1e-4) { best = d; moved = true; } else { rot[k] = was; break; }
+        }
       }
     }
-    step *= 0.65;
+    if (!moved) step *= 0.6;
+    if (step < 1e-3) break;
   }
+  arm.miss = best;
   return [sh.rotation.x, sh.rotation.y, sh.rotation.z, el.rotation.x];
 }
 export function setArm(arm, a) { arm.sh.rotation.set(a[0], a[1], a[2]); arm.el.rotation.x = a[3]; }
@@ -447,18 +491,28 @@ export function buildDeath(kit, rnd) {
   const spine = G(hips, 0, 4, 0);
   for (let i = 0; i < 8; i++) { const v = facet(new THREE.CylinderGeometry(2.3, 2.6, 2.4, 7), kit.ball, spine, 1.1); v.position.set(0, i * 3.6, 1.5 + Math.sin(i / 8 * 2) * 1.2); const sp = facet(block(1.2, 1.6, 2.6, 0), m, spine, 0.6); sp.position.set(0, i * 3.6, 4 + Math.sin(i / 8 * 2) * 1.2); }
   const chest = G(spine, 0, 30, 0);
-  // the ribcage: twelve ribs as real bars, each from the spine round the
-  // side and forward, falling to the breastbone - the gaps between them open
+  // the ribcage: the ribs as flat curved staves (broad face out, as a rib
+  // is a strap of bone, not a rod), each from the spine round the side and
+  // falling steeply to the front, the upper seven joined to the breastbone
+  // by a thinner rising strap of cartilage - so it reads as a cage of
+  // sloping staves with a sternum, never a coil of hoops
   const sternum = facet(loft([{ y: -14, rx: 1.6, rz: 0.9, z: -10.6 }, { y: -4, rx: 2.4, rz: 1.1, z: -11.8 }, { y: 6, rx: 3.0, rz: 1.1, z: -11.0 }], { n: 5 }), m, chest, 1.1);
-  for (let i = 0; i < 8; i++) {
-    const t = i / 7, y0 = 10 - i * 3.6, R = 10.5 * Math.sin(0.6 + t * 2.1) + 4.5, D = R * 0.78, short = i > 5 ? 0.78 : 1;
+  const stYZ = y => [y < -4 ? -10.6 - (y + 14) / 10 * 1.2 : -11.8 + (y + 4) / 10 * 0.8];
+  for (let i = 0; i < 9; i++) {
+    const t = i / 8, y0 = 11 - i * 3.3 - t * t * 2, R = 10.5 * Math.sin(0.6 + t * 2.1) + 4.5, D = R * 0.78;
+    const short = i < 7 ? 0.8 : 0.66, drop = 7 + t * 6;
     [-1, 1].forEach(sx => {
       const pts = [];
-      // (from the spine out and round, falling steeply as it comes to the front: the gaps between read)
-      for (let k = 0; k <= 8; k++) { const a = k / 8 * short, ang = a * PI * 0.84; pts.push(new THREE.Vector3(sx * Math.sin(ang) * R, y0 - a * 7.5 - a * a * 3 - 1.2 * Math.sin(a * PI), 3.2 - (1 - Math.cos(ang)) * D * 0.62 - a * 1.2)); }
-      const geo = () => new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 12, i < 6 ? 0.62 : 0.5, 4, false);
-      const rib = new THREE.Mesh(geo().toNonIndexed(), kit.rib);
-      rib.geometry.computeVertexNormals(); chest.add(rib); const ol = outlineOf(rib, 0.9); ol.geometry = geo();
+      for (let k = 0; k <= 10; k++) { const a = k / 10 * short, ang = a * PI * 0.92; pts.push(new THREE.Vector3(sx * Math.sin(ang) * R, y0 - a * drop - a * a * 3.5 - 1.0 * Math.sin(a * PI), 3.2 - (1 - Math.cos(ang)) * D * 0.62 - a * 1.2)); }
+      const w = i < 7 ? 1.9 - t * 0.5 : 1.2, th = 0.55;
+      const sv = stave(pts, w, th, new THREE.Vector3(0, 0, -2));
+      facet(sv, kit.rib, chest, 0.9, 0.6);
+      if (i < 7) {
+        // the cartilage: from the rib's end, rising inward to the sternum's edge
+        const e = pts[pts.length - 1], sy = Math.min(5, Math.max(-13, y0 - 2 - i * 0.6));
+        const c = [e, new THREE.Vector3(e.x * 0.55, e.y + 0.6, (e.z + stYZ(sy)[0]) / 2 - 0.6), new THREE.Vector3(sx * 2.2, sy, stYZ(sy)[0] + 0.3)];
+        facet(stave(c, 1.0, 0.4, new THREE.Vector3(0, 0, -2)), kit.ball, chest, 0.6, 0.6);
+      }
     });
   }
   // the shoulder blades: two flat plates on the back
