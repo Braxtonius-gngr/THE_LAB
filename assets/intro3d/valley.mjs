@@ -711,21 +711,36 @@ function skyTex() {
     // the low band: long horizontals broken, denser toward the horizon
     for (let y = H * 0.7; y < H; y += 7 + rnd() * 5) { let x = 0; while (x < W) { const l = 60 + rnd() * 260; g.lineWidth = 1.2 + rnd() * 1.4 * (y / H); g.globalAlpha = 0.45 + 0.5 * (y / H); g.beginPath(); g.moveTo(x, y + (rnd() - 0.5) * 3); g.lineTo(x + l, y + (rnd() - 0.5) * 3); g.stroke(); x += l + 20 + rnd() * 120; } }
     g.globalAlpha = 1;
-    // the clouds: each a row of billows (arcs) outlined, hatched beneath
-    for (let c = 0; c < 34; c++) {
-      const cx = rnd() * W, cy = H * (0.42 + rnd() * 0.26), n = 3 + Math.floor(rnd() * 5), R = 12 + rnd() * 16;
-      let x = cx - n * R * 0.45;
-      const tops = [];
-      for (let i = 0; i < n; i++) { const r = R * (0.6 + rnd() * 0.7), y = cy + (rnd() - 0.5) * R * 0.5; g.lineWidth = 1.4 + rnd() * 0.6; g.beginPath(); g.arc(x, y, r, PI * 1.05, PI * 1.95); g.stroke(); tops.push([x, y, r]); x += r * 1.1; }
-      // the flat base and the hatch under the billows
-      const x0 = tops[0][0] - tops[0][2] * 0.9, x1 = tops[tops.length - 1][0] + tops[tops.length - 1][2] * 0.9, by = cy + R * 0.3;
-      g.lineWidth = 1.6; g.beginPath(); g.moveTo(x0, by); g.lineTo(x1, by + (rnd() - 0.5) * 3); g.stroke();
-      for (let k = 0; k < 5; k++) { const yy = by - k * 2.2 - 2; g.lineWidth = 0.8 + (5 - k) * 0.12; g.globalAlpha = 0.4 + (5 - k) * 0.1; g.beginPath(); g.moveTo(x0 + k * 4 + rnd() * 5, yy); g.lineTo(x1 - k * 4 - rnd() * 5, yy + (rnd() - 0.5) * 1.5); g.stroke(); }
-      g.globalAlpha = 1;
-      // the billows' shade: short hatch inside each arc's right side
-      tops.forEach(([tx, ty, tr]) => { for (let k = 0; k < 4; k++) { const a0 = PI * 1.55 + k * 0.07, aa = a0 + 0.35; g.lineWidth = 0.8; g.globalAlpha = 0.5; const rr = tr - 2.5 - k * 2.6; if (rr > 2) { g.beginPath(); g.arc(tx, ty, rr, a0, aa); g.stroke(); } } });
-      g.globalAlpha = 1;
-    }
+    // the clouds, as Holbein's cutter drew them: each one mass with a
+    // scalloped top (the billows overlap, one continuous edge, never loose
+    // arcs), a flat-ish belly, the lower half hatched with level lines that
+    // stop at the edge, heavier toward the belly - fewer, larger, low
+    const cloud = (cx, cy, wdt, ht) => {
+      // (a heap: big billows in the middle, small at the ends, each sitting
+      // on the belly and overlapping its neighbour by most of its radius, so
+      // the joins are shallow notches - the edge of the union, found by
+      // marching round the top and taking the highest circle at each x)
+      const n = 5 + Math.floor(wdt / 40), bill = [];
+      for (let i = 0; i < n; i++) { const t = (i + 0.5) / n, r = ht * (0.3 + 0.55 * Math.pow(Math.sin(PI * t), 0.8) + (rnd() - 0.5) * 0.16); bill.push([cx - wdt / 2 + t * wdt, cy + ht * 0.32 - r * 0.85, r]); }
+      const belly = cy + ht * 0.32;
+      const topAt = x => { let y = belly; for (const [bx, by, r] of bill) { const d = x - bx; if (Math.abs(d) < r) y = Math.min(y, by - Math.sqrt(r * r - d * d)); } return y; };
+      const xa = bill[0][0] - bill[0][2], xb = bill[n - 1][0] + bill[n - 1][2];
+      const path = new Path2D();
+      path.moveTo(xa, belly);
+      for (let x = xa; x <= xb; x += 2) path.lineTo(x, Math.min(belly, topAt(x)));
+      path.lineTo(xb, belly);
+      path.bezierCurveTo(cx + wdt * 0.25, belly + ht * 0.08, cx - wdt * 0.25, belly + ht * 0.1, xa, belly);
+      path.closePath();
+      // (the paper inside, so the sky's lines stop at the cloud)
+      g.fillStyle = '#E8DCC0'; g.fill(path);
+      g.save(); g.clip(path);
+      const top = belly - ht * 0.55;
+      for (let y = top; y < belly + ht * 0.12; y += 4.2) { const k = (y - top) / (belly - top); g.globalAlpha = 0.35 + 0.55 * Math.min(1, k); g.lineWidth = 0.7 + 1.5 * Math.min(1, k); g.beginPath(); g.moveTo(cx - wdt, y + (rnd() - 0.5) * 1.2); g.lineTo(cx + wdt, y + (rnd() - 0.5) * 1.2); g.stroke(); }
+      g.restore(); g.globalAlpha = 1;
+      g.lineWidth = 1.8; g.stroke(path);
+    };
+    for (let c = 0; c < 9; c++) cloud(c / 9 * W + rnd() * W / 12, H * (0.52 + rnd() * 0.12), 130 + rnd() * 150, 26 + rnd() * 16);
+    g.globalAlpha = 1;
     // birds: a few 'v's
     for (let i = 0; i < 26; i++) { const x = rnd() * W, y = H * (0.3 + rnd() * 0.4), s = 4 + rnd() * 7; g.lineWidth = 1.6; g.beginPath(); g.moveTo(x - s, y - s * 0.4); g.quadraticCurveTo(x - s * 0.4, y + s * 0.3, x, y); g.quadraticCurveTo(x + s * 0.4, y + s * 0.3, x + s, y - s * 0.4); g.stroke(); }
   });
@@ -939,9 +954,9 @@ export function valleyKit() {
     // (flesh: the paper, hatched along the limb; the face in its rings;
     // hair a dark passage; the raw of a wound or a flayed man is blood)
     flesh: mat({ freq: 1.2, angle: -0.55, tone: -0.14, keyI: 1.4, sky: 0.44, wobble: 0.5 }),
-    fleshUV: mat({ uv: [12, 5], angle: 0.08, tone: -0.14, keyI: 1.4, sky: 0.44, wobble: 0.4 }),
+    fleshUV: mat({ uv: [12, 5], angle: HALF - 0.28, tone: -0.14, keyI: 1.4, sky: 0.44, wobble: 0.4 }),
     face: mat({ freq: 1.25, angle: 1.1, tone: -0.12, keyI: 1.4, sky: 0.44, wobble: 0.45 }),
-    hair: mat({ uv: [24, 8], angle: 0.2, tone: 0.58, freq: 1.6, wobble: 1.2 }),
+    hair: mat({ uv: [24, 8], angle: 0.3, tone: 0.58, freq: 1.6, wobble: 1.2 }),
     raw: mat({ paper: BLOOD, tone: 0.34, freq: 1.4, angle: -0.4, keyI: 1.2 }),
     rawUV: mat({ paper: BLOOD, uv: [12, 5], angle: 0.1, tone: 0.34, freq: 1.3, keyI: 1.2 }),
     gut: mat({ paper: BLOOD, uv: [40, 5], angle: HALF, tone: 0.46, freq: 1.0 }),
@@ -949,7 +964,7 @@ export function valleyKit() {
     skin: mat({ freq: 1.0, angle: 1.2, tone: -0.02, wobble: 0.8, side: THREE.DoubleSide }),
     river: mat({ paper: BLOOD, uv: [8, 60], angle: 0.1, tone: 0.22, freq: 1.0, wobble: 1.8, scroll: [0, 6], steps: 0 }),
     cloth: mat({ freq: 0.9, angle: 1.3, tone: 0.3, wobble: 0.8, side: THREE.DoubleSide }),
-    linen: mat({ uv: [18, 4], angle: 0.1, tone: -0.06, sky: 0.36, wobble: 0.5 }),
+    linen: mat({ uv: [18, 4], angle: HALF - 0.16, tone: -0.06, sky: 0.36, wobble: 0.5 }),
     // (a plank or a beam, long in x: the grain runs its length; a turned
     // timber - any cylinder, standing or laid - its own length)
     wood: mat({ freq: 0.9, angle: HALF, tone: 0.22, wobble: 0.45, axis: [1, 0, 0] }),
@@ -964,8 +979,8 @@ export function valleyKit() {
     // (a flayed man: the muscle in its fibres, fine lines along the limb over the red)
     rawCap: mat({ paper: BLOOD, tone: 0.4, freq: 1.6, angle: 0.4, side: THREE.DoubleSide }),
     // (a flayed man: the fibres cut in blood on the paper - the page's own sanguine - so the figure keeps its silhouette and the lines read as muscle)
-    muscle: mat({ paper: BONE, ink: BLOOD_WET, freq: 2.0, angle: -0.4, tone: 0.3, sky: 0.3, wobble: 0.5 }),
-    muscleUV: mat({ paper: BONE, ink: BLOOD_WET, uv: [12, 5], angle: 0.1, tone: 0.3, sky: 0.3, freq: 2.0, wobble: 0.5 }),
+    muscle: mat({ paper: BONE, ink: BLOOD, freq: 2.0, angle: -0.4, tone: 0.3, sky: 0.3, wobble: 0.5 }),
+    muscleUV: mat({ paper: BONE, ink: BLOOD, uv: [12, 5], angle: HALF - 0.28, tone: 0.3, sky: 0.3, freq: 2.0, wobble: 0.5 }),
     // (a cast shadow: parallel cuts on the ground, no light to it)
     shadow: mat({ tone: 0.02, keyI: 0, sky: 0, angle: -0.55, freq: 0.7, wobble: 0.5, steps: 0, axis: [1, 0, 0.7] }),
     ink: new THREE.MeshBasicMaterial({ color: INK })
