@@ -633,10 +633,17 @@ function vGallows(kit, rnd) {
     // the noose: a coil round the neck and the knot standing out under the ear
     const coil = mesh(new THREE.TorusGeometry(5.2, 1.2, 6, 14), kit.rope, d.neck, 1.0); coil.position.y = 5; coil.rotation.x = HALF;
     const knot = mesh(new THREE.CylinderGeometry(1.9, 1.9, 6, 7), kit.rope, d.neck, 1.0); knot.position.set(-side * 5.6, 7.5, 0.5);
-    // (the arms bound behind: the upper arms back, the forearms folded in
-    // to the small of the back, out of the hanging line)
-    d.arms.l.sh.rotation.set(-0.32, 0, -0.1); d.arms.r.sh.rotation.set(-0.32, 0, 0.1);
-    d.arms.l.el.rotation.x = 0.75; d.arms.r.el.rotation.x = 0.75;
+    // (the wrists bound before him at the groin, the cord round them, the
+    // elbows at his sides: bound behind, the arms were lost behind the body
+    // and he read armless from the seat)
+    ['l', 'r'].forEach(s => {
+      const sx = s === 'l' ? 1 : -1;
+      // (reach's target is in the body's parent's frame, the rope's pivot)
+      reach(d.arms[s], V(-sx * 1.6, 95, -11).applyEuler(b.rotation).add(b.position).toArray(), b, 10, { start: [0.3, 0, sx * 0.15, 1.2], elbow: V(sx * 21, 115, 0).applyEuler(b.rotation).add(b.position).toArray() });
+      d.arms[s].hand.userData.grip(0.55);
+    });
+    { b.updateMatrixWorld(true); const wl = b.worldToLocal(d.arms.l.hand.getWorldPosition(V(0, 0, 0))), wr = b.worldToLocal(d.arms.r.hand.getWorldPosition(V(0, 0, 0)));
+      const cord = mesh(new THREE.TorusGeometry(3.2, 0.9, 5, 12), kit.rope, b, 0.9); cord.position.copy(wl.add(wr).multiplyScalar(0.5)); cord.rotation.set(0.2, HALF, 0); }
     d.legs.l.hip.rotation.set(0.04, 0, 0.05); d.legs.r.hip.rotation.set(-0.06, 0, -0.04);
     d.legs.l.kn.rotation.x = KNEE_BACK * (k ? 0.35 : 0.12); d.legs.r.kn.rotation.x = KNEE_BACK * 0.08;
     d.legs.l.foot.rotation.x = -0.95; d.legs.r.foot.rotation.x = -0.85;
@@ -809,7 +816,7 @@ function vDragging(kit, rnd) {
     d.neck.rotation.x = 0.35 + (still ? 0 : Math.sin(wv - 0.6) * 0.1);
     d.arms.l.sh.rotation.z = 0.62 + (still ? 0 : Math.sin(wv + 1) * 0.08);
   };
-  return { g, death, act, bands, drips: [], crows: [[-100, 2, 62]], width: 150, victims: [man], freed: { pose: 'peace', at: [8, 0, -22], beside: [62, -6] } };
+  return { g, death, act, bands, drips: [], crows: [[-100, 2, 62]], width: 150, victims: [man], freed: { pose: 'peace', at: [14, 0, -22], beside: [60, -6] } };
 }
 const VIGNETTES = [vSawyer, vFlaying, vWheel, vDragging, vGallows, vWindlass, vStake];
 // (the lab: one vignette built alone, for the study page - the kit's
