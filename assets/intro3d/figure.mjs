@@ -439,7 +439,7 @@ export function buildFigure(kit, rnd, o = {}) {
   else if (!flayed) {
     const bm = kit.breech || kit.linen;
     const band = facet(new THREE.TorusGeometry(16.6, 1.3, 6, 24), bm, hips, 1.0); band.position.y = 2.0; band.rotation.x = HALF; band.scale.set(1, 0.66, 1);
-    const lc = facet(loft([{ y: -20.6, rx: 0.2, rz: 0.2, z: -1.0 }, { y: -20.0, rx: 6.0, rz: 4.4, z: -1.0 }, { y: -18.2, rx: 13.0, rz: 9.0, z: -0.4 }, { y: -15.0, rx: 17.8, rz: 11.8 }, { y: -8, rx: 18.0, rz: 11.8 }, { y: -2, rx: 17.2, rz: 11.2 }, { y: 2.2, rx: 16.6, rz: 10.9 }], { n: 16, metric: UVM.linen }), bm, hips, 1.4); }
+    const lc = facet(loft([{ y: -21.0, rx: 0.2, rz: 0.2, z: -1.0 }, { y: -20.2, rx: 3.6, rz: 6.8, z: -1.0 }, { y: -18.4, rx: 8.6, rz: 10.2, z: -0.4 }, { y: -15.0, rx: 17.8, rz: 11.8 }, { y: -8, rx: 18.0, rz: 11.8 }, { y: -2, rx: 17.2, rz: 11.2 }, { y: 2.2, rx: 16.6, rz: 10.9 }], { n: 16, metric: UVM.linen }), bm, hips, 1.4); }
   const neck = G(hips, 0, 55, 0);
   facet(tube([[0, 5.6, 5.2], [5, 4.6, 4.3], [10.5, 4.4, 4.1]], 12, { metric: UVS }), skinUV, neck, 1.2);
   const head = G(neck, 0, 11, 0);
@@ -489,10 +489,10 @@ export function buildFigure(kit, rnd, o = {}) {
     // in the fork, two lobes side by side, and resting forward on it a
     // narrower, deeper mass that hangs down over it - one smooth knob, with
     // nothing under it to sit on, read as a doll's)
-    [-1, 1].forEach(sx => { const lobe = facet(knob(3.1, 1.0, 1.15, 1.0, 2), m, pouch, 0); lobe.position.set(sx * 2.0, -7.8, -1.0); lobe.userData.pouch = true; });
+    [-1, 1].forEach(sx => { const lobe = facet(knob(3.2, 1.0, 1.1, 1.0, 2), m, pouch, 0); lobe.position.set(sx * 1.6, -7.8, -1.0); lobe.userData.pouch = true; });
     const pg = facet(loft([{ y: 1.4, rx: 1.6, rz: 1.6 }, { y: -0.8, rx: 2.4, rz: 2.8, front: 0.6 }, { y: -3.6, rx: 2.6, rz: 3.1, front: 0.9 }, { y: -6.8, rx: 2.6, rz: 3.0, front: 0.8 }, { y: -9.4, rx: 2.3, rz: 2.6, front: 0.5 }, { y: -11.0, rx: 1.4, rz: 1.6 }, { y: -11.6, rx: 0.3, rz: 0.3 }], { n: 12, metric: UVM.linen }), m, pouch, 0);
     pg.position.z = -2.4;
-    pouch.rotation.x = -0.1;
+    pouch.rotation.x = -0.1; pouch.scale.setScalar(1.12);   // (true to a man's size: smaller, it still read as a doll's)
     pg.userData.pouch = true;
   }
   const legs = {};

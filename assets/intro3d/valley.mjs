@@ -326,7 +326,9 @@ function vSawyer(kit, rnd) {
   d.neck.rotation.x = 0.55;
   // (hung head down, his weight under the cloth falls the other way, onto
   // his belly toward the ground)
-  if (d.pouch) { d.pouch.rotation.x = 2.55; d.pouch.position.y += 2; }
+  // (the base stays in the fork and the narrower mass lies down along his
+  // front toward his belly, pressed out against the cloth from inside)
+  if (d.pouch) { d.pouch.rotation.set(0.14, 0, PI); d.pouch.position.set(0, -13.0, -11.0); }   // (turned end for end about the body's depth, so its front stays to the front)
   // the rope round each ankle to the beam
   ['l', 'r'].forEach(s => { const r = mesh(new THREE.TorusGeometry(6.4, 0.9, 6, 12), kit.rope, d.legs[s].foot, 0.9); r.position.y = 2; r.rotation.x = HALF; });
   // the cut: the raw open in the fork where the blade is in him, and the
