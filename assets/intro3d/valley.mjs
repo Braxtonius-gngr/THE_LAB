@@ -324,6 +324,9 @@ function vSawyer(kit, rnd) {
   d.arms.l.sh.rotation.set(0.1, 0, PI - 0.3); d.arms.r.sh.rotation.set(0.1, 0, -(PI - 0.34)); d.arms.l.el.rotation.x = 0.38; d.arms.r.el.rotation.x = 0.44;
   d.arms.l.hand.userData.grip(0.35); d.arms.r.hand.userData.grip(0.3);
   d.neck.rotation.x = 0.55;
+  // (hung head down, his weight under the cloth falls the other way, onto
+  // his belly toward the ground)
+  if (d.pouch) { d.pouch.rotation.x = 2.55; d.pouch.position.y += 2; }
   // the rope round each ankle to the beam
   ['l', 'r'].forEach(s => { const r = mesh(new THREE.TorusGeometry(6.4, 0.9, 6, 12), kit.rope, d.legs[s].foot, 0.9); r.position.y = 2; r.rotation.x = HALF; });
   // the cut: the raw open in the fork where the blade is in him, and the
@@ -717,7 +720,7 @@ function vStake(kit, rnd) {
   const mound = mesh(new THREE.SphereGeometry(24, 16, 8, 0, PI * 2, 0, HALF), kit.stone, g, 1.4); mound.scale.set(1, 0.36, 0.9); mound.position.set(0, -0.5, 3);
   const piv = G(g, 0, FORK, 0);
   const man = buildFigure(kit, rnd, { hose: true, beard: true }); piv.add(man); restBody(man);
-  man.position.set(0, -(BODY_HIPS - 9), 0); man.rotation.set(0.06, 0.62, 0.05);   // (turned three-quarters to you, so his fall forward over the shaft shows: square on, it foreshortened away and he stood upright in the air)
+  man.position.set(0, -(BODY_HIPS - 9), 0); man.rotation.set(0.06, 0.18, 0.05);   // (nearly square on: turned three-quarters he showed his back, not his fall)
   shade(g, 0, 3, 26, 16, 20); shade(g, -44, -12, 22, 12); shade(g, 0, 0, 16, 10, 120);
   const d = man.userData;
   // the slump: the head fallen away from the point, the arms hanging, one

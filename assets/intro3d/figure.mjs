@@ -427,10 +427,10 @@ export function buildFigure(kit, rnd, o = {}) {
   // seam)
   // (its collar closed round the neck: left open, the gap printed as a black
   // wedge under the chin, a gaping jaw)
-  if (o.shirt && !flayed) { const sh = facet(loft([...T.slice(3, 15).map(s => Object.assign({}, s, { rx: s.rx + 1.4, rz: s.rz + 1.2 })), { y: 56.2, rx: 6.6, rz: 6.0 }], { n: 16, metric: UVM.linen, cap: false }), kit.linen, hips, 1.5); sh.position.z = 0.2; }
+  if (o.shirt && !flayed) { const sh = facet(loft([...(o.hose ? [] : [{ y: -15.0, rx: 15.2, rz: 11.0 }, { y: -11.4, rx: 15.8, rz: 11.6 }]), ...T.slice(3, 15).map(s => Object.assign({}, s, { rx: s.rx + 1.4, rz: s.rz + 1.2 })), { y: 56.2, rx: 6.6, rz: 6.0 }], { n: 16, metric: UVM.linen, cap: false }), kit.linen, hips, 1.5); sh.position.z = 0.2; }
   // (the cloth gathered closed under the fork: its flat end printed as a
   // black hole where a body bent or lying shows it from below)
-  else if (!flayed) { const lc = facet(loft([{ y: -26.4, rx: 0.2, rz: 0.2 }, { y: -25.8, rx: 6.0, rz: 4.0 }, { y: -24.6, rx: 12.0, rz: 8.0 }, { y: -22.6, rx: 15.6, rz: 10.2, front: 1.0 }, { y: -16, rx: 17.2, rz: 11.4, front: 1.6 }, { y: -8, rx: 17.6, rz: 11.6, front: 0.6 }, { y: -2, rx: 16.6, rz: 10.8 }, { y: 2.2, rx: 15.6, rz: 10.2 }], { n: 16, metric: UVM.linen }), kit.linen, hips, 1.4); }
+  else if (!flayed) { const lc = facet(loft([{ y: -26.4, rx: 0.2, rz: 0.2 }, { y: -25.8, rx: 6.0, rz: 4.0 }, { y: -24.6, rx: 12.0, rz: 8.0 }, { y: -22.6, rx: 15.6, rz: 10.2, front: 0.4 }, { y: -16, rx: 17.2, rz: 11.4, front: 0.4 }, { y: -8, rx: 17.6, rz: 11.6 }, { y: -2, rx: 16.6, rz: 10.8 }, { y: 2.2, rx: 15.6, rz: 10.2 }], { n: 16, metric: UVM.linen }), kit.linen, hips, 1.4); }
   const neck = G(hips, 0, 55, 0);
   facet(tube([[0, 5.6, 5.2], [5, 4.6, 4.3], [10.5, 4.4, 4.1]], 12, { metric: UVS }), skinUV, neck, 1.2);
   const head = G(neck, 0, 11, 0);
@@ -460,7 +460,24 @@ export function buildFigure(kit, rnd, o = {}) {
   });
   // (hose came with a codpiece: a modest rounded front to the fork in the
   // same linen - a smooth closed fork read as a mannequin's)
-  if (o.hose && !flayed) { const cp = facet(knob(3.6, 1.2, 1.1, 0.5, 1), kit.linen, hips, 0); cp.position.set(0, -8.2, -7.6); cp.rotation.x = 0.3; }   // (a soft pouch sunk most of the way into the fork, no line round it: a whole knob with its own outline read as a doorknob)
+  // (under the cloth, a man's weight: a pouch carried low and forward of the
+  // fork, fuller at its foot than its root, the cloth drawn over it - a
+  // smooth closed fork, or a small knob, read as a doll's. No line round
+  // it: its own outline read as a doorknob. `pouch` is left in userData so a
+  // pose can let it fall with gravity - see the sawyer, hung head down)
+  let pouch = null;
+  if (!flayed) {
+    // (over a loincloth it is the cloth itself drawn forward over it)
+    // (a shirt with no hose runs on to a shirt-tail over the fork, and the
+    // pouch sits under it, showing through it)
+    const covered = o.shirt && !o.hose;
+    pouch = G(hips, 0, o.hose || covered ? -7.0 : -9.0, o.hose ? -8.0 : covered ? -8.6 : -10.6);
+    if (!o.hose && !covered) pouch.scale.setScalar(0.88);
+    const m = kit.linen;
+    const pg = facet(loft([{ y: 1.0, rx: 2.6, rz: 1.6 }, { y: -1.5, rx: 3.6, rz: 2.6, front: 0.6 }, { y: -4.6, rx: 4.1, rz: 3.2, front: 1.0 }, { y: -7.0, rx: 3.6, rz: 2.8, front: 0.6 }, { y: -8.4, rx: 2.0, rz: 1.6 }, { y: -8.9, rx: 0.3, rz: 0.3 }], { n: 12, metric: UVM.linen }), m, pouch, 0);
+    pouch.rotation.x = -0.12;
+    pg.userData.pouch = true;
+  }
   const legs = {};
   const legM = o.hose && !flayed ? kit.linen : skinUV, legS = o.hose && !flayed ? kit.linen : skin, legUV = o.hose && !flayed ? UVM.linen : UVS;
   [-1, 1].forEach(s => {
@@ -483,7 +500,7 @@ export function buildFigure(kit, rnd, o = {}) {
     for (let t = 0; t < 5; t++) { const toe = facet(tube([[0, 0.8], [-2.2 + t * 0.2, 0.7]], 5), skin, foot, 0.6); toe.position.set((t - 2) * 1.5 * s - s * 0.4, -2.9, -12.4 + Math.abs(t - 0.5) * 0.5); toe.rotation.x = HALF; }
     legs[key] = { hip, kn, foot };
   });
-  root.userData = { hips, torso, neck, head, arms, legs, mouth: hd.userData.mouth, phase: rnd() * 6.28 };
+  root.userData = { hips, torso, neck, head, arms, legs, pouch, mouth: hd.userData.mouth, phase: rnd() * 6.28 };
   SOFT = soft0;
   return root;
 }
