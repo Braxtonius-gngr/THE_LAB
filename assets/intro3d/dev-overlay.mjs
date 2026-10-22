@@ -5,7 +5,12 @@
 // Usage: import and call `initDevOverlay(scene)` from the valley module
 // when `?lab` is in the URL.  The overlay floats over the WebGL canvas.
 
-import { getAnatomy, rebuildAnatomy } from './figure.mjs';
+import { getAnatomy, setAnatomy, rebuildAnatomy } from './figure.mjs';
+
+// the creation values, kept for "Reset defaults" (the sliders move the live
+// base with setAnatomy, so men built after a change - the lab rebuilds a
+// man on every pose or outfit - take the tuned values)
+const DEFAULTS = getAnatomy();
 
 // ── Supabase constants (same as index.html) ──────────────────────────
 const SB_URL = 'https://ewfvyrhlsanzkmozrmhs.supabase.co';
@@ -131,7 +136,7 @@ const PARAMS = [
 ];
 
 // ── overlay DOM ──────────────────────────────────────────────────────
-function buildOverlayUI(figures) {
+function buildOverlayUI(figures, opts = {}) {
   const root = document.createElement('div');
   root.id = 'dev-anatomy-overlay';
   root.style.cssText = [
@@ -142,16 +147,30 @@ function buildOverlayUI(figures) {
     'padding:10px', 'pointer-events:auto', 'user-select:none',
   ].join(';');
 
+  if (opts.top) root.style.top = opts.top;
+  // (compact: a strip across the top of a phone, the sliders two to a row,
+  // so the figures stay in view below it)
+  if (opts.compact) Object.assign(root.style, { left: '12px', right: '12px', width: 'auto', maxWidth: '520px', margin: '0 auto', padding: '8px 10px', fontSize: '10px', background: 'rgba(0,0,0,0.78)' });
+  // (the title folds the panel away, so a phone can see the figures)
   const title = document.createElement('div');
-  title.textContent = '🔧 Anatomy Dev';
-  title.style.cssText = 'font-size:13px;font-weight:bold;margin-bottom:8px;color:#fff;';
+  title.textContent = '🔧 Anatomy Dev ▾';
+  title.style.cssText = 'font-size:13px;font-weight:bold;margin-bottom:8px;color:#fff;cursor:pointer;';
   root.appendChild(title);
+  const body = document.createElement('div');
+  if (opts.compact) body.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;column-gap:12px;';
+  root.appendChild(body);
+  title.addEventListener('click', () => {
+    const open = body.style.display === 'none';
+    body.style.display = open ? '' : 'none';
+    title.textContent = '🔧 Anatomy Dev ' + (open ? '▾' : '▸');
+    title.style.marginBottom = open ? '8px' : '0';
+  });
 
   const current = getAnatomy();
 
   PARAMS.forEach(p => {
     const row = document.createElement('div');
-    row.style.cssText = 'margin-bottom:6px;';
+    row.style.cssText = opts.compact ? 'margin-bottom:2px;' : 'margin-bottom:6px;';
 
     const lbl = document.createElement('label');
     lbl.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;';
@@ -169,20 +188,22 @@ function buildOverlayUI(figures) {
     slider.max = p.max;
     slider.step = p.step;
     slider.value = current[p.key];
-    slider.style.cssText = 'width:100%;accent-color:#4af;';
+    slider.style.cssText = 'width:100%;accent-color:#4af;' + (opts.compact ? 'margin:0;height:18px;' : '');
 
     slider.addEventListener('input', () => {
       const v = parseFloat(slider.value);
       val.textContent = p.step >= 1 ? String(v) : v.toFixed(2);
       const patch = {};
       patch[p.key] = v;
+      setAnatomy(patch);
       // rebuild every figure in the scene
       figures.forEach(fig => rebuildAnatomy(fig, patch));
+      if (opts.onChange) opts.onChange(patch);
     });
 
     row.appendChild(lbl);
     row.appendChild(slider);
-    root.appendChild(row);
+    body.appendChild(row);
   });
 
   // reset button
@@ -194,7 +215,8 @@ function buildOverlayUI(figures) {
     'font:11px monospace',
   ].join(';');
   reset.addEventListener('click', () => {
-    const defaults = getAnatomy();
+    const defaults = Object.assign({}, DEFAULTS);
+    setAnatomy(defaults);
     root.querySelectorAll('input[type=range]').forEach((sl, i) => {
       const p = PARAMS[i];
       sl.value = defaults[p.key];
@@ -204,8 +226,9 @@ function buildOverlayUI(figures) {
         : null;
     });
     figures.forEach(fig => rebuildAnatomy(fig, defaults));
+    if (opts.onChange) opts.onChange(defaults);
   });
-  root.appendChild(reset);
+  body.appendChild(reset);
 
   // copy-params button
   const copy = document.createElement('button');
@@ -219,7 +242,7 @@ function buildOverlayUI(figures) {
     navigator.clipboard.writeText(JSON.stringify(vals, null, 2))
       .then(() => { copy.textContent = 'Copied ✓'; setTimeout(() => copy.textContent = 'Copy params', 1200); });
   });
-  root.appendChild(copy);
+  body.appendChild(copy);
 
   return root;
 }
@@ -305,15 +328,18 @@ function buildAuthGate(onAuthed) {
 // ── public entry point ───────────────────────────────────────────────
 // `figures` is the array of THREE.Object3D figure roots from the valley.
 // Each must have userData.pouch set by buildFigure().
-export function initDevOverlay(figures) {
+// opts.top: where the panel sits (the lab moves it under its own bar);
+// opts.onChange(patch): told of every slider move; opts.onAuthed(): told
+// once the gate is passed (or was already). `figures` may be refilled in
+// place - the sliders act on whatever it holds at the time.
+export function initDevOverlay(figures, opts = {}) {
+  const open = () => {
+    document.body.appendChild(buildOverlayUI(figures, opts));
+    if (opts.onAuthed) opts.onAuthed();
+  };
   // already have a valid session?
-  if (hasSession()) {
-    document.body.appendChild(buildOverlayUI(figures));
-    return;
-  }
+  if (hasSession()) { open(); return; }
 
   // show the auth gate
-  document.body.appendChild(buildAuthGate(() => {
-    document.body.appendChild(buildOverlayUI(figures));
-  }));
+  document.body.appendChild(buildAuthGate(open));
 }

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="robots" content="noindex" />
+  <title>The Lab</title>
+  <style>
+    :root { --ink: #f1e9d8; --muted: #a99d88; --glass: rgba(14, 11, 10, 0.86); --line: rgba(232, 220, 192, 0.22); --gold: #d9b45a; --on: #e8dcc0; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: #0e0b0a; color: var(--ink); font: 14px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; -webkit-tap-highlight-color: transparent; }
+    #labCanvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+    .bar { position: fixed; top: max(10px, env(safe-area-inset-top)); left: 12px; right: 12px; display: flex; align-items: center; gap: 10px; pointer-events: none; }
+    .bar > * { pointer-events: auto; }
+    .title { font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; font-size: 12px; color: var(--gold); background: var(--glass); border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 52vw; }
+    .title b { color: var(--ink); font-weight: 600; letter-spacing: 0.02em; text-transform: none; }
+    .spacer { flex: 1; }
+    .seg { display: inline-flex; background: var(--glass); border: 1px solid var(--line); border-radius: 999px; padding: 3px; gap: 2px; }
+    .seg button, .chip, .nav button { font: inherit; font-size: 13px; color: var(--muted); background: transparent; border: 0; border-radius: 999px; padding: 6px 11px; cursor: pointer; white-space: nowrap; }
+    .seg button.on, .chip.on { background: var(--on); color: #1a0f0c; }
+    a.out { font-size: 12px; color: var(--muted); text-decoration: none; background: var(--glass); border: 1px solid var(--line); border-radius: 999px; padding: 7px 11px; }
+    .dock { position: fixed; left: 10px; right: 10px; bottom: max(10px, env(safe-area-inset-bottom)); max-width: 640px; margin: 0 auto; display: grid; gap: 6px; }
+    .row { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; background: var(--glass); border: 1px solid var(--line); border-radius: 14px; padding: 5px; align-items: center; }
+    .row::-webkit-scrollbar { display: none; }
+    .row .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; padding: 0 4px 0 6px; flex: none; }
+    .nav { justify-content: space-between; }
+    .nav button { color: var(--ink); }
+    .nav button.on { background: var(--on); color: #1a0f0c; }
+    .tools { flex-wrap: wrap; }
+    .tools label { display: flex; align-items: center; gap: 8px; flex: 1 1 100%; font-size: 12px; color: var(--muted); padding: 2px 6px; }
+    .tools input[type=range] { flex: 1; accent-color: var(--gold); }
+    .tools output { color: var(--ink); min-width: 38px; text-align: right; font-variant-numeric: tabular-nums; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <canvas id="labCanvas" aria-label="The lab: a lineup of men for tuning the figures"></canvas>
+
+  <div class="bar hidden" id="bar">
+    <div class="title">The Lab · <b id="who">All</b></div>
+    <span class="spacer"></span>
+    <div class="seg" role="group" aria-label="Look">
+      <button type="button" data-look="ink" class="on">Ink</button>
+      <button type="button" data-look="studio">Studio</button>
+    </div>
+    <a class="out" href="../?lab=valley" title="Tune over the valley instead">Valley</a>
+  </div>
+
+  <div class="dock hidden" id="dock">
+    <div class="row tools hidden" id="tools"></div>
+    <div class="row" role="group" aria-label="Pose">
+      <span class="lbl">Pose</span>
+      <button type="button" class="chip on" data-pose="stand">Stand</button>
+      <button type="button" class="chip" data-pose="walk">Walk</button>
+      <button type="button" class="chip" data-pose="seat">Seated</button>
+      <button type="button" class="chip" data-pose="hung">Hung</button>
+    </div>
+    <div class="row" role="group" aria-label="Outfit">
+      <span class="lbl">Wear</span>
+      <button type="button" class="chip on" data-outfit="loin">Loincloth</button>
+      <button type="button" class="chip" data-outfit="shirt">Shirt</button>
+      <button type="button" class="chip" data-outfit="hose">Hose</button>
+      <button type="button" class="chip" data-outfit="both">Shirt + hose</button>
+    </div>
+    <div class="row nav" role="group" aria-label="Camera">
+      <button type="button" id="prev" aria-label="Previous man">‹</button>
+      <button type="button" data-frame="all" class="on">All</button>
+      <button type="button" data-frame="full">Full</button>
+      <button type="button" data-frame="close">Close-up</button>
+      <button type="button" id="next" aria-label="Next man">›</button>
+    </div>
+  </div>
+
+  <script type="module" src="./anatomy.mjs"></script>
+</body>
+</html>
