@@ -79,6 +79,10 @@ import { CSS3DRenderer, CSS3DObject } from '../vendor/three/three.addons.js';
 import { tableKit as K } from './table.mjs';
 import { engravingMaterial, outlineOf, burinTick, BONE, INK, BLOOD, BLOOD_WET } from './burin.mjs';
 import { buildFigure, buildDeath, buildSkull, BODY_HIPS, GRIP, hold, reach, setArm, lerp3, setHalo } from './figure.mjs';
+// dev overlay for live anatomy tuning (loaded dynamically, only on ?lab)
+const devOverlayP = (new URLSearchParams(window.location.search)).has('lab')
+  ? import('./dev-overlay.mjs').then(m => m.initDevOverlay).catch(() => null)
+  : Promise.resolve(null);
 // (the figures stand off the dark hills on a hair of paper: a halo round
 // their main forms, in device pixels)
 setHalo(5);
@@ -2035,6 +2039,15 @@ export async function prepareTable(opts) {
     update(0);
     if (fo.manual) world.rest(draw); else { draw(); running = true; raf = requestAnimationFrame(loop); }
 
+    // dev overlay: biometric-gated slider UI for live anatomy tuning
+    devOverlayP.then(init => {
+      if (!init) return;
+      const allFigs = [];
+      vigs.forEach(v => { if (v.victims) v.victims.forEach(f => { if (f.userData && f.userData.pouch) allFigs.push(f); }); });
+      freedFigs.forEach(f => { if (f.userData && f.userData.pouch) allFigs.push(f); });
+      if (allFigs.length) init(allFigs);
+    });
+
     return {
       dest: 'valley',
       duration: FLY,
@@ -2064,7 +2077,7 @@ export async function prepareTable(opts) {
       get state() { return { card: cardId, lift: +lift.toFixed(3), wind: +windAt(tNow).toFixed(3), running }; },
       get programs() { return world.renderer.info.programs.length; },
       setFelt() {}, setTrim() {},
-      lab: () => ({ seat, ground, sky, river, hands, desk, table, soulsG, pivots, vigs, far, crows, drops, sheetBody, camera, renderer: world.renderer }),
+      lab: () => ({ seat, ground, sky, river, hands, desk, table, soulsG, pivots, vigs, far, crows, drops, sheetBody, camera, renderer: world.renderer, freedFigs }),
       dispose() {
         disposed = true; running = false; cancelAnimationFrame(raf);
         hideHouse(false);
