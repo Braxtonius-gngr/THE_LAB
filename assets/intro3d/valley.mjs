@@ -388,8 +388,8 @@ function vSawyer(kit, rnd) {
   // (the elbows held down at his sides, under the line from shoulder to
   // fist: left free, the search raised an upper arm level with his jaw and
   // he read as biting a bone)
-  const elbowFor = (arm, hand) => { g.updateMatrixWorld(true); const sp = g.worldToLocal(arm.sh.getWorldPosition(V(0, 0, 0))); return sp.lerp(V(...hand), 0.45).add(V(0, -13, 0)).toArray(); };
-  const sawPose = [-1, 0, 1].map(sx => { dd.spine.rotation.x = -0.14 - sx * 0.1; saw.position.copy(sawAt(sx)); const hl = handleAt(sx, 1), hr = handleAt(sx, -1); return { l: reach(dd.arms.l, hl, death, 12, { start: [0.9, 0, 0.3, 1.2], elbow: elbowFor(dd.arms.l, hl) }), r: reach(dd.arms.r, hr, death, 12, { start: [0.9, 0, -0.3, 1.2], elbow: elbowFor(dd.arms.r, hr) }) }; });
+  const elbowFor = (arm, hand) => { g.updateMatrixWorld(true); const sp = g.worldToLocal(arm.sh.getWorldPosition(V(0, 0, 0))); return sp.lerp(V(...hand), 0.35).add(V(0, -22, 0)).toArray(); };
+  const sawPose = [-1, 0, 1].map(sx => { dd.spine.rotation.x = -0.14 - sx * 0.1; saw.position.copy(sawAt(sx)); const hl = handleAt(sx, 1), hr = handleAt(sx, -1); return { l: reach(dd.arms.l, hl, death, 14, { start: [1.3, 0, 0.2, 1.4], elbow: elbowFor(dd.arms.l, hl) }), r: reach(dd.arms.r, hr, death, 14, { start: [1.3, 0, -0.2, 1.4], elbow: elbowFor(dd.arms.r, hr) }) }; });
   saw.position.copy(sawAt(0));
   dd.arms.l.hand.userData.grip(1); dd.arms.r.hand.userData.grip(1);
   const act = (tt, dt, w, still) => {
@@ -423,7 +423,7 @@ function vWindlass(kit, rnd) {
   d.neck.rotation.x = -0.7;
   // the belly open: a raw plate sunk flush in the torso's front (standing
   // proud of it, it read as a red brick on his belly)
-  wound(d.hips, 20, 14, 5, 0, 24, -9.4, kit);
+  wound(d.hips, 20, 14, 5, 0, 24, -7.6, kit);
   // the windlass: a frame of two uprights with the drum between, the
   // crank at the near end
   // (a well's windlass, big enough to read across the valley: two posts on
