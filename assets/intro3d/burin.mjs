@@ -288,7 +288,7 @@ const FRAG = /* glsl */`
       // standing as the ground, so the figure prints dark, and only the
       // light cut out of it in bone lines, thin in the half tones, gone in
       // the shade (the tone before the blood: no blood, no plate tone)
-      float inkN = hatch(p, along, mix(0.05, 0.62, 1.0 - t), uWobble);   // (the stroke count kept: the lights cut as fully as the positive's shade, so the ground keeps its lines and a figure its form)
+      float inkN = hatch(p, along, mix(0.05, 0.5, 1.0 - t), uWobble);   // (the stroke count kept: the lights cut as fully as the positive's shade, so the ground keeps its lines and a figure its form)
       vec3 bone = vec3(0.91, 0.863, 0.753);
       col = mix(col, mix(uInk * 0.85, bone, inkN), uFlip);
     }

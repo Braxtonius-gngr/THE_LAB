@@ -516,7 +516,7 @@ function vFlaying(kit, rnd) {
   const SKIN_Y = PI - 0.25;
   // (its own plate: a hide has a tone, hatched in its folds, never bare
   // paper - a white cut-out read as a hole in the print)
-  const hideM = mat({ freq: 1.5, angle: 1.35, tone: 0.22, keyI: 0.8, sky: 0.2, bare: 0.0, wobble: 0.9, side: THREE.DoubleSide });
+  const hideM = mat({ freq: 1.5, angle: 1.35, tone: 0.04, keyI: 0.5, sky: 0.5, bare: 0.1, wobble: 0.9, side: THREE.DoubleSide });
   const skin = mesh(sg, hideM, g, 0); skin.position.set(-52, 199, 4); skin.rotation.y = SKIN_Y; skin.scale.setScalar(0.8);
   // the cord it hangs by, up to the branch, and its feet well clear of the ground
   { const cord = mesh(new THREE.CylinderGeometry(1.0, 1.0, 13, 6), kit.rope, g, 1.0); cord.position.set(-52, 204.5, 4); }
@@ -791,7 +791,11 @@ function vDragging(kit, rnd) {
   man.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(V(0, 0, 1), V(-1, 0, 0), V(0, -1, 0)));   // (head to -x, face up)
   const d = man.userData;
   d.legs.r.hip.rotation.set(1.0, 0, 0.06); d.legs.r.kn.rotation.x = KNEE_BACK * 0.06;   // (the near leg, hauled up by its ankle)
-  d.legs.l.hip.rotation.set(0.12, 0, -0.22); d.legs.l.kn.rotation.x = KNEE_BACK * 0.12; d.legs.l.foot.rotation.x = -0.9;   // (the foot slack along the leg, its sole turned down: square to the leg, the sole faced you end-on as a black blot by Death's foot, read as his head)           // (the other trailed along the ground behind, a little apart: drawn up, its knee knotted with Death's feet)
+  // (the other leg trailed along the ground behind, a little apart - drawn
+  // up, its knee knotted with Death's feet - its foot slack along it, the
+  // sole turned down: square to the leg, the sole faced you end-on as a
+  // black blot by Death's foot and read as his head)
+  d.legs.l.hip.rotation.set(0.12, 0, -0.22); d.legs.l.kn.rotation.x = KNEE_BACK * 0.12; d.legs.l.foot.rotation.x = -0.9;
   d.arms.l.sh.rotation.set(2.95, 0, 0.62); d.arms.r.sh.rotation.set(2.85, 0, -0.7);
   d.arms.l.el.rotation.x = 0.1; d.arms.r.el.rotation.x = 0.15;
   d.neck.rotation.x = 0.35;
@@ -999,21 +1003,32 @@ function skyTex() {
       const belly = cy + ht * 0.32;
       const topAt = x => { let y = belly; for (const [bx, by, r] of bill) { const d = x - bx; if (Math.abs(d) < r) y = Math.min(y, by - Math.sqrt(r * r - d * d)); } return y; };
       const xa = bill[0][0] - bill[0][2], xb = bill[n - 1][0] + bill[n - 1][2];
+      // (the underside in shallow lobes of its own, never a straight cut)
+      const lobes = 2 + Math.floor(wdt / 70), ph = rnd() * PI;
+      const botAt = x => belly + ht * 0.07 * Math.abs(Math.sin((x - xa) / (xb - xa) * PI * lobes + ph * 0.2)) + ht * 0.04 * Math.sin((x - xa) / (xb - xa) * PI);
       const path = new Path2D();
       path.moveTo(xa, belly);
       for (let x = xa; x <= xb; x += 2) path.lineTo(x, Math.min(belly, topAt(x)));
-      path.lineTo(xb, belly);
-      path.bezierCurveTo(cx + wdt * 0.25, belly + ht * 0.08, cx - wdt * 0.25, belly + ht * 0.1, xa, belly);
+      for (let x = xb; x >= xa; x -= 2) path.lineTo(x, botAt(x));
       path.closePath();
       // (the paper inside, so the sky's lines stop at the cloud)
       g.fillStyle = '#E8DCC0'; g.fill(path);
       g.save(); g.clip(path);
-      const top = belly - ht * 0.8;
-      for (let y = top; y < belly + ht * 0.12; y += 3.4) { const k = (y - top) / (belly - top); g.globalAlpha = 0.35 + 0.55 * Math.min(1, k); g.lineWidth = 0.7 + 1.5 * Math.min(1, k); g.beginPath(); g.moveTo(cx - wdt, y + (rnd() - 0.5) * 1.2); g.lineTo(cx + wdt, y + (rnd() - 0.5) * 1.2); g.stroke(); }
+      // (its shade cut in strokes that follow the lobed underside up into
+      // the heap, heaviest at the bottom and giving out before the lit
+      // tops: hatched level from a flat cut, and over most of it, the heaps
+      // read as tombstones standing on the ridge)
+      for (let j = 0, d = 1.4; d < ht * 0.5; j++, d += 3.3) {
+        const k = 1 - d / (ht * 0.5);
+        g.globalAlpha = 0.3 + 0.6 * k; g.lineWidth = 0.5 + 1.4 * k;
+        g.beginPath(); g.moveTo(xa, botAt(xa) - d);
+        for (let x = xa + 4; x <= xb; x += 4) g.lineTo(x, botAt(x) - d - Math.sin(x * 0.05 + j) * 0.6);
+        g.stroke();
+      }
       g.restore(); g.globalAlpha = 1;
       g.lineWidth = 1.8; g.stroke(path);
     };
-    for (let c = 0; c < 9; c++) cloud(c / 9 * W + rnd() * W / 12, H * (0.52 + rnd() * 0.12), 130 + rnd() * 150, 26 + rnd() * 16);
+    for (let c = 0; c < 9; c++) cloud(c / 9 * W + rnd() * W / 12, H * (0.48 + rnd() * 0.08), 130 + rnd() * 150, 26 + rnd() * 16);   // (lifted clear of the crest, short of the frame's top)
     g.globalAlpha = 1;
     // birds: a few 'v's
     for (let i = 0; i < 26; i++) { const x = rnd() * W, y = H * (0.3 + rnd() * 0.4), s = 4 + rnd() * 7; g.lineWidth = 1.6; g.beginPath(); g.moveTo(x - s, y - s * 0.4); g.quadraticCurveTo(x - s * 0.4, y + s * 0.3, x, y); g.quadraticCurveTo(x + s * 0.4, y + s * 0.3, x + s, y - s * 0.4); g.stroke(); }
@@ -1378,7 +1393,9 @@ export async function prepareTable(opts) {
     v.plates = ownMats(v.g, dset);
   });
   const freedRnd = seeded(77);
-  const freedFigs = [0, 1].map(k => { const f = buildFigure(kit, freedRnd, { calm: true, shirt: true, hose: true, beard: k === 0 }); restBody(f); f.visible = false; f.userData.plates = ownMats(f); return f; });
+  // (the freed are clean-shaven: in the negative a beard printed as a black
+  // wedge under the chin, a gaping jaw)
+  const freedFigs = [0, 1].map(k => { const f = buildFigure(kit, freedRnd, { calm: true, shirt: true, hose: true }); restBody(f); f.visible = false; f.userData.plates = ownMats(f); return f; });
   const setPlates = (pl, flip, ghost) => { pl.mats.forEach(m => { m.uniforms.uFlip.value = flip; m.uniforms.uGhost.value = ghost; }); pl.outs.forEach(m => { m.uniforms.uFlip.value = flip; m.uniforms.uGhost.value = ghost; }); };
   const FREE = { IN: 0.8, HOLD: 3.8, OUT: 1.1 };
   const snapOf = root => { const out = []; root.traverse(o => out.push([o, o.position.clone(), o.quaternion.clone()])); return out; };
