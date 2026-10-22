@@ -1286,6 +1286,8 @@ export function valleyKit() {
     river: mat({ paper: BLOOD, uv: [8, 60], angle: 0.1, tone: 0.22, freq: 1.0, wobble: 1.8, scroll: [0, 6], steps: 0 }),
     cloth: mat({ freq: 0.9, angle: 1.3, tone: 0.3, wobble: 0.8, side: THREE.DoubleSide }),
     linen: mat({ uv: [18, 4], angle: HALF - 0.16, tone: -0.04, keyI: 1.05, sky: 0.36, wobble: 0.5, bare: 0.18 }),
+    // (a breechcloth: coarser and darker than the skin it covers)
+    breech: mat({ uv: [18, 4], angle: 0.35, tone: 0.42, keyI: 0.9, sky: 0.3, wobble: 0.7, bare: 0.06 }),   // (its lines laid across the skin's, so it reads as another stuff)
     // (a plank or a beam, long in x: the grain runs its length; a turned
     // timber - any cylinder, standing or laid - its own length)
     wood: mat({ freq: 0.9, angle: HALF, tone: 0.22, wobble: 0.45, axis: [1, 0, 0] }),
