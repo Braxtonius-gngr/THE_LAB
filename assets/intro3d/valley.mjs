@@ -1010,7 +1010,7 @@ function skyTex() {
       let px = 0, py = at(0);
       for (let i = 1; i <= 96; i++) {
         const x = i * W / 96, ny = at(x);
-        g.lineWidth = Math.max(0.15, (0.3 + 1.7 * k) * (0.75 + 0.25 * Math.sin(2 * PI * 7 * x / W + ph)));
+        g.lineWidth = Math.max(0.5, (0.6 + 1.7 * k) * (0.75 + 0.25 * Math.sin(2 * PI * 7 * x / W + ph)));
         g.beginPath(); g.moveTo(px, py); g.lineTo(x, ny); g.stroke(); px = x; py = ny;
       }
     }
@@ -1046,7 +1046,7 @@ function skyTex() {
       // read as tombstones standing on the ridge)
       for (let j = 0, d = 1.4; d < ht * 0.5; j++, d += 3.3) {
         const k = 1 - d / (ht * 0.5);
-        g.globalAlpha = 0.3 + 0.6 * k; g.lineWidth = 0.5 + 1.4 * k;
+        g.globalAlpha = 0.3 + 0.6 * k; g.lineWidth = 0.8 + 1.4 * k;
         g.beginPath(); g.moveTo(xa, botAt(xa) - d);
         for (let x = xa + 4; x <= xb; x += 4) g.lineTo(x, botAt(x) - d - Math.sin(x * 0.05 + j) * 0.6);
         g.stroke();
