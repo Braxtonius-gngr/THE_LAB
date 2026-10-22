@@ -267,6 +267,144 @@ export function reach(arm, target, root, rounds = 10, o = {}) {
 export function setArm(arm, a) { arm.sh.rotation.set(a[0], a[1], a[2]); arm.el.rotation.x = a[3]; }
 // a pose through three solves at s = -1, 0, 1, read at s
 export function lerp3(a, b, c, s) { return a.map((_, i) => b[i] + s * (c[i] - a[i]) / 2 + s * s * ((c[i] + a[i]) / 2 - b[i])); }
+// ------------------------------------------------------------ a build's face
+// (a build's men only - the lab's; the valley keeps buildHead and its
+// screams.) A face rather than a mask: one smooth hull from the chin to the
+// crown with the cheekbones, the brow ridge and the jaw pushed out of it and
+// the sockets sunk into it; eyeballs set in the sockets under lids that
+// close over them; brows of hair; a nose with its wings and nostrils; closed
+// lips; ears with a rim; the hair and a beard that follows the jaw. Mass
+// fills the cheeks and jaw, muscle squares it, age lets it sag and lines it.
+// head.userData.setFace(name) moves it: 'calm', 'effort' (set jaw, pressed
+// lips, a squint, the brows down and in) or 'pain' (the brows drawn up in
+// the middle, the eyes screwed, the teeth bared).
+export const FACES = {
+  calm:   { lid: 0.30, low: 0.14, brow: 0,    tilt: 0,     press: 0,   open: 0,    teeth: 0, corner: 0 },
+  effort: { lid: 0.42, low: 0.30, brow: -0.3, tilt: 0.16,  press: 1,   open: 0,    teeth: 0, corner: -0.25 },
+  pain:   { lid: 0.58, low: 0.40, brow: 0.25, tilt: -0.24, press: 0.3, open: 0.55, teeth: 1, corner: -0.45 }
+};
+function buildFace(kit, o, B) {
+  const skin = kit.face, head = new THREE.Group();
+  const fat = Math.max(0, B.mass), lean = Math.max(0, -B.mass), mus = Math.max(0, B.muscle), old = Math.max(0, B.age);
+  const jaw = 1 + 0.10 * mus - 0.06 * lean;
+  // the hull: [y, rx, rz, z, front, lobes]
+  const S = [
+    { y: -6.5, rx: 1.4, rz: 1.6, z: -3.5 },
+    { y: -6.0, rx: (2.9 + 0.8 * fat) * jaw, rz: 3.3 + 0.4 * fat, z: -2.8, front: 0.3 },
+    { y: -4.6, rx: (4.6 + 1.5 * fat + 0.6 * old) * jaw, rz: 5.5 + 0.9 * fat, z: -1.7, front: 0.5, lobes: [{ x: 0, w: 1.7, d: 0.45 + 0.2 * mus }] },
+    { y: -2.9, rx: (6.0 + 1.3 * fat + 0.5 * old) * jaw, rz: 7.2 + 0.5 * fat, z: -0.8, front: 0.6 },
+    { y: -1.3, rx: 6.6 + 1.0 * fat + 0.3 * old, rz: 8.0, z: -0.3, front: 0.7, lobes: [{ x: 0, w: 2.3, d: 0.5 }] },
+    { y: 0.7, rx: 7.2 + 0.7 * fat, rz: 8.6, z: 0.1, front: 0.6, lobes: [{ x: -4.2, w: 1.7, d: 0.4 + 0.5 * fat }, { x: 4.2, w: 1.7, d: 0.4 + 0.5 * fat }] },
+    { y: 2.5, rx: 7.6 + 0.3 * fat, rz: 9.0, z: 0.4, front: 0.5, lobes: [{ x: -4.6, w: 1.3, d: 0.7 + 0.3 * lean }, { x: 4.6, w: 1.3, d: 0.7 + 0.3 * lean }] },
+    { y: 3.9, rx: 7.8, rz: 9.2, z: 0.5, front: 0.4, lobes: [{ x: -3.1, w: 1.35, d: -0.95 - 0.25 * old }, { x: 3.1, w: 1.35, d: -0.95 - 0.25 * old }] },
+    { y: 5.3, rx: 7.9, rz: 9.5, z: 0.7, front: 0.9, lobes: [{ x: -3.0, w: 1.9, d: 0.3 + 0.15 * mus }, { x: 3.0, w: 1.9, d: 0.3 + 0.15 * mus }] },
+    { y: 8.0, rx: 7.7, rz: 9.6, z: 1.0, front: 0.6 },
+    { y: 10.8, rx: 7.1, rz: 9.1, z: 1.3 },
+    { y: 13.0, rx: 5.4, rz: 7.0, z: 1.7 },
+    { y: 14.6, rx: 2.0, rz: 2.6, z: 1.8 },
+    { y: 14.9, rx: 0.3, rz: 0.3, z: 1.8 }
+  ];
+  const skull = facet(loft(densify(S, 2), { n: 28 }), skin, head, 2, 1);
+  const F = (y, x = 0) => frontZAt(S, y, x);
+  // (the lips a shade warmer than the face, by their own studio key)
+  const lipM = kit._lip || (kit._lip = (() => { const m = kit.face.clone(); m.userData = Object.assign({}, kit.face.userData, { studioKey: 'lip' }); if (m.uniforms && m.uniforms.uTone) m.uniforms.uTone.value += 0.12; return m; })()), parts = {};
+  // the eyes: a ball in each socket, the lids two shells over it that turn
+  // shut (a cap's edge on the ball's equator, turned about x), a lash line on
+  // the upper one's edge; turned a little out with the socket
+  const ER = 1.15, LR = 1.3;
+  const cap = (top) => new THREE.SphereGeometry(LR, 16, 6, PI - 0.5, PI + 1.0, top ? 0 : HALF, HALF);
+  parts.lids = [];
+  [-1, 1].forEach(sx => {
+    const ex = sx * 3.1, ey = 3.9, eye = G(head, ex, ey, F(ey, ex) + ER - 0.7);
+    eye.rotation.y = sx * 0.14;
+    facet(new THREE.SphereGeometry(ER, 18, 12), kit.bone, eye, 0, 1);
+    const iris = new THREE.Mesh(new THREE.CircleGeometry(0.52, 18), kit.ink); iris.position.z = -ER + 0.02; iris.rotation.y = PI; eye.add(iris);
+    const up = G(eye), lo = G(eye);
+    facet(cap(true), skin, up, 0, 1); facet(cap(false), skin, lo, 0, 1);
+    // (the lash line: the upper lid's edge, across its front)
+    const lash = []; for (let k = 0; k <= 8; k++) { const a = PI + 0.25 + (PI - 0.5) * k / 8; lash.push([-LR * Math.cos(a) * 1.01, 0, LR * Math.sin(a) * 1.01]); }
+    seam(lash, up, kit.ink, 0.11);
+    // (an older man's: a bag under the eye)
+    if (old > 0.3) { const bag = facet(knob(1.0, 1.5, 0.4 + 0.15 * old, 0.45, 1), skin, head, 0, 1); bag.position.set(ex, ey - 1.45, F(ey - 1.45, ex) + 0.3); }
+    parts.lids.push({ up, lo });
+  });
+  // the brows: hair laid along the ridge over each eye, a group each so it
+  // can lift, drop and tilt
+  const hairM = o.hairMat || kit.hair;
+  parts.brows = [-1, 1].map(sx => {
+    const g = G(head, sx * 3.3, 6.0, 0), pts = [];
+    for (let k = 0; k <= 6; k++) { const x = sx * (1.3 + 4.2 * k / 6), y = 6.0 + 0.45 * Math.sin(PI * k / 6) - 0.25 * k / 6; pts.push([x - sx * 3.3, y - 6.0, F(y, x) - 0.45]); }
+    seam(pts, g, hairM, 0.24 + 0.05 * fat);
+    return g;
+  });
+  // the nose: a loft down from the bridge to the tip, (center, width, depth,
+  // how far its front stands off the face), the wings at its foot, the nostrils
+  const nl = 1 + 0.12 * old, nw = 1 + 0.15 * fat + 0.05 * mus;
+  const ns = (y, rx, rz, p) => ({ y, rx: rx * nw, rz, z: F(y) - p + rz });
+  facet(loft([ns(5.0, 0.55, 0.5, 0.2), ns(3.6, 0.7, 0.7, 0.5), ns(2.0, 0.75, 0.85, 1.0 * nl), ns(0.6, 0.9, 0.9, 1.5 * nl), ns(-0.2, 0.85, 0.8, 1.55 * nl), ns(-0.85, 0.5, 0.5, 1.0), ns(-1.05, 0.2, 0.2, 0.6)], { n: 12 }), skin, head, 0.8, 1);
+  [-1, 1].forEach(sx => {
+    const wing = facet(knob(0.7, 1, 0.85, 1.0, 1), skin, head, 0.5, 1); wing.position.set(sx * 1.0 * nw, -0.35, F(-0.35, 1.0) - 0.55);
+    const hole = new THREE.Mesh(new THREE.CircleGeometry(0.32, 10), kit.ink); hole.position.set(sx * 0.55, -0.88, F(-0.9) - 1.0); hole.rotation.x = HALF; hole.scale.set(1, 1.5, 1); head.add(hole);
+  });
+  // the mouth: two lips laid on the face, the line between, the corners;
+  // a dark gap and the teeth behind for the strained face
+  const MY = -2.0, MW = 2.5 + 0.3 * fat;
+  const lipPts = (y0, bow, drop) => { const pts = []; for (let k = 0; k <= 10; k++) { const u = k / 10 * 2 - 1, x = u * MW, y = y0 + bow * Math.exp(-u * u * 18) - drop * u * u; pts.push([x, y, F(y, x) - 0.12]); } return pts; };
+  parts.upper = G(head); parts.lower = G(head); parts.line = G(head);
+  // (the lips sit back into the face: their tubes' fronts just proud of it)
+  facet(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(lipPts(MY + 0.42, -0.12, 0.25).map(p => new THREE.Vector3(...p))), 24, 0.3, 8, false), lipM, parts.upper, 0.4, 1);
+  facet(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(lipPts(MY - 0.5, 0, -0.2).map(p => new THREE.Vector3(...p))), 24, 0.36, 8, false), lipM, parts.lower, 0.4, 1);
+  seam(lipPts(MY, 0, 0.2).map(p => [p[0] * 1.04, p[1], p[2] - 0.25]), parts.line, kit.ink, 0.09);
+  parts.gap = new THREE.Mesh(new THREE.CircleGeometry(1, 20), kit.ink); parts.gap.position.set(0, MY - 0.1, F(MY) - 0.12); parts.gap.rotation.y = PI; head.add(parts.gap);
+  parts.teeth = facet(block(MW * 1.25, 0.55, 0.4, 0), kit.bone, head, 0); parts.teeth.position.set(0, MY + 0.05, F(MY) - 0.05);
+  // (an older or heavier man: the folds from the nose's wings to the mouth's corners)
+  if (old > 0.25 || fat > 0.5) [-1, 1].forEach(sx => seam([[sx * 1.7, -0.5, F(-0.5, 1.7) - 0.05], [sx * 2.6, -1.4, F(-1.4, 2.6) - 0.02], [sx * (MW + 0.5), -2.6, F(-2.6, MW + 0.5) + 0.05]], head, lipM, 0.13 + 0.06 * old));
+  // (an old man's forehead: three faint lines)
+  if (old > 0.6) for (let k = 0; k < 3; k++) { const y = 7.2 + k * 0.9, pts = []; for (let j = 0; j <= 6; j++) { const x = (j / 6 * 2 - 1) * 3.6; pts.push([x, y + 0.2 * Math.cos(x * 0.6), F(y, x) - 0.02]); } seam(pts, head, lipM, 0.08); }
+  // the ears: a shell, its rim curled round, the bowl darker, flaring back
+  [-1, 1].forEach(sx => {
+    const ear = G(head, sx * 7.55, 2.6, 1.8), ek = 1 + 0.12 * old;
+    ear.rotation.y = sx * 0.35; ear.scale.setScalar(ek);
+    facet(knob(1.0, 0.32, 2.85, 1.85, 1), skin, ear, 0.7, 1).position.set(sx * 0.15, 0, 0);
+    const rim = [[0, -2.4, -0.4], [0, -1.0, 1.2], [0, 1.2, 1.9], [0, 2.7, 1.2], [0, 3.0, -0.3], [0, 2.1, -1.2]];
+    facet(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rim.map(p => new THREE.Vector3(sx * 0.35, p[1], p[2]))), 20, 0.36, 6, false), skin, ear, 0.6, 1);
+    const bowl = facet(knob(0.7, 0.3, 1.1, 0.8, 1), skin, ear, 0, 1); bowl.position.set(sx * 0.25, 0.1, -0.1);
+  });
+  // the hair: as the valley's, a cap of planes cut into locks at the brow
+  const recede = o.recede || 0;
+  facet(loft([
+    { y: 2.4 + recede * 5.0, rx: 9.0, rz: 10.4, z: 1.6 + recede * 1.2, front: -4.2 - recede * 1.6, locks: 2.6 * (1 - recede * 0.6) }, { y: 7.4 + recede * 2.6, rx: 9.4, rz: 10.6, z: 1.4, front: -2.2 }, { y: 11.0, rx: 8.0, rz: 9.5, z: 1.8 }, { y: 14.0, rx: 5.8, rz: 7.4, z: 1.8 }, { y: 15.5, rx: 0.2, rz: 0.2, z: 1.8 }
+  ], { n: 18, spin: PI / 18, metric: UVM.hair }), hairM, head, 1.4).userData.hair = true;
+  if (o.beard) {
+    // the beard: a shell over the jaw and chin (open at the mouth), the
+    // sideburns down the cheeks to it, and the moustache over the lip
+    const off = (sec, d) => Object.assign({}, sec, { rx: sec.rx + d, rz: sec.rz + d, lobes: null });
+    // (its top edge climbs the cheeks at the sides - the saddle - toward the
+    // ears, under the lip at the front)
+    const jawS = [{ y: -2.8, rx: S[5].rx + 0.55, rz: S[3].rz + 0.45, z: S[3].z, front: (S[3].front || 0) - 0.15, saddle: 3.6 }, off(S[2], 0.55), off(S[1], 0.6), { y: -6.9, rx: 2.0, rz: 2.0, z: -3.3 }, { y: -7.3, rx: 0.5, rz: 0.5, z: -3.4 }];
+    facet(loft(jawS, { n: 20, arc: [PI - 0.15, 2 * PI + 0.15], metric: UVM.hair, cap: false }), hairM, head, 1.0, 1);
+    const mo = []; for (let k = 0; k <= 10; k++) { const u = k / 10 * 2 - 1, x = u * (MW + 0.3), y = MY + 0.95 - 0.6 * u * u * u * u; mo.push([x, y, F(y, x) - 0.4]); }
+    facet(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(mo.map(p => new THREE.Vector3(...p))), 24, 0.42, 8, false), hairM, head, 0.6, 1);
+  }
+  head.userData = { skull, mouth: parts.gap, nose: null, face: 'calm' };
+  // the expression: the lids turned shut so far, the brows moved, the lips
+  // pressed or parted, the teeth shown
+  head.userData.setFace = (name) => {
+    const E = FACES[name] || FACES.calm; head.userData.face = name;
+    parts.lids.forEach(({ up, lo }) => { up.rotation.x = Math.asin(Math.max(-1, Math.min(1, 1 - 2 * E.lid))); lo.rotation.x = -Math.asin(Math.max(-1, Math.min(1, 1 - 2 * E.low))); });
+    parts.brows.forEach((g, i) => { const sx = i ? 1 : -1; g.position.y = 6.0 + E.brow * 1.1; g.rotation.z = sx * E.tilt; });
+    const press = 1 - 0.35 * E.press, open = E.open;
+    parts.upper.scale.y = press; parts.upper.position.y = (1 - press) * (MY + 0.42) + open * 0.25;
+    parts.lower.scale.y = press; parts.lower.position.y = (1 - press) * (MY - 0.5) - open * 1.0;
+    parts.upper.rotation.z = parts.lower.rotation.z = 0;
+    parts.line.visible = open < 0.1; parts.line.scale.y = 1; parts.line.position.y = E.corner * 0.12;
+    parts.gap.visible = open >= 0.1; parts.gap.scale.set(MW * 0.95, 0.35 + open * 0.9, 1); parts.gap.position.y = MY - 0.1 - open * 0.4;
+    parts.teeth.visible = E.teeth > 0 && open >= 0.1;
+  };
+  head.userData.setFace('calm');
+  return head;
+}
+
 // ------------------------------------------------------------ the hand
 // A hand hanging from its wrist at the origin, down -y, the palm facing
 // +z when `s` is 1 (a left hand) - the palm a flat wedge with the heel's
@@ -670,6 +808,9 @@ function densify(secs, k) {
   for (let j = 0; j < secs.length - 1; j++) for (let i = 0; i < k; i++) {
     const a = secs[j], b = secs[j + 1], t = i / k, s = {};
     new Set([...Object.keys(a), ...Object.keys(b)]).forEach(key => { const va = a[key] || 0, vb = b[key] || 0; if (typeof va === 'number' && typeof vb === 'number') s[key] = va + (vb - va) * t; });
+    // (lobes eased too: each side's faded by its distance - a face's
+    // sockets and cheekbones are lobes, and the rings between need them)
+    if (a.lobes || b.lobes) s.lobes = [...(a.lobes || []).map(L => Object.assign({}, L, { d: L.d * (1 - t) })), ...(b.lobes || []).map(L => Object.assign({}, L, { d: L.d * t }))];
     out.push(s);
   }
   out.push(Object.assign({}, secs[secs.length - 1]));
@@ -1035,7 +1176,9 @@ export function buildFigure(kit, rnd, o = {}) {
   facet(tube(thick([[0, 5.6, 5.2], [5, 4.6, 4.3], [10.5, 4.4, 4.1]], kN), 12, { metric: UVS }), skinUV, neck, 1.2);
   const head = G(neck, 0, 11, 0);
   // (the head a size up on the body: at a ninth of the height it read as a doll's)
-  const hd = buildHead(kit, o); hd.scale.setScalar(1.12); head.add(hd);
+  // (a build's man - the lab's - has a face; the valley's keep their screams,
+  // and the lab can ask for one: o.face 'valley')
+  const hd = B && !flayed && o.face !== 'valley' ? buildFace(kit, o, B) : buildHead(kit, o); hd.scale.setScalar(1.12); head.add(hd);
   const arms = {};
   [-1, 1].forEach(s => {
     const key = s < 0 ? 'r' : 'l';
@@ -1128,7 +1271,7 @@ export function buildFigure(kit, rnd, o = {}) {
   if (B && !flayed && o.nude) worn = { cup: null, support: 180, lift: 0, fabric: 'none', hold: FABRIC.none };
   else if (B && !flayed) { root.updateMatrixWorld(true); worn = dress(kit, o, T, hips, arms, legs, pouch, { gb, kA, kT, kS, fx, glutes }, sleeves); }
   if (B && B.height !== 1) root.scale.setScalar(B.height);
-  root.userData = { cup: worn && worn.cup, flap: worn && worn.flap, support: worn && worn.support, lift: (worn && worn.lift) || 0, fabric: worn && worn.fabric, hold: worn && worn.hold, hips, torso, neck, head, arms, legs, pouch, mouth: hd.userData.mouth, phase: rnd() * 6.28, build: B, sleeves,
+  root.userData = { cup: worn && worn.cup, flap: worn && worn.flap, support: worn && worn.support, lift: (worn && worn.lift) || 0, fabric: worn && worn.fabric, hold: worn && worn.hold, hips, torso, neck, head, arms, legs, pouch, mouth: hd.userData.mouth, setFace: hd.userData.setFace || null, phase: rnd() * 6.28, build: B, sleeves,
     // (what the anatomy's physics collides with, in the man's own units: the thighs' radius, the belly's front)
     colliders: B ? { thighR: 8.0 * kT, bellyR: -frontAt(T, 12), bellyZ: 0 } : null };
   if (sleeves.length) updateSleeves(root);

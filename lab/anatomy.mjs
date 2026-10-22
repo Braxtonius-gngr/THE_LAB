@@ -51,7 +51,7 @@ const REST = { stand: 0, walk: 0, jog: 0, rope: 0, jump: 0, climb: 0, seat: 40, 
 const REST_FIXED = { stand: 0, walk: 0, jog: 0, rope: 0, jump: 0, climb: 0, seat: 80, hung: 150 };
 
 const state = {
-  look: 'ink', pose: 'stand', outfit: 'loin', focus: -1, frame: 'all', physics: true,
+  look: 'ink', pose: 'stand', outfit: 'loin', face: 'auto', focus: -1, frame: 'all', physics: true,
   rest: Object.assign({}, REST), restFixed: Object.assign({}, REST_FIXED), hungMode: 'physics', paused: false
 };
 const restOf = () => (state.physics && !(state.pose === 'hung' && state.hungMode === 'valley') ? state.rest : state.restFixed);
@@ -76,7 +76,7 @@ const STUDIO = {
   linen: clay(0xd8d2c4), breech: clay(0x6f6457), hair: clay(0x3b332c), hairGrey: clay(0xb3afa8),
   bone: clay(0xe6dccb), raw: clay(0x7c2424), rawUV: clay(0x7c2424), muscle: clay(0x9a4a40), muscleUV: clay(0x9a4a40),
   ink: new THREE.MeshBasicMaterial({ color: 0x17110e }), post: clay(0x5c4a3a), wood: clay(0x5c4a3a), rope: clay(0x8a7a5e),
-  areola: clay(0x9a7462),
+  areola: clay(0x9a7462), lip: clay(0xae8a78),
   floor: clay(0x34343a), wall: clay(0x45454c)
 };
 const toStudio = new Map(), toInk = new Map();
@@ -130,7 +130,8 @@ function build(i) {
   if (s.man) { s.g.remove(s.man); s.man.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
   const man = buildFigure(kit, seeded(101 + i * 7), Object.assign({
     build: m.build, beard: !!m.beard, recede: m.recede || 0, hairMat: m.grey ? kit.hairGrey : kit.hair,
-    anatomy: getAnatomy()   // (every man the sliders' values exactly - no per-man scatter, so the line compares)
+    anatomy: getAnatomy(),   // (every man the sliders' values exactly - no per-man scatter, so the line compares)
+    face: state.face === 'valley' ? 'valley' : undefined
   }, OUTFITS[state.outfit]));
   const u = man.userData;
   if (u.pouch) { u.pouch0 = u.pouch.position.clone(); }
@@ -139,9 +140,15 @@ function build(i) {
   s.g.add(man); s.man = man;
   s.sim = u.pouch ? new FleshSim(man) : null;
   if (bare()) proxy(man);
+  setFaceOf(man);
   applyLook(man);
   return man;
 }
+// the face: by the pose unless one is picked - calm standing, walking or
+// seated; effort in a jog, a skip, a jump or a climb; strain hung head down
+// ('valley': the valley's own head, its scream, for comparison - a rebuild)
+const faceFor = () => state.face !== 'auto' ? state.face : ({ jog: 'effort', rope: 'effort', jump: 'effort', climb: 'effort', hung: 'pain' })[state.pose] || 'calm';
+function setFaceOf(man) { if (man.userData.setFace && state.face !== 'valley') man.userData.setFace(faceFor()); }
 function buildAll() {
   figures.length = 0;
   slots.forEach(s => { const man = build(s.i); if (man.userData.pouch) figures.push(man); });
@@ -502,12 +509,17 @@ document.querySelectorAll('[data-look]').forEach(b => b.addEventListener('click'
 }));
 document.querySelectorAll('[data-pose]').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('[data-pose]').forEach(x => x.classList.toggle('on', x === b));
-  state.pose = b.dataset.pose; pose(0, true); ui.tools();
+  state.pose = b.dataset.pose; slots.forEach(s => s.man && setFaceOf(s.man)); pose(0, true); ui.tools();
   if (state.focus >= 0) goTo(state.frame, state.focus);   // (the man's moved: the view follows, once)
 }));
 document.querySelectorAll('[data-outfit]').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('[data-outfit]').forEach(x => x.classList.toggle('on', x === b));
   state.outfit = b.dataset.outfit; buildAll();
+}));
+document.querySelectorAll('[data-face]').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('[data-face]').forEach(x => x.classList.toggle('on', x === b));
+  const was = state.face; state.face = b.dataset.face;
+  if (was === 'valley' || state.face === 'valley') buildAll(); else { slots.forEach(s => s.man && setFaceOf(s.man)); dirty = true; }
 }));
 document.querySelectorAll('[data-frame]').forEach(b => b.addEventListener('click', () => {
   const f = b.dataset.frame;
