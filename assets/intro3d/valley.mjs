@@ -315,7 +315,9 @@ function vSawyer(kit, rnd) {
   man.rotation.z = PI; man.position.set(0, H + 4, 0);          // (the ankles at the beam; hips at 109, head at 29)
   restBody(man);
   d.legs.l.hip.rotation.z = 0.78; d.legs.r.hip.rotation.z = -0.78; d.legs.l.kn.rotation.x = KNEE_BACK * 0.2; d.legs.r.kn.rotation.x = KNEE_BACK * 0.2;
-  d.arms.l.sh.rotation.set(0.3, 0, 0.5); d.arms.r.sh.rotation.set(0.5, 0, -0.9); d.arms.l.el.rotation.x = 0.4; d.arms.r.el.rotation.x = 0.7;
+  // (his arms hanging to the ground past his head, a little apart: spread
+  // out sideways they read as a second pair of legs)
+  d.arms.l.sh.rotation.set(0.12, 0, PI - 0.42); d.arms.r.sh.rotation.set(0.12, 0, -(PI - 0.48)); d.arms.l.el.rotation.x = 0.15; d.arms.r.el.rotation.x = 0.22;
   d.neck.rotation.x = 0.55;
   // the rope round each ankle to the beam
   ['l', 'r'].forEach(s => { const r = mesh(new THREE.TorusGeometry(6.4, 0.9, 6, 12), kit.rope, d.legs[s].foot, 0.9); r.position.y = 2; r.rotation.x = HALF; });
@@ -385,7 +387,7 @@ function vSawyer(kit, rnd) {
     dd.hips.position.y = 88 - Math.abs(c) * 1.5;
     man.rotation.y = (still ? 0 : Math.sin(tt * 0.7) * 0.05) + w * 0.12;
     man.rotation.x = still ? 0 : c * 0.012;
-    d.arms.r.sh.rotation.x = 0.5 + (still ? 0 : Math.sin(tt * 1.3) * 0.15);
+    d.arms.r.sh.rotation.x = 0.12 + (still ? 0 : Math.sin(tt * 1.3) * 0.06);
     beam.position.y = H + (still ? 0 : Math.abs(c) * -0.6);
   };
   return { g, death, act, bands, drips: [[V(2, 24, -10), V(0, 2, -8)], [V(-4, 22, -6), V(-2, 2, -4)]], crows: [] , width: 120, victims: [man], freed: { pose: 'dance', at: [0, 0, -58] } };
@@ -598,7 +600,8 @@ function vWheel(kit, rnd) {
   const bar = mesh(new THREE.CylinderGeometry(1.8, 2.2, 88, 8), kit.iron, g, 1.4); bar.position.y = 12; hold(dd.arms.r.hand, bar); dd.arms.l.hand.userData.grip(1);   // (across both fists, raised)
   dd.legs.l.hip.rotation.x = -0.4; dd.legs.r.hip.rotation.x = 0.35; dd.legs.r.kn.rotation.x = KNEE_BACK * 0.4;
   g.add(pool(kit, rnd, 18)).position.set(6, 0, 16);
-  bleed(man, 0.35); bands.push([man, P + R * 0.55 + 30, P + R * 0.55 - 40]);
+  // (no band of blood round him: across his belly it read as a red corset;
+  // the blood is at the breaks, and drips off the rim under them)
   const act = (tt, dt, w, still) => {
     // the blow: a long wind-up, the bar brought down, a settle (a 3.4 s cycle)
     const c = still ? 0.3 : (tt % 3.4) / 3.4;
@@ -726,10 +729,16 @@ function vStake(kit, rnd) {
   // the knees, a diamond round the stake that reads from in front as a
   // weight sat on it - knees bent only fore and aft vanish in the frontal
   // view and he stood on air; the head dropped, the arms hanging dead)
-  d.legs.l.hip.rotation.set(0.25, 0, -piv.rotation.z + 0.7); d.legs.r.hip.rotation.set(0.2, 0, -piv.rotation.z - 0.62);
-  d.legs.l.kn.rotation.set(KNEE_BACK * 0.3, 0, -0.85); d.legs.r.kn.rotation.set(KNEE_BACK * 0.25, 0, 0.78);
-  d.neck.rotation.set(-0.62, 0.25, -0.62);   // (dropped and to the side, so a cheek and brow still show: further forward he showed only his crown)
-  d.arms.l.sh.rotation.set(0.1, 0, 0.12); d.arms.r.sh.rotation.set(0.15, 0, -0.14); d.arms.l.el.rotation.x = 0.2; d.arms.r.el.rotation.x = 0.25;
+  // (and the trunk fallen forward over the shaft, SLUMP: held square and
+  // upright he read as standing in the air; the legs and arms hang plumb
+  // from it, the knees a little open and uneven, the toes down, the head
+  // fallen onto the shoulder)
+  const SLUMP = -0.3; piv.rotation.x = SLUMP; piv.rotation.z += 0.14;   // (and a little further over to his side, which reads from in front where the forward fall foreshortens away)
+  d.legs.l.hip.rotation.set(0.25 - SLUMP, 0, -piv.rotation.z + 0.46); d.legs.r.hip.rotation.set(0.12 - SLUMP, 0, -piv.rotation.z - 0.4);
+  d.legs.l.kn.rotation.set(KNEE_BACK * 0.38, 0, -0.52); d.legs.r.kn.rotation.set(KNEE_BACK * 0.22, 0, 0.44);
+  d.legs.l.foot.rotation.x = -0.75; d.legs.r.foot.rotation.x = -0.55;
+  d.neck.rotation.set(-0.72, 0.3, -0.85);   // (onto the shoulder, a cheek and brow still showing: straight forward he showed only his crown)
+  d.arms.l.sh.rotation.set(0.1 - SLUMP, 0, 0.12); d.arms.r.sh.rotation.set(0.15 - SLUMP, 0, -0.14); d.arms.l.el.rotation.x = 0.2; d.arms.r.el.rotation.x = 0.25;
   // Death with the glass, looking up
   const death = buildDeath(kit, rnd); g.add(death); restSkeleton(death);
   // (stepped out to the side and toward you, clear of him, facing up at
@@ -747,10 +756,11 @@ function vStake(kit, rnd) {
   // (the blood from where the point came out, down his breast; the shaft
   // red from his fork to the ground)
   bleed(man, 0.17); bands.push([man, SHOULDER + 6, SHOULDER - 26]);
+  d.head.traverse(o => { if (o.userData.bleeds) o.material.uniforms.uBloodOn.value = 0; });   // (his head, fallen to the shoulder, lies in the band's height: left in it, it printed as a red hood)
   bleed(stake, 0.95); bands.push([stake, FORK + 4, 0]);
   const act = (tt, dt, w, still) => {
-    d.arms.l.sh.rotation.x = 0.1 + (still ? 0 : Math.sin(tt * 0.5) * 0.06);
-    d.neck.rotation.z = -0.5 + (still ? 0 : Math.sin(tt * 0.35) * 0.08);
+    d.arms.l.sh.rotation.x = 0.4 + (still ? 0 : Math.sin(tt * 0.5) * 0.06);
+    d.neck.rotation.z = -0.85 + (still ? 0 : Math.sin(tt * 0.35) * 0.08);
     dd.neck.rotation.y = still ? 0 : Math.sin(tt * 0.4) * 0.15;
     setArm(dd.arms.r, raised); dd.arms.r.sh.rotation.x += still ? 0 : Math.sin(tt * 0.7) * 0.05;
   };
@@ -1028,7 +1038,7 @@ function skyTex() {
       g.restore(); g.globalAlpha = 1;
       g.lineWidth = 1.8; g.stroke(path);
     };
-    for (let c = 0; c < 9; c++) cloud(c / 9 * W + rnd() * W / 12, H * (0.48 + rnd() * 0.08), 130 + rnd() * 150, 26 + rnd() * 16);   // (lifted clear of the crest, short of the frame's top)
+    for (let c = 0; c < 9; c++) cloud(c / 9 * W + rnd() * W / 12, H * (0.5 + rnd() * 0.07), 120 + rnd() * 130, 20 + rnd() * 12);   // (lifted clear of the crest, smaller and short of the frame's top)
     g.globalAlpha = 1;
     // birds: a few 'v's
     for (let i = 0; i < 26; i++) { const x = rnd() * W, y = H * (0.3 + rnd() * 0.4), s = 4 + rnd() * 7; g.lineWidth = 1.6; g.beginPath(); g.moveTo(x - s, y - s * 0.4); g.quadraticCurveTo(x - s * 0.4, y + s * 0.3, x, y); g.quadraticCurveTo(x + s * 0.4, y + s * 0.3, x + s, y - s * 0.4); g.stroke(); }
@@ -1490,11 +1500,17 @@ export async function prepareTable(opts) {
       // his shoulder (a line of dancers would not fit the dragging's window)
       const f = F.figs[0], u = f.userData, cam = camIn(v);
       f.position.set(at[0], 0, at[2]); f.rotation.set(0, Math.atan2(-(cam.x - at[0]), -(cam.z - at[2])), 0);
-      u.hips.position.y = BODY_HIPS - 1.2 + Math.sin(k * 1.6) * 0.6; u.hips.rotation.z = 0.05;
-      u.arms.l.sh.rotation.set(0.22, 0, 0.3); u.arms.r.sh.rotation.set(0.28, 0, -0.34);
-      u.arms.l.el.rotation.x = 0.35; u.arms.r.el.rotation.x = 0.42;
-      u.legs.l.hip.rotation.set(0.1, 0, -0.02); u.legs.l.kn.rotation.x = KNEE_BACK * 0.16; u.legs.r.hip.rotation.set(-0.02, 0, -0.06);
-      u.neck.rotation.set(0.22, 0, -0.05);
+      // (at ease, his weight on one leg: the free hip dropped and that knee
+      // eased forward, the arms hanging slack close to his sides, the head a
+      // little bowed - square on both feet, arms out and palms open, he
+      // stood as a shop's dummy)
+      const tilt = -0.08 + Math.sin(k * 1.6) * 0.01;
+      u.hips.position.y = BODY_HIPS - 1.4 + Math.sin(k * 1.6) * 0.5; u.hips.rotation.z = tilt;
+      u.arms.l.sh.rotation.set(0.06, 0, 0.1 - tilt); u.arms.r.sh.rotation.set(0.1, 0, -0.12 - tilt);
+      u.arms.l.el.rotation.x = 0.28; u.arms.r.el.rotation.x = 0.35;
+      u.arms.l.hand.userData.grip(0.25); u.arms.r.hand.userData.grip(0.2);
+      u.legs.l.hip.rotation.set(0.2, 0, 0.04 - tilt); u.legs.l.kn.rotation.x = KNEE_BACK * 0.36; u.legs.l.foot.rotation.x = 0.12; u.legs.r.hip.rotation.set(-0.03, 0, -0.02 - tilt);
+      u.neck.rotation.set(-0.16, 0.08, 0.1);
       // (beside him across the line of sight - to your left of him, or to
       // your right where `beside` is negative (the dragging's placard stands
       // on his left), clear of his arm and a little nearer you - so he never

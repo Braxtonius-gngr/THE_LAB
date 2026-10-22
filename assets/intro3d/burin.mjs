@@ -266,6 +266,13 @@ const FRAG = /* glsl */`
       // worth of soft edge printed as an airbrush, not a second block)
       float e1 = h - (1.0 - run) + rag + streak * run * 0.5, e2 = 1.0 - (h + rag * 0.3);
       bm = clamp(e1 / max(fwidth(e1), 1e-4) + 0.5, 0.0, 1.0) * clamp(e2 / max(fwidth(e2), 1e-4) + 0.5, 0.0, 1.0);
+      // (solid only along the wound's lip at the top of the band; below it
+      // the blood runs down in streams, widening toward the wound - a band
+      // of red all round a body read as a garment, a corset or a pair of
+      // briefs)
+      float ce = vnoise(vec2((vWorld.x - vWorld.z) * 0.16, 2.0 + uBloodLo * 0.01)) - 0.52 + h * 0.34;
+      float lip = h - 0.78 + rag * 0.4;
+      bm *= max(clamp(ce / max(fwidth(ce), 1e-4) + 0.5, 0.0, 1.0), clamp(lip / max(fwidth(lip), 1e-4) + 0.5, 0.0, 1.0));
     }
     // the wet pass: fresh ink spreads a little wider and the tone deepens
     // (blood is always a darker passage than the skin it runs on)

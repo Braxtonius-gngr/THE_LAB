@@ -322,7 +322,9 @@ function buildHead(kit, o = {}) {
     // (o.calm: the eyes shut - a lid's line under the brow, a lash's flick at
     // the outer corner; dark sockets on a freed face read as a ghoul's)
     if (o.calm && !flayed) { seam([[sx * 1.7, 4.0, F(4.0) + 0.2], [sx * 3.3, 3.55, F(3.55) - 0.15], [sx * 4.9, 3.9, F(3.9) + 0.5], [sx * 5.4, 3.5, F(3.5) + 0.9]], head, kit.ink, 0.32); return; }
-    const so = disc(2.3, 6, kit.ink, head, sx * 3.4, 4.0, F(4) + 0.9, -sx * 0.4); so.scale.set(1.1, 0.8, 1);
+    // (the socket's shadow a size smaller, the eye showing in it: a big black
+    // disc read as a mask's slot)
+    const so = disc(o.pained ? 1.5 : 1.8, 8, kit.ink, head, sx * 3.4, 4.0, F(4) + 0.9, -sx * 0.4); so.scale.set(1.05, 0.7, 1);
     if (!flayed) { const eye = facet(knob(0.9, 1, 1, 0.6, 0), kit.bone, head, 0); eye.position.set(sx * 3.3, 3.9, F(3.9) + 0.5); eye.rotation.y = sx * 0.4; disc(0.45, 6, kit.ink, head, sx * 3.3, 3.9, F(3.9) - 0.15, -sx * 0.4); }
   });
   // the brow: a ridge over the sockets, narrow, following the shelf
@@ -403,7 +405,7 @@ export function buildFigure(kit, rnd, o = {}) {
   } else {
     torso = facet(loft(T, { n: 16, metric: UVS }), skinUV, hips, 2);
     // the chest's two plates, the navel
-    [-1, 1].forEach(sx => { const pc = facet(knob(7.0, 1.1, 0.5, 0.22, 2), skin, hips, 0); pc.position.set(sx * 8.4, 40.0, -10.2); pc.rotation.set(0.2, -sx * 0.3, sx * 0.1); disc(0.7, 6, kit.ink, hips, sx * 8, 38.8, -13.1, -sx * 0.5); });
+    [-1, 1].forEach(sx => { const pc = facet(knob(7.0, 1.1, 0.5, 0.22, 2), skin, hips, 0); pc.position.set(sx * 8.4, 40.0, -10.2); pc.rotation.set(0.2, -sx * 0.3, sx * 0.1); disc(0.95, 8, kit.ink, hips, sx * 8, 38.8, -13.1, -sx * 0.5); });   // (the nipples a size up: at 0.7 they vanished at arm's length and the chest read as a doll's)
     disc(0.8, 6, kit.ink, hips, 0, 12, -11.3);
   }
   // (the collarbones are the ridge in the trunk's hull at 51: bars laid on
@@ -428,7 +430,7 @@ export function buildFigure(kit, rnd, o = {}) {
   if (o.shirt && !flayed) { const sh = facet(loft([...T.slice(3, 15).map(s => Object.assign({}, s, { rx: s.rx + 1.4, rz: s.rz + 1.2 })), { y: 56.2, rx: 6.6, rz: 6.0 }], { n: 16, metric: UVM.linen, cap: false }), kit.linen, hips, 1.5); sh.position.z = 0.2; }
   // (the cloth gathered closed under the fork: its flat end printed as a
   // black hole where a body bent or lying shows it from below)
-  else if (!flayed) { const lc = facet(loft([{ y: -26.4, rx: 0.2, rz: 0.2 }, { y: -25.8, rx: 6.0, rz: 4.0 }, { y: -24.6, rx: 12.0, rz: 8.0 }, { y: -22.6, rx: 15.6, rz: 10.2 }, { y: -16, rx: 17.2, rz: 11.4 }, { y: -8, rx: 17.6, rz: 11.6 }, { y: -2, rx: 16.6, rz: 10.8 }, { y: 2.2, rx: 15.6, rz: 10.2 }], { n: 16, metric: UVM.linen }), kit.linen, hips, 1.4); }
+  else if (!flayed) { const lc = facet(loft([{ y: -26.4, rx: 0.2, rz: 0.2 }, { y: -25.8, rx: 6.0, rz: 4.0 }, { y: -24.6, rx: 12.0, rz: 8.0 }, { y: -22.6, rx: 15.6, rz: 10.2, front: 1.0 }, { y: -16, rx: 17.2, rz: 11.4, front: 1.6 }, { y: -8, rx: 17.6, rz: 11.6, front: 0.6 }, { y: -2, rx: 16.6, rz: 10.8 }, { y: 2.2, rx: 15.6, rz: 10.2 }], { n: 16, metric: UVM.linen }), kit.linen, hips, 1.4); }
   const neck = G(hips, 0, 55, 0);
   facet(tube([[0, 5.6, 5.2], [5, 4.6, 4.3], [10.5, 4.4, 4.1]], 12, { metric: UVS }), skinUV, neck, 1.2);
   const head = G(neck, 0, 11, 0);
@@ -450,12 +452,15 @@ export function buildFigure(kit, rnd, o = {}) {
     const el = G(sh, 0, -30, 0);
     // the forearm: out of the elbow's ball, its belly under the elbow,
     // narrowing to the wrist, closed inside the hand
-    facet(tube([...ball(0, 4.0, 1), [-6, 4.8, 4.4, 0, 0.6], [-14, 4.2, 3.8], [-22, 3.2, 2.6], [-26.5, 2.8, 2.2], [-27.6, 2.0, 1.6], [-28.2, 0.3]], 12, { metric: UVS }), skinUV, el, 1.7);
+    facet(tube([...ball(0, 4.0, 1), [-5, 5.0, 4.5, 0, 0.7], [-12, 4.5, 4.0], [-20, 3.3, 2.7], [-25.5, 2.4, 1.9], [-27.2, 2.2, 1.7], [-28.0, 1.6, 1.3], [-28.4, 0.3]], 12, { metric: UVS }), skinUV, el, 1.7);   // (the forearm's belly high under the elbow, narrowing hard to a slim wrist: one width end to end read as a mannequin's tube)
     if (flayed) seam([[s * 4.4, -3, -0.5], [s * 4.2, -12, -2.2], [s * 2.8, -24, -1.8]], el, kit.ink, 0.35);
     const hand = G(el, 0, -29, 0);
     const hh = buildHand(kit, s, skin, { curl: o.curl }); hand.add(hh); hand.userData.grip = hh.userData.grip;
     arms[key] = { sh, el, hand };
   });
+  // (hose came with a codpiece: a modest rounded front to the fork in the
+  // same linen - a smooth closed fork read as a mannequin's)
+  if (o.hose && !flayed) { const cp = facet(knob(3.4, 1.0, 1.25, 0.85, 1), kit.linen, hips, 0.9); cp.position.set(0, -8.6, -8.6); cp.rotation.x = 0.25; }
   const legs = {};
   const legM = o.hose && !flayed ? kit.linen : skinUV, legS = o.hose && !flayed ? kit.linen : skin, legUV = o.hose && !flayed ? UVM.linen : UVS;
   [-1, 1].forEach(s => {
@@ -467,7 +472,9 @@ export function buildFigure(kit, rnd, o = {}) {
     if (flayed) { seam([[s * 6.5, -2, -6.2], [s * 2.5, -16, -8.4], [-s * 3, -32, -6.4], [-s * 3.8, -40, -4.6]], hip, kit.ink, 0.45); seam([[-s * 7.8, -4, -2.6], [-s * 7.2, -20, -3.0], [-s * 5.8, -36, -2.4]], hip, kit.ink, 0.4); }
     const kn = G(hip, 0, -44, 0);
     // the shin: out of the knee's ball, the calf's swell behind, the ankle
-    facet(tube([...ball(0, 5.2, 1), [-8, 5.4, 6.0, 0, 1.8], [-20, 4.2, 4.6, 0, 0.6], [-30, 3.4, 3.6], [-37, 3.0, 3.2], [-39, 2.6], [-40.4, 0.3]], 12, { metric: legUV }), legM, kn, 1.8);
+    facet(tube([...ball(0, 5.2, 1), [-7, 5.4, 6.2, 0, 2.6], [-14, 5.0, 5.6, 0, 1.8], [-24, 3.8, 4.0, 0, 0.4], [-33, 2.9, 3.0], [-37, 2.6, 2.8], [-39, 2.3], [-40.4, 0.3]], 12, { metric: legUV }), legM, kn, 1.8);   // (the calf swelling high behind and falling away to a slim ankle)
+    // the kneecap: a flat plate at the front of the knee's ball, riding on the shin
+    facet(knob(2.6, 1.05, 1.2, 0.55, 1), legS, kn, 0).position.set(0, 1.0, -5.0);
     if (flayed) { seam([[s * 2.2, -3, -5.8], [s * 1.2, -16, -4.8], [s * 0.6, -34, -3.6]], kn, kit.ink, 0.4); seam([[0, -4, 8.2], [0, -14, 7.2], [0, -26, 5.0]], kn, kit.ink, 0.4); }
     const foot = G(kn, 0, -41, 0);
     // the foot: the heel's block, the instep's slope out to the toes
