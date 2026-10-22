@@ -1053,7 +1053,10 @@ export function buildFigure(kit, rnd, o = {}) {
   }
   // a build's clothes, over the skin
   let worn = null;
-  if (B && !flayed) { root.updateMatrixWorld(true); worn = dress(kit, o, T, hips, arms, legs, pouch, { gb, kA, kT, kS, fx, glutes }, sleeves); }
+  // (o.nude, the lab's None: no fabric at all - nothing holds the anatomy,
+  // so its physics runs unrestrained: support 180 is no cone, no lift)
+  if (B && !flayed && o.nude) worn = { cup: null, support: 180, lift: 0 };
+  else if (B && !flayed) { root.updateMatrixWorld(true); worn = dress(kit, o, T, hips, arms, legs, pouch, { gb, kA, kT, kS, fx, glutes }, sleeves); }
   if (B && B.height !== 1) root.scale.setScalar(B.height);
   root.userData = { cup: worn && worn.cup, support: worn && worn.support, lift: (worn && worn.lift) || 0, hips, torso, neck, head, arms, legs, pouch, mouth: hd.userData.mouth, phase: rnd() * 6.28, build: B, sleeves,
     // (what the anatomy's physics collides with, in the man's own units: the thighs' radius, the belly's front)
