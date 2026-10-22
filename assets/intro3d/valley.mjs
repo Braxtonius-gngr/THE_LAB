@@ -302,22 +302,27 @@ const KNEE_BACK = -1;
 // hanging out of it; the blood running down him to the pool round his head.
 function vSawyer(kit, rnd) {
   const g = new THREE.Group(), bands = [];
-  const H = 190;
+  // (the beam high enough that his hanging hands stay a hand's breadth off
+  // the ground: lower, they planted flat beside his head and he read as a
+  // man doing a handstand)
+  const H = 214;
   // (the saw: its length, its slant up from the fork, turned toward you a
   // little, its stroke; Death where its handle comes to him)
-  const SAW = { len: 58, tilt: 0.46, yaw: -0.42, stroke: 7, dx: -74, dz: -32 };
+  const SAW = { len: 58, tilt: 0.32, yaw: -0.42, stroke: 7, dx: -74, dz: -32 };
   // the frame: two pairs of legs crossed, a beam between the forks
   [-1, 1].forEach(s => { [-1, 1].forEach(k => { const leg = mesh(new THREE.CylinderGeometry(3, 3.6, H + 10, 8), kit.post, g, 1.8); leg.position.set(s * 60 + k * 10, H / 2, k * 12); leg.rotation.x = k * 0.14; leg.rotation.z = -s * 0.05; }); });
   const beam = mesh(new THREE.CylinderGeometry(3.6, 3.6, 136, 8), kit.post, g, 1.8); beam.position.y = H; beam.rotation.z = HALF;
   // the man: upside down, hips at the beam, the legs out to the forks
   const man = buildFigure(kit, rnd, { split: true, beard: true, part: 0.3 }); g.add(man);
   const d = man.userData;
-  man.rotation.z = PI; man.position.set(0, H + 4, 0);          // (the ankles at the beam; hips at 109, head at 29)
+  man.rotation.z = PI; man.position.set(0, H + 4, 0);          // (the ankles at the beam; hips at 133, head at 53)
   restBody(man);
   d.legs.l.hip.rotation.z = 0.78; d.legs.r.hip.rotation.z = -0.78; d.legs.l.kn.rotation.x = KNEE_BACK * 0.2; d.legs.r.kn.rotation.x = KNEE_BACK * 0.2;
-  // (his arms hanging to the ground past his head, a little apart: spread
-  // out sideways they read as a second pair of legs)
-  d.arms.l.sh.rotation.set(0.12, 0, PI - 0.42); d.arms.r.sh.rotation.set(0.12, 0, -(PI - 0.48)); d.arms.l.el.rotation.x = 0.15; d.arms.r.el.rotation.x = 0.22;
+  // (his arms hanging toward the ground past his head, close to it and a
+  // little bent, the hands limp and clear of the ground: spread out
+  // sideways they read as a second pair of legs)
+  d.arms.l.sh.rotation.set(0.1, 0, PI - 0.3); d.arms.r.sh.rotation.set(0.1, 0, -(PI - 0.34)); d.arms.l.el.rotation.x = 0.38; d.arms.r.el.rotation.x = 0.44;
+  d.arms.l.hand.userData.grip(0.35); d.arms.r.hand.userData.grip(0.3);
   d.neck.rotation.x = 0.55;
   // the rope round each ankle to the beam
   ['l', 'r'].forEach(s => { const r = mesh(new THREE.TorusGeometry(6.4, 0.9, 6, 12), kit.rope, d.legs[s].foot, 0.9); r.position.y = 2; r.rotation.x = HALF; });
@@ -325,7 +330,8 @@ function vSawyer(kit, rnd) {
   // blood run down him off his head in two falls to the pool (no bowels
   // hung out: a coil there read as a ribbon, not a wound)
   wound(d.hips, 10, 10, 14, 0, -8, -1, kit);
-  [[-3, -11], [4, -6]].forEach(([x, z]) => { const f = mesh(new THREE.CylinderGeometry(0.7, 1.1, 22, 6), kit.pool, g, 0); f.position.set(x, 11, z); });
+  // (no standing falls of blood to the pool: two red rods there read as
+  // candles; the drops fall on their own)
   // the pool under his head, and the one under the bowels' end
   g.add(pool(kit, rnd, 30, 1.2)).position.set(0, 0, -6);
   [-1, 1].forEach(sx => [-1, 1].forEach(k => shade(g, sx * 60 + k * 10, k * 12, 6, 5, 20)));
@@ -354,7 +360,7 @@ function vSawyer(kit, rnd) {
   // (its handle upright across the blade's end, in the blade's plane, so
   // both fists on it stay in sight)
   mesh(new THREE.CylinderGeometry(1.7, 1.7, 17, 8), kit.post, saw, 1.2).position.set(-SAW.len - 1.6, 0, 0);
-  const SAW0 = V(0, 98, -8), SAWD = V(-Math.cos(SAW.tilt), Math.sin(SAW.tilt), 0).applyAxisAngle(V(0, 1, 0), SAW.yaw);
+  const SAW0 = V(0, 122, -8), SAWD = V(-Math.cos(SAW.tilt), Math.sin(SAW.tilt), 0).applyAxisAngle(V(0, 1, 0), SAW.yaw);
   saw.quaternion.setFromUnitVectors(V(-1, 0, 0), SAWD);
   // (rolled about its length most of the way to the lens: the face and the
   // teeth read, the blade still entering the kerf on a slant)
@@ -362,10 +368,9 @@ function vSawyer(kit, rnd) {
     let a = Math.atan2(V(0, 0, 0).crossVectors(n, want).dot(SAWD), n.dot(want)); if (Math.abs(a) > HALF) a -= Math.sign(a) * PI;
     saw.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(SAWD, a * 0.75)); }
   const SAWY = V(0, 1, 0).applyQuaternion(saw.quaternion);
-  // (the blood from the kerf a hand's breadth down the halves, no further: the halves read as a body, the cut as the cut)
-  bleed(man, 0.5); bands.push([man, 104, 72]);
-  bleed(saw); bands.push([saw, 101, 93]);
-  const hi = 100;
+  // (no band of blood round his hips - with its runs it read as a pair of
+  // red briefs: the cut is the raw of its two faces, the blade bloody)
+  bleed(saw); bands.push([saw, 125, 117]);
   // both his hands on the handle, one each side of the blade: the arms
   // solved at the stroke's two ends and its middle, and read between (the
   // back bowed into the push)
@@ -390,7 +395,7 @@ function vSawyer(kit, rnd) {
     d.arms.r.sh.rotation.x = 0.12 + (still ? 0 : Math.sin(tt * 1.3) * 0.06);
     beam.position.y = H + (still ? 0 : Math.abs(c) * -0.6);
   };
-  return { g, death, act, bands, drips: [[V(2, 24, -10), V(0, 2, -8)], [V(-4, 22, -6), V(-2, 2, -4)]], crows: [] , width: 120, victims: [man], freed: { pose: 'dance', at: [0, 0, -58] } };
+  return { g, death, act, bands, drips: [[V(2, 48, -10), V(0, 2, -8)], [V(-4, 46, -6), V(-2, 2, -4)]], crows: [] , width: 120, victims: [man], freed: { pose: 'dance', at: [0, 0, -58] } };
 }
 // II. THE WINDLASS. A man on his back on a plank table, opened; his bowels
 // drawn out of him onto a windlass that Death turns by its crank.
@@ -407,8 +412,9 @@ function vWindlass(kit, rnd) {
   d.arms.l.sh.rotation.set(0, 0, 1.2); d.arms.r.sh.rotation.set(0, 0, -1.2); d.arms.l.el.rotation.set(0.25, 0, 0); d.arms.r.el.rotation.set(0.25, 0, 0);
   d.legs.l.hip.rotation.z = 0.25; d.legs.r.hip.rotation.z = -0.25; d.legs.l.kn.rotation.x = 0.5; d.legs.r.kn.rotation.x = 0.5;
   d.neck.rotation.x = -0.7;
-  // the belly open: a raw box sunk in the torso's front
-  wound(d.hips, 22, 8, 20, 0, 26, -8, kit);
+  // the belly open: a raw plate sunk flush in the torso's front (standing
+  // proud of it, it read as a red brick on his belly)
+  wound(d.hips, 20, 14, 5, 0, 24, -9.4, kit);
   // the windlass: a frame of two uprights with the drum between, the
   // crank at the near end
   // (a well's windlass, big enough to read across the valley: two posts on
@@ -675,9 +681,10 @@ function vGallows(kit, rnd) {
   const dm = mesh(new THREE.CylinderGeometry(9, 9, 14, 16), kit.cloth, drum, 1.6); dm.rotation.x = HALF; dm.rotation.z = 0.3;
   mesh(new THREE.CylinderGeometry(9.4, 9.4, 1.2, 16), kit.post, drum, 1.2).rotation.copy(dm.rotation);
   ['l', 'r'].forEach(s => { const st = mesh(new THREE.CylinderGeometry(0.6, 0.8, 18, 6), kit.post, g, 1); st.position.y = 7; hold(dd.arms[s].hand, st, { roll: s === 'l' ? 0.5 : -0.5 }); });
-  g.add(pool(kit, rnd, 14)).position.set(-30, 0, 2);
-  const man = hanged[0].b;
-  bleed(man, 0.45); bands.push([man, H - 26, H - 52]);   // (the blood at his nose and mouth)
+  // (hanging is bloodless: no pool under them and no blood at the face - a
+  // band at the head's height printed as a red hood; the pool is made and
+  // left out so the dressing's draws after it fall as before)
+  pool(kit, rnd, 14);
   [-1, 1].forEach(s => shade(g, s * W / 2, 0, 9, 7, 30)); shade(g, 4, -26, 22, 12); shade(g, -30, 0, 14, 9, 150); shade(g, 30, 0, 14, 9, 150);
   const act = (tt, dt, w, still) => {
     const wv = still ? 0 : tt * 3.2;
@@ -688,7 +695,7 @@ function vGallows(kit, rnd) {
     dd.neck.rotation.set(0.25, still ? 0 : Math.sin(wv * 0.5) * 0.4, still ? 0 : Math.sin(wv) * 0.15);
     hanged.forEach((h, i) => { h.piv.rotation.z = (still ? 0 : Math.sin(tt * 0.8 + h.ph) * 0.05) + w * 0.22 * (i ? 0.7 : 1); h.piv.rotation.x = (still ? 0 : Math.sin(tt * 0.6 + h.ph) * 0.03) + w * 0.06; h.b.rotation.y = h.face + (still ? 0 : Math.sin(tt * 0.31 + h.ph) * 0.32) + w * 0.4 * (i ? -1 : 1); });   // (they turn on the rope a little, and back - never round to show their backs)
   };
-  return { g, death, act, bands, drips: [[V(-30, H - 186, -4), V(-30, 2, 2)]], crows: [[-50, H + 6, 0], [0, H + 6, 0], [44, H + 6, 0], [-W / 2, H + 5, 0]], width: 160, victims: hanged.map(h => h.b), freed: { pose: 'dance', at: [0, 0, -30], two: true } };
+  return { g, death, act, bands, drips: [], crows: [[-50, H + 6, 0], [0, H + 6, 0], [44, H + 6, 0], [-W / 2, H + 5, 0]], width: 160, victims: hanged.map(h => h.b), freed: { pose: 'dance', at: [0, 0, -30], two: true } };
 }
 // VI. THE STAKE. A man on the stake, run through; Death at its foot
 // holding his glass up to him.
@@ -710,7 +717,7 @@ function vStake(kit, rnd) {
   const mound = mesh(new THREE.SphereGeometry(24, 16, 8, 0, PI * 2, 0, HALF), kit.stone, g, 1.4); mound.scale.set(1, 0.36, 0.9); mound.position.set(0, -0.5, 3);
   const piv = G(g, 0, FORK, 0);
   const man = buildFigure(kit, rnd, { hose: true, beard: true }); piv.add(man); restBody(man);
-  man.position.set(0, -(BODY_HIPS - 9), 0); man.rotation.set(0.06, 0.18, 0.05);
+  man.position.set(0, -(BODY_HIPS - 9), 0); man.rotation.set(0.06, 0.62, 0.05);   // (turned three-quarters to you, so his fall forward over the shaft shows: square on, it foreshortened away and he stood upright in the air)
   shade(g, 0, 3, 26, 16, 20); shade(g, -44, -12, 22, 12); shade(g, 0, 0, 16, 10, 120);
   const d = man.userData;
   // the slump: the head fallen away from the point, the arms hanging, one
@@ -733,11 +740,11 @@ function vStake(kit, rnd) {
   // upright he read as standing in the air; the legs and arms hang plumb
   // from it, the knees a little open and uneven, the toes down, the head
   // fallen onto the shoulder)
-  const SLUMP = -0.3; piv.rotation.x = SLUMP; piv.rotation.z += 0.14;   // (and a little further over to his side, which reads from in front where the forward fall foreshortens away)
-  d.legs.l.hip.rotation.set(0.25 - SLUMP, 0, -piv.rotation.z + 0.46); d.legs.r.hip.rotation.set(0.12 - SLUMP, 0, -piv.rotation.z - 0.4);
-  d.legs.l.kn.rotation.set(KNEE_BACK * 0.38, 0, -0.52); d.legs.r.kn.rotation.set(KNEE_BACK * 0.22, 0, 0.44);
+  const SLUMP = -0.42; piv.rotation.x = SLUMP;
+  d.legs.l.hip.rotation.set(0.3 - SLUMP, 0, -piv.rotation.z + 0.32); d.legs.r.hip.rotation.set(0.16 - SLUMP, 0, -piv.rotation.z - 0.28);
+  d.legs.l.kn.rotation.set(KNEE_BACK * 0.55, 0, -0.3); d.legs.r.kn.rotation.set(KNEE_BACK * 0.35, 0, 0.26);
   d.legs.l.foot.rotation.x = -0.75; d.legs.r.foot.rotation.x = -0.55;
-  d.neck.rotation.set(-0.72, 0.3, -0.85);   // (onto the shoulder, a cheek and brow still showing: straight forward he showed only his crown)
+  d.neck.rotation.set(-0.3, 0.3, -0.85);   // (onto the shoulder, a cheek and brow still showing: with the trunk's fall, further forward he showed only his crown)
   d.arms.l.sh.rotation.set(0.1 - SLUMP, 0, 0.12); d.arms.r.sh.rotation.set(0.15 - SLUMP, 0, -0.14); d.arms.l.el.rotation.x = 0.2; d.arms.r.el.rotation.x = 0.25;
   // Death with the glass, looking up
   const death = buildDeath(kit, rnd); g.add(death); restSkeleton(death);
@@ -748,7 +755,7 @@ function vStake(kit, rnd) {
   death.position.set(-58, 0, -22); death.rotation.y = Math.atan2(-(face.x - -58), -(face.z - -22));
   const dd = death.userData;
   dd.arms.l.sh.rotation.set(-0.15, 0, 0.25); dd.arms.l.el.rotation.x = 0.35;
-  dd.neck.rotation.x = 0.5; dd.spine.rotation.x = 0.12;
+  dd.neck.rotation.x = 0.28; dd.spine.rotation.x = 0.04;   // (looking up at him, not thrown back: further, his skull sank to his shoulder and he read as malformed)
   // the glass held up to his face at arm's length, as far as the arm goes
   const raised = reach(dd.arms.r, [face.x - 32, Math.min(face.y - 8, 194), face.z - 20], death, 12, { start: [2.4, 0, -0.2, 0.3] });
   const glass = buildHourglass(kit, 26); glass.position.set(0, -15, -4); glass.rotation.x = 0.3; dd.arms.r.hand.add(glass); dd.arms.r.hand.userData.grip(0.45);
@@ -764,7 +771,7 @@ function vStake(kit, rnd) {
     dd.neck.rotation.y = still ? 0 : Math.sin(tt * 0.4) * 0.15;
     setArm(dd.arms.r, raised); dd.arms.r.sh.rotation.x += still ? 0 : Math.sin(tt * 0.7) * 0.05;
   };
-  return { g, death, act, bands, drips: [[V(-2, FORK - 6, -2), V(-2, 2, 2)]], crows: [[0, TIP + 2, 3]], width: 100, victims: [man], freed: { pose: 'peace', at: [-44, 0, -26], beside: [62, -6] } };
+  return { g, death, act, bands, drips: [[V(-2, FORK - 6, -2), V(-2, 2, 2)]], crows: [[0, TIP + 2, 3]], width: 100, victims: [man], freed: { pose: 'peace', at: [-44, 0, -26], beside: [52, -6] } };
 }
 // VII. THE DRAGGING. Death striding off to your left, leant into it, a man
 // behind him by one ankle: flat on his back, dragged feet first, the leg up
@@ -850,7 +857,7 @@ function vDragging(kit, rnd) {
     d.neck.rotation.x = 0.35 + (still ? 0 : Math.sin(wv - 0.6) * 0.1);
     d.arms.l.sh.rotation.z = 0.62 + (still ? 0 : Math.sin(wv + 1) * 0.08);
   };
-  return { g, death, act, bands, drips: [], crows: [[-100, 2, 62]], width: 150, victims: [man], freed: { pose: 'peace', at: [14, 0, -22], beside: [-60, -6] } };
+  return { g, death, act, bands, drips: [], crows: [[-100, 2, 62]], width: 150, victims: [man], freed: { pose: 'peace', at: [14, 0, -22], beside: [-52, -6] } };
 }
 const VIGNETTES = [vSawyer, vFlaying, vWheel, vDragging, vGallows, vWindlass, vStake];
 // (the lab: one vignette built alone, for the study page - the kit's
@@ -1015,7 +1022,7 @@ function skyTex() {
       const xa = bill[0][0] - bill[0][2], xb = bill[n - 1][0] + bill[n - 1][2];
       // (the underside in shallow lobes of its own, never a straight cut)
       const lobes = 2 + Math.floor(wdt / 70), ph = rnd() * PI;
-      const botAt = x => belly + ht * 0.07 * Math.abs(Math.sin((x - xa) / (xb - xa) * PI * lobes + ph * 0.2)) + ht * 0.04 * Math.sin((x - xa) / (xb - xa) * PI);
+      const botAt = x => belly + ht * 0.2 * Math.abs(Math.sin((x - xa) / (xb - xa) * PI * lobes + ph * 0.2)) + ht * 0.08 * Math.sin((x - xa) / (xb - xa) * PI);
       const path = new Path2D();
       path.moveTo(xa, belly);
       for (let x = xa; x <= xb; x += 2) path.lineTo(x, Math.min(belly, topAt(x)));
@@ -1038,7 +1045,7 @@ function skyTex() {
       g.restore(); g.globalAlpha = 1;
       g.lineWidth = 1.8; g.stroke(path);
     };
-    for (let c = 0; c < 9; c++) cloud(c / 9 * W + rnd() * W / 12, H * (0.5 + rnd() * 0.07), 120 + rnd() * 130, 20 + rnd() * 12);   // (lifted clear of the crest, smaller and short of the frame's top)
+    for (let c = 0; c < 9; c++) cloud(c / 9 * W + rnd() * W / 12, H * (0.45 + rnd() * 0.06), 110 + rnd() * 120, 16 + rnd() * 10);   // (lifted clear of the crest, smaller and short of the frame's top)
     g.globalAlpha = 1;
     // birds: a few 'v's
     for (let i = 0; i < 26; i++) { const x = rnd() * W, y = H * (0.3 + rnd() * 0.4), s = 4 + rnd() * 7; g.lineWidth = 1.6; g.beginPath(); g.moveTo(x - s, y - s * 0.4); g.quadraticCurveTo(x - s * 0.4, y + s * 0.3, x, y); g.quadraticCurveTo(x + s * 0.4, y + s * 0.3, x + s, y - s * 0.4); g.stroke(); }
@@ -1504,13 +1511,13 @@ export async function prepareTable(opts) {
       // eased forward, the arms hanging slack close to his sides, the head a
       // little bowed - square on both feet, arms out and palms open, he
       // stood as a shop's dummy)
-      const tilt = -0.08 + Math.sin(k * 1.6) * 0.01;
-      u.hips.position.y = BODY_HIPS - 1.4 + Math.sin(k * 1.6) * 0.5; u.hips.rotation.z = tilt;
+      const tilt = -0.16 + Math.sin(k * 1.6) * 0.012;
+      u.hips.position.y = BODY_HIPS - 2.4 + Math.sin(k * 1.6) * 0.5; u.hips.rotation.z = tilt;
       u.arms.l.sh.rotation.set(0.06, 0, 0.1 - tilt); u.arms.r.sh.rotation.set(0.1, 0, -0.12 - tilt);
       u.arms.l.el.rotation.x = 0.28; u.arms.r.el.rotation.x = 0.35;
       u.arms.l.hand.userData.grip(0.25); u.arms.r.hand.userData.grip(0.2);
-      u.legs.l.hip.rotation.set(0.2, 0, 0.04 - tilt); u.legs.l.kn.rotation.x = KNEE_BACK * 0.36; u.legs.l.foot.rotation.x = 0.12; u.legs.r.hip.rotation.set(-0.03, 0, -0.02 - tilt);
-      u.neck.rotation.set(-0.16, 0.08, 0.1);
+      u.legs.l.hip.rotation.set(0.3, 0, 0.06 - tilt); u.legs.l.kn.rotation.x = KNEE_BACK * 0.55; u.legs.l.foot.rotation.x = -0.35; u.legs.r.hip.rotation.set(-0.04, 0, -0.03 - tilt);
+      u.neck.rotation.set(-0.32, 0.1, 0.16);
       // (beside him across the line of sight - to your left of him, or to
       // your right where `beside` is negative (the dragging's placard stands
       // on his left), clear of his arm and a little nearer you - so he never

@@ -460,7 +460,7 @@ export function buildFigure(kit, rnd, o = {}) {
   });
   // (hose came with a codpiece: a modest rounded front to the fork in the
   // same linen - a smooth closed fork read as a mannequin's)
-  if (o.hose && !flayed) { const cp = facet(knob(3.4, 1.0, 1.25, 0.85, 1), kit.linen, hips, 0.9); cp.position.set(0, -8.6, -8.6); cp.rotation.x = 0.25; }
+  if (o.hose && !flayed) { const cp = facet(knob(3.6, 1.2, 1.1, 0.5, 1), kit.linen, hips, 0); cp.position.set(0, -8.2, -7.6); cp.rotation.x = 0.3; }   // (a soft pouch sunk most of the way into the fork, no line round it: a whole knob with its own outline read as a doorknob)
   const legs = {};
   const legM = o.hose && !flayed ? kit.linen : skinUV, legS = o.hose && !flayed ? kit.linen : skin, legUV = o.hose && !flayed ? UVM.linen : UVS;
   [-1, 1].forEach(s => {
