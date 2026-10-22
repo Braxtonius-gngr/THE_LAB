@@ -62,7 +62,7 @@ export class FleshSim {
   // where each particle rests on the body right now (world), with the rest bias
   targets(out0, out1, root) {
     const P = this.pouch, g = this.inner, u = g.userData, s = g.scale.x;
-    _restQ.setFromAxisAngle(_x, this.rest);
+    _restQ.setFromAxisAngle(_x, this.restAll());
     P.quaternion.copy(_restQ); P.updateMatrixWorld(true);
     P.getWorldPosition(this.anchor);
     out0.set(u.mass[0] * s, u.mass[1] * s, u.mass[2] * s); P.localToWorld(out0);
@@ -71,6 +71,8 @@ export class FleshSim {
   }
 
   reset() { this.fresh = true; }
+  // (the rest bias, plus the lift what he wears gives it)
+  restAll() { return this.rest + (this.fig.userData.lift || 0); }
 
   colliders() {
     const d = this.fig.userData, c = d.colliders, sc = this.fig.getWorldScale(_w).x;
@@ -139,14 +141,16 @@ export class FleshSim {
         const x = p.clone().addScaledVector(v, STEP);
         // held to its root (a short rod - tissue barely stretches)
         _a.subVectors(x, this.anchor); const d = _a.length() || 1; _a.divideScalar(d);
-        // the cloth's hold, while he is upright
+        // the cloth's hold: what he wears holds it within `support` degrees
+        // of its rest, in any orientation; with none, the 65deg while upright
         _b.subVectors(T, this.anchor).normalize();
-        if (_b.dot(_down) > 0.2) {
+        const sup = this.fig.userData.support, cone = sup ? sup * Math.PI / 180 : CONE;
+        if (sup || _b.dot(_down) > 0.2) {
           const cosA = _a.dot(_b);
-          if (cosA < Math.cos(CONE)) {
+          if (cosA < Math.cos(cone)) {
             // (turned back onto the cone's edge, in the plane of the two)
             _c.copy(_a).addScaledVector(_b, -cosA).normalize();
-            _a.copy(_b).multiplyScalar(Math.cos(CONE)).addScaledVector(_c, Math.sin(CONE));
+            _a.copy(_b).multiplyScalar(Math.cos(cone)).addScaledVector(_c, Math.sin(cone));
           }
         }
         x.copy(this.anchor).addScaledVector(_a, L);
@@ -176,7 +180,10 @@ export class FleshSim {
     _a.subVectors(T0, this.anchor).applyQuaternion(_qi).normalize();
     _b.subVectors(this.p[0], this.anchor).applyQuaternion(_qi).normalize();
     _q.setFromUnitVectors(_a, _b);
-    P.quaternion.copy(_q).multiply(_restQ.setFromAxisAngle(_x, this.rest));
+    // (the cup of the cloth over it gives, turning part of the way with it)
+    const cup = this.fig.userData.cup;
+    if (cup) cup.quaternion.identity().slerp(_q, 0.6);
+    P.quaternion.copy(_q).multiply(_restQ.setFromAxisAngle(_x, this.restAll()));
     P.updateMatrixWorld(true);
     // the shaft: in the inner group's frame, from its root toward the tip particle
     const sh = u.shaft;
@@ -192,5 +199,7 @@ export class FleshSim {
       sh.position.copy(r0).sub(r0.clone().applyQuaternion(_q));
     }
     u.lobes.forEach((lb, i) => { if (lb.userData.p0) lb.position.copy(lb.userData.p0).add(this.lobe[i].o); });
+    // (the skin over them follows where they went)
+    if (u.updateSac) u.updateSac();
   }
 }
