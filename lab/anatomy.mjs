@@ -38,7 +38,11 @@ const MEN = [
   { name: 'Heavy', build: { height: 1.0, mass: 1, muscle: 0.2, age: 0.3 }, beard: true },
   { name: 'Small', build: { height: 0.88, mass: 0.05, muscle: 0.1, age: 0.1 } }
 ];
-const OUTFITS = { none: { nude: true }, minimal: { brief: true }, loin: {}, shirt: { shirt: true }, hose: { hose: true }, both: { shirt: true, hose: true } };
+// (tightest hold to loosest; see FABRIC in figure.mjs)
+const OUTFITS = { compression: { under: 'compression' }, minimal: { brief: true }, hose: { hose: true }, both: { shirt: true, hose: true }, boxerBriefs: { under: 'boxerBriefs' }, longJohns: { under: 'longJohns' }, boxers: { under: 'boxers' }, loin: {}, shirt: { shirt: true }, none: { nude: true } };
+// (with no fabric at all - None - the anatomy is drawn as the physics proxy,
+// never as a body; in a cloth it can slip out of, it is painted brown)
+const bare = () => state.outfit === 'none';
 // the anatomy's rest, degrees forward off the body's down: with physics on,
 // a bias the tissue leans toward (gravity and the body do the rest); with it
 // off, the fixed angle it is held at
@@ -134,7 +138,7 @@ function build(i) {
   u.ropes = ['l', 'r'].map(k => { const r = new THREE.Mesh(new THREE.TorusGeometry(6.4, 0.9, 6, 12), kit.rope); r.position.y = 2; r.rotation.x = PI / 2; r.visible = false; u.legs[k].foot.add(r); return r; });
   s.g.add(man); s.man = man;
   s.sim = u.pouch ? new FleshSim(man) : null;
-  if (state.outfit === 'none') proxy(man);
+  if (bare()) proxy(man);
   applyLook(man);
   return man;
 }
@@ -361,12 +365,10 @@ function holdReadout(now) {
   const el = document.getElementById('hold'); if (!el) return;
   const s = slots[Math.max(0, state.focus)], u = s.man.userData, P = u.pouch;
   if (!P || !s.sim || !physicsOn(s)) { el.textContent = state.physics ? '' : 'Physics off: held at the rest angle'; return; }
-  const q = P.quaternion, rest = (s.sim.rest || 0) + (u.lift || 0);
-  const tilt = 2 * Math.acos(Math.min(1, Math.abs(q.w)));
-  const swing = Math.abs(tilt - rest) * 180 / Math.PI;
+  const swing = (s.sim.swing || 0) * 180 / Math.PI;
   holdLog.push([now, swing]); while (holdLog.length && now - holdLog[0][0] > 3000) holdLog.shift();
   const peak = Math.max(...holdLog.map(h => h[1]));
-  const sup = u.support, fabric = { none: 'None', minimal: 'Brief', loin: 'Loincloth', shirt: 'Shirt (brief under)', hose: 'Hose', both: 'Shirt + hose' }[state.outfit];
+  const sup = u.support, fabric = state.outfit === 'both' ? 'Shirt + hose' : (u.hold && u.hold.name) || state.outfit;
   el.textContent = `${MEN[s.i].name} · ${fabric}: swing ${swing.toFixed(0)}° · peak ${peak.toFixed(0)}° (3s) · hold ${!sup || sup >= 180 ? 'none' : sup + '° max'}${u.lift ? ', lifted ' + Math.round(u.lift * 180 / Math.PI) + '°' : ''}`;
 }
 function physicsOn(s) { return state.physics && s.sim && !(state.pose === 'hung' && state.hungMode === 'valley'); }
@@ -568,7 +570,7 @@ initDevOverlay(figures, {
   onAuthed: open,
   // (a slider moved: the overlay rebuilt each man's anatomy in place - give
   // the new pieces the room's look and put them back in the pose)
-  onChange() { slots.forEach(s => { if (state.outfit === 'none') proxy(s.man); applyLook(s.man); }); awake = 1; pose(0); }
+  onChange() { slots.forEach(s => { if (bare()) proxy(s.man); applyLook(s.man); }); awake = 1; pose(0); }
 });
 // the lab's own hook for the visual checks (scripts in a headless browser)
 window.__lab = { state, setLook, pose: (f) => pose(0, f), step: dt => pose(dt), redraw: () => { dirty = true; }, goTo, buildAll, slots, ui, view, camera, framing };
