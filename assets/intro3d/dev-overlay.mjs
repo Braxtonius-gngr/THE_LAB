@@ -17,6 +17,21 @@ const SB_URL = 'https://ewfvyrhlsanzkmozrmhs.supabase.co';
 const SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3ZnZ5cmhsc2Fuemttb3pybWhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkxNjkxODksImV4cCI6MjEwNDc0NTE4OX0.kxDXQnueexwstqLeZNJdlITffqTHulaV6z-Rdb0ZJQE';
 
 const SESSION_KEY = 'dev_overlay_session_v1';
+// (a preview deploy has no app sign-in of its own - its address is new to
+// the browser - so the gate signs the owner in itself: an emailed link back
+// to this page, its token kept here, apart from the app's own session)
+const SIGNIN_KEY = 'dev_overlay_signin_v1';
+
+// back from the emailed link: the token rides in the address's #fragment
+(function takeSignIn() {
+  try {
+    if (!location.hash || location.hash.indexOf('access_token=') < 0) return;
+    const q = new URLSearchParams(location.hash.slice(1));
+    const at = q.get('access_token'), exp = Number(q.get('expires_at')) || (Date.now() / 1000 + Number(q.get('expires_in') || 3600));
+    if (at) localStorage.setItem(SIGNIN_KEY, JSON.stringify({ access_token: at, expires_at: exp }));
+    history.replaceState(null, '', location.pathname + location.search);
+  } catch (_) { /* nothing to take */ }
+})();
 
 // ── helpers ──────────────────────────────────────────────────────────
 function sbHeaders() {
@@ -26,7 +41,27 @@ function sbHeaders() {
     const tok = JSON.parse(localStorage.getItem(`sb-${ref}-auth-token`) || '{}');
     if (tok.access_token) h.authorization = `Bearer ${tok.access_token}`;
   } catch (_) { /* no session */ }
+  if (!h.authorization) { const t = gateSignIn(); if (t) h.authorization = `Bearer ${t}`; }
   return h;
+}
+
+// the gate's own sign-in, while it lasts
+function gateSignIn() {
+  try {
+    const t = JSON.parse(localStorage.getItem(SIGNIN_KEY) || '{}');
+    return t.access_token && Date.now() / 1000 < t.expires_at - 30 ? t.access_token : null;
+  } catch (_) { return null; }
+}
+function signedIn() { return !!sbHeaders().authorization; }
+
+// email the owner a sign-in link back to this page (an existing account only)
+async function emailSignIn(email) {
+  const back = location.origin + location.pathname + location.search;
+  const r = await fetch(`${SB_URL}/auth/v1/otp?redirect_to=${encodeURIComponent(back)}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', apikey: SB_ANON },
+    body: JSON.stringify({ email, create_user: false }),
+  });
+  if (!r.ok) throw new Error((await r.text()) || 'Could not send the link');
 }
 
 async function callEdge(fn, body) {
@@ -273,6 +308,27 @@ function buildAuthGate(onAuthed) {
     'color:#8cf', 'border-radius:6px', 'cursor:pointer', 'font:13px monospace',
     'margin:4px',
   ].join(';');
+
+  // not signed in on this address (a preview): sign in first, by email link
+  if (!signedIn()) {
+    status.textContent = 'Sign in first: this address has no sign-in yet';
+    const form = document.createElement('form');
+    form.style.cssText = 'margin:0 0 12px;';
+    const email = document.createElement('input');
+    email.type = 'email'; email.required = true; email.placeholder = 'Owner email'; email.autocomplete = 'email';
+    email.style.cssText = 'width:100%;box-sizing:border-box;padding:9px 10px;margin-bottom:6px;border:1px solid #555;border-radius:6px;background:#111;color:#eee;font:13px monospace;';
+    const send = document.createElement('button');
+    send.type = 'submit'; send.textContent = '✉️ Email me a sign-in link';
+    send.style.cssText = btnStyle + ';display:block;width:100%;margin:0;color:#fc8;';
+    form.append(email, send);
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      send.disabled = true; status.style.color = '#aaa'; status.textContent = 'Sending…';
+      try { await emailSignIn(email.value.trim()); status.textContent = 'Check your email, open the link on this device'; status.style.color = '#6a6'; }
+      catch (e) { status.textContent = String(e.message || e).slice(0, 120); status.style.color = '#f66'; send.disabled = false; }
+    });
+    root.appendChild(form);
+  }
 
   const authBtn = document.createElement('button');
   authBtn.textContent = '🔐 Authenticate';
