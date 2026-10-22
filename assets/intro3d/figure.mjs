@@ -10,7 +10,7 @@
 // outline is an inverted hull pushed along the normal: flat normals would
 // tear it at every edge).
 import * as THREE from '../vendor/three/three.module.js';
-import { outlineOf } from './burin.mjs';
+import { outlineOf, haloOf } from './burin.mjs';
 
 const PI = Math.PI, HALF = PI / 2;
 // the body's hip joint off the ground (the ankle then stands at 3, the sole on it)
@@ -23,6 +23,11 @@ const G = (parent, x = 0, y = 0, z = 0) => { const g = new THREE.Group(); g.posi
 // facets, 1 = smooth): the cut shows as a step in tone, not a cliff.
 let SOFT = 0.8;
 export function setSoft(v) { SOFT = v; }
+// the paper halo round a figure's main forms (px, 0 = none): every piece
+// with an outline of 1.2 or more gets one, so a figure stands off a dark
+// passage behind it and a limb off the body it crosses
+let HALO = 0;
+export function setHalo(v) { HALO = v; }
 function facet(geo, m, parent, outline = 1.8, soft = SOFT) {
   const smooth = geo.index ? geo : weld(geo);
   smooth.computeVertexNormals();
@@ -42,6 +47,7 @@ function facet(geo, m, parent, outline = 1.8, soft = SOFT) {
   }
   const x = new THREE.Mesh(flat, m); parent.add(x);
   if (outline) { const o = outlineOf(x, outline); o.geometry = smooth; }
+  if (HALO && outline >= 1.2) { const h = haloOf(x, HALO); h.geometry = smooth; }
   return x;
 }
 
@@ -137,6 +143,10 @@ function frontAt(secs, y) {
 }
 // a round-section loft, radii given: [[y, r], ...] with optional pulls
 const tube = (pts, n = 8, o = {}) => loft(pts.map(p => ({ y: p[0], rx: p[1], rz: p[2] == null ? p[1] : p[2], front: p[3] || 0, back: p[4] || 0 })), Object.assign({ n }, o));
+// a joint's ball as a tube's rings: the half of a sphere of radius r about
+// y0 on the side `dir` (+1 above, -1 below), closed to a point - two limbs
+// ending in the same ball meet at any bend with no seam
+const ball = (y0, r, dir) => { const out = []; for (let k = 0; k <= 4; k++) { const a = (dir > 0 ? 4 - k : k) / 4 * HALF; out.push([y0 + dir * r * Math.sin(a), Math.max(0.3, r * Math.cos(a))]); } return dir > 0 ? out : out; };
 // a cut block: a box of planes with its edges knocked off
 function block(w, h, d, bevel = 0.3) {
   const g = new THREE.BoxGeometry(w, h, d, 1, 1, 1);
@@ -309,16 +319,23 @@ function buildHead(kit, o = {}) {
   const nose = facet(loft([{ y: 6.0, rx: 1.0, rz: 0.8, z: F(6) + 0.6 }, { y: 2.6, rx: 1.4, rz: 1.4, z: F(2.6) - 0.6 }, { y: 0.6, rx: 2.0, rz: 1.6, z: F(0.6) - 1.2 }, { y: -0.4, rx: 1.2, rz: 1.0, z: F(-0.4) - 0.2 }], { n: 5, spin: -HALF }), skin, head, 0.9);
   // the sockets: two dark planes under the shelf; the eyes in them
   [-1, 1].forEach(sx => {
+    // (o.calm: the eyes shut - a lid's line under the brow, a lash's flick at
+    // the outer corner; dark sockets on a freed face read as a ghoul's)
+    if (o.calm && !flayed) { seam([[sx * 1.7, 4.0, F(4.0) + 0.2], [sx * 3.3, 3.55, F(3.55) - 0.15], [sx * 4.9, 3.9, F(3.9) + 0.5], [sx * 5.4, 3.5, F(3.5) + 0.9]], head, kit.ink, 0.32); return; }
     const so = disc(2.3, 6, kit.ink, head, sx * 3.4, 4.0, F(4) + 0.9, -sx * 0.4); so.scale.set(1.1, 0.8, 1);
     if (!flayed) { const eye = facet(knob(0.9, 1, 1, 0.6, 0), kit.bone, head, 0); eye.position.set(sx * 3.3, 3.9, F(3.9) + 0.5); eye.rotation.y = sx * 0.4; disc(0.45, 6, kit.ink, head, sx * 3.3, 3.9, F(3.9) - 0.15, -sx * 0.4); }
   });
   // the brow: a ridge over the sockets, narrow, following the shelf
-  [-1, 1].forEach(sx => { const brow = facet(block(5.6, 1.2, 2.2, 0.5), skin, head, 0.8); brow.position.set(sx * 3.4, 6.2, F(6.2) + 0.4); brow.rotation.set(0.5, sx * 0.4, sx * 0.12); });
+  // (o.calm: a freed face - the brow eased, the mouth closed)
+  // (o.pained: the brows drawn up in the middle, the jaw slack, no teeth -
+  // a brow cut down into a V over bared teeth read as a devil's snarl)
+  const easy = o.calm || o.pained;
+  [-1, 1].forEach(sx => { const brow = facet(block(5.6, 1.2, 2.2, 0.5), skin, head, 0.8); brow.position.set(sx * 3.4, 6.2, F(6.2) + 0.4); brow.rotation.set(0.5, sx * 0.4, easy ? -sx * (o.pained ? 0.16 : 0.08) : sx * 0.12); });
   // the mouth open: the hollow, the teeth's edge above, the lip below, the tongue
-  const mouth = disc(2.4, 8, kit.ink, head, 0, -2.4, F(-2.4) - 0.1); mouth.scale.set(1.3, 1.1, 1);
-  const teeth = facet(block(4.2, 0.9, 0.7, 0), kit.bone, head, 0); teeth.position.set(0, -1.3, F(-1.3) - 0.3);
+  const mouth = disc(2.4, 8, kit.ink, head, 0, -2.4, F(-2.4) - 0.1); mouth.scale.set(o.calm ? 0.9 : 1.3, o.calm ? 0.16 : o.pained ? 0.7 : 1.1, 1);
+  const teeth = facet(block(4.2, 0.9, 0.7, 0), kit.bone, head, 0); teeth.position.set(0, -1.3, F(-1.3) - 0.3); teeth.visible = !easy;
   const lip = facet(block(5.4, 1.1, 1.6, 0.6), skin, head, 0.7); lip.position.set(0, -4.0, F(-4) - 0.3);
-  const tongue = facet(knob(1.1, 1, 0.55, 1.2, 0), kit.raw, head, 0); tongue.position.set(0, -3.3, F(-3.3) + 0.2);
+  const tongue = facet(knob(1.1, 1, 0.55, 1.2, 0), kit.raw, head, 0); tongue.position.set(0, -3.3, F(-3.3) + 0.2); tongue.visible = !easy;
   // the ears: flat shells at the sides
   [-1, 1].forEach(sx => { const ear = facet(loft([{ y: -1.8, rx: 1.2, rz: 1.6 }, { y: 0.4, rx: 1.7, rz: 2.4 }, { y: 2.8, rx: 1.3, rz: 2.0 }], { n: 6 }), skin, head, 0.9); ear.position.set(sx * 8.6, 2.4, 1.6); ear.scale.set(0.45, 1, 1); ear.rotation.z = -sx * 0.15; });
   if (!flayed) {
@@ -339,24 +356,33 @@ function buildHead(kit, o = {}) {
 // hinge at the breastbone with the spine and the rib-ends in the kerf.
 export function buildFigure(kit, rnd, o = {}) {
   if (o === true) o = { flayed: true };
+  // (a body is turned smooth: its forms round, the planes' steps gone - the
+  // hatch wraps it, and its contour carries it)
+  const soft0 = SOFT; SOFT = 1;
   const flayed = !!o.flayed;
   const skin = flayed ? kit.muscle : kit.flesh, skinUV = flayed ? kit.muscleUV : kit.fleshUV, UVS = flayed ? UVM.muscle : UVM.flesh;
   const root = new THREE.Group();
   const hips = G(root, 0, BODY_HIPS, 0);
   // the trunk, fork to the top of the shoulders (hips-relative y -9 .. 55)
+  // (closed to a point under the fork: a flat cap there took no uv and
+  // printed as a smear between the legs)
   const T = [
+    { y: -11.6, rx: 0.2, rz: 0.2 },
+    { y: -10.8, rx: 5.0, rz: 3.6 },
     { y: -9.0, rx: 9.0, rz: 6.0 },                              // the fork
     { y: -6.0, rx: 15.0, rz: 9.8, back: 2.2 },                  // the seat
     { y: 0.0, rx: 16.0, rz: 10.4, back: 1.6 },                  // the hips
-    { y: 8.0, rx: 14.4, rz: 9.6, front: 1.2 },                  // the belly's swell
-    { y: 15.0, rx: 13.6, rz: 9.0, front: 1.6 },
-    { y: 22.0, rx: 14.2, rz: 9.6, front: 0.4 },                 // the waist's lift to the ribs
+    { y: 5.0, rx: 15.4, rz: 10.0, front: 0.8 },                 // the pelvis' rim
+    { y: 11.0, rx: 13.4, rz: 9.4, front: 1.4 },                 // the belly's swell
+    { y: 17.0, rx: 12.6, rz: 9.0, front: 1.4 },                 // the waist
+    { y: 23.0, rx: 13.8, rz: 9.6, front: 0.4 },                 // the ribs' arch lifting out of it
     { y: 30.0, rx: 16.4, rz: 10.4 },                            // the ribs
     { y: 37.0, rx: 18.2, rz: 11.2, front: 1.0 },                // the chest
     { y: 43.0, rx: 19.4, rz: 11.0, front: 1.2 },
-    { y: 49.0, rx: 18.6, rz: 9.6 },                             // the shoulders
-    { y: 53.5, rx: 11.0, rz: 7.0 },                             // the trapezius' slope
-    { y: 55.5, rx: 4.2, rz: 4.2 }                               // the neck's root
+    { y: 47.5, rx: 19.4, rz: 9.8 },                             // the shoulders' points, the trunk carried out over the arm's head
+    { y: 51.0, rx: 15.2, rz: 8.4, front: 0.8 },                 // the collarbones' ridge, falling to the neck
+    { y: 54.0, rx: 10.0, rz: 6.6 },                             // the trapezius' slope
+    { y: 56.5, rx: 5.6, rz: 5.2 }                               // the neck's root
   ];
   let torso;
   if (o.split) {
@@ -364,7 +390,7 @@ export function buildFigure(kit, rnd, o = {}) {
     [0, 1].forEach(k => {
       const h = G(torso, 0, 50, 0); h.rotation.z = (k ? -1 : 1) * (o.part == null ? 0.15 : o.part);
       const secs = T.map(s => Object.assign({}, s, { y: s.y - 50 }));
-      const half = facet(loft(secs, { n: 10, arc: k ? [HALF, PI * 1.5] : [-HALF, HALF], cap: true, metric: UVS }), skinUV, h, 2);
+      const half = facet(loft(secs, { n: 16, arc: k ? [HALF, PI * 1.5] : [-HALF, HALF], cap: true, metric: UVS }), skinUV, h, 2);
       // the cut face: a plate of raw, the trunk's profile
       const sh = new THREE.Shape();
       secs.forEach((s, i) => { const z = -(s.rz + (s.front || 0)); if (i) sh.lineTo(z, s.y); else sh.moveTo(z, s.y); });
@@ -372,16 +398,16 @@ export function buildFigure(kit, rnd, o = {}) {
       const capGeo = new THREE.ShapeGeometry(sh, 2); capGeo.rotateY(k ? -HALF : HALF);
       const cap = new THREE.Mesh(capGeo, kit.rawCap); cap.position.x = (k ? -1 : 1) * 0.3; h.add(cap);
     });
-    for (let i = 0; i < 9; i++) { const v = facet(new THREE.CylinderGeometry(2.2, 2.4, 2.6, 8), kit.ball, torso, 0.8); v.position.set(0, -4 + i * 5.2, 5); }
-    for (let i = 0; i < 4; i++) [-1, 1].forEach(sx => { const rb = facet(new THREE.CylinderGeometry(0.9, 0.9, 7, 6), kit.bone, torso, 0.8); rb.position.set(sx * 4, 30 + i * 5.5, -3); rb.rotation.z = sx * 1.2; });
+    // (no spine or rib-ends drawn in the kerf: white blocks down it read as
+    // a corset's lacing - the cut is the raw of the two faces)
   } else {
-    torso = facet(loft(T, { n: 10, metric: UVS }), skinUV, hips, 2);
+    torso = facet(loft(T, { n: 16, metric: UVS }), skinUV, hips, 2);
     // the chest's two plates, the navel
-    [-1, 1].forEach(sx => { const pc = facet(knob(7.0, 1.1, 0.5, 0.34, 1), skin, hips, 1); pc.position.set(sx * 8.4, 40.0, -10.2); pc.rotation.set(0.2, -sx * 0.3, sx * 0.1); disc(0.7, 6, kit.ink, hips, sx * 8, 38.8, -13.1, -sx * 0.5); });
+    [-1, 1].forEach(sx => { const pc = facet(knob(7.0, 1.1, 0.5, 0.22, 2), skin, hips, 0); pc.position.set(sx * 8.4, 40.0, -10.2); pc.rotation.set(0.2, -sx * 0.3, sx * 0.1); disc(0.7, 6, kit.ink, hips, sx * 8, 38.8, -13.1, -sx * 0.5); });
     disc(0.8, 6, kit.ink, hips, 0, 12, -11.3);
   }
-  // the collarbones: a bar either side from the breastbone to the shoulder's point
-  [-1, 1].forEach(sx => { const c = facet(block(15, 2.0, 2.0, 0), skin, hips, 0.9); c.position.set(sx * 9, 52.4, -6.6); c.rotation.set(0, sx * 0.3, sx * 0.1); });
+  // (the collarbones are the ridge in the trunk's hull at 51: bars laid on
+  // it read as a row of rivets across the chest)
   if (flayed && !o.split) {
     // the ecorche's seams, cut in ink: the linea alba, the rectus bands, the
     // pectorals' lower edge, the ribs' arch, the iliac furrow
@@ -394,25 +420,37 @@ export function buildFigure(kit, rnd, o = {}) {
       seam([[sx * 6, 1, Fz(1) + 1.6], [sx * 11, 6, Fz(6) + 4.0], [sx * 13.5, 12, Fz(12) + 7]], hips, kit.ink, 0.4);
     });
   }
-  if (o.shirt && !flayed) { const sh = facet(loft(T.slice(1, 11).map(s => Object.assign({}, s, { rx: s.rx + 1.4, rz: s.rz + 1.2 })), { n: 10, metric: UVM.linen }), kit.linen, hips, 1.5); sh.position.z = 0.2; }
-  else if (!flayed) { const lc = facet(loft([{ y: -23.2, rx: 15.6, rz: 10.2 }, { y: -16, rx: 17.2, rz: 11.4 }, { y: -8, rx: 17.6, rz: 11.6 }, { y: -2, rx: 16.6, rz: 10.8 }, { y: 2.2, rx: 15.6, rz: 10.2 }], { n: 10, metric: UVM.linen }), kit.linen, hips, 1.4); }
+  // (the shirt follows the trunk up over the shoulders to an open collar at
+  // the neck: cut off flat across the chest it read as square pads and a
+  // seam)
+  // (its collar closed round the neck: left open, the gap printed as a black
+  // wedge under the chin, a gaping jaw)
+  if (o.shirt && !flayed) { const sh = facet(loft([...T.slice(3, 15).map(s => Object.assign({}, s, { rx: s.rx + 1.4, rz: s.rz + 1.2 })), { y: 56.2, rx: 6.6, rz: 6.0 }], { n: 16, metric: UVM.linen, cap: false }), kit.linen, hips, 1.5); sh.position.z = 0.2; }
+  // (the cloth gathered closed under the fork: its flat end printed as a
+  // black hole where a body bent or lying shows it from below)
+  else if (!flayed) { const lc = facet(loft([{ y: -26.4, rx: 0.2, rz: 0.2 }, { y: -25.8, rx: 6.0, rz: 4.0 }, { y: -24.6, rx: 12.0, rz: 8.0 }, { y: -22.6, rx: 15.6, rz: 10.2 }, { y: -16, rx: 17.2, rz: 11.4 }, { y: -8, rx: 17.6, rz: 11.6 }, { y: -2, rx: 16.6, rz: 10.8 }, { y: 2.2, rx: 15.6, rz: 10.2 }], { n: 16, metric: UVM.linen }), kit.linen, hips, 1.4); }
   const neck = G(hips, 0, 55, 0);
-  facet(tube([[0, 4.4, 4.0], [4, 4.0, 3.8], [8.5, 4.2, 4.0]], 8, { metric: UVS }), skinUV, neck, 1.2);
-  const head = G(neck, 0, 9, 0);
-  const hd = buildHead(kit, o); head.add(hd);
+  facet(tube([[0, 5.6, 5.2], [5, 4.6, 4.3], [10.5, 4.4, 4.1]], 12, { metric: UVS }), skinUV, neck, 1.2);
+  const head = G(neck, 0, 11, 0);
+  // (the head a size up on the body: at a ninth of the height it read as a doll's)
+  const hd = buildHead(kit, o); hd.scale.setScalar(1.12); head.add(hd);
   const arms = {};
   [-1, 1].forEach(s => {
     const key = s < 0 ? 'r' : 'l';
-    const sh = G(hips, s * 18.5, 49, 0);
-    // the deltoid's cap, the upper arm's taper to the elbow
-    const cap = facet(knob(6.4, 1, 1.15, 0.95, 1), skin, sh, 1.2); cap.position.y = -1.5;
-    facet(tube([[-2, 5.6], [-12, 5.4, 5.2, 0.4], [-22, 4.8], [-28, 4.4]], 8, { metric: UVS }), skinUV, sh, 1.8);
+    const sh = G(hips, s * 17.2, 47.5, 0);
+    // the upper arm one hull: its head domed under the trunk's shoulder, so
+    // the line runs on from the trapezius over the deltoid with no corner, the deltoid's and the biceps' swell, the taper to
+    // the elbow, and ending in the elbow's ball - the forearm starts in the
+    // same ball, so the joint bends with no seam (knobs laid over a joint
+    // read as a ring, a mannequin's)
+    facet(tube([[0.2, 0.3], [-0.2, 3.4], [-1.4, 5.4], [-3.2, 6.4], [-7, 6.3, 6.0, 0.7], [-12, 5.6, 5.3, 0.6], [-19, 4.8, 4.6, 0.3], [-25, 4.2], ...ball(-30, 4.0, -1)], 12, { metric: UVS }), skinUV, sh, 1.8);
     if (flayed) { seam([[s * 5.4, -4, -1.5], [s * 5.4, -14, -2.4], [s * 4.6, -26, -1.6]], sh, kit.ink, 0.4); seam([[0, -5, -5.9], [s * 1.5, -15, -5.6], [0, -25, -4.9]], sh, kit.ink, 0.35); }
-    if (o.shirt && !flayed) facet(tube([[0, 7.4], [-10, 7.0], [-20, 6.4]], 8, { metric: UVM.linen }), kit.linen, sh, 1.5);
+    // (the sleeve domed over the shoulder, the cuff turned in)
+    if (o.shirt && !flayed) facet(tube([[2.4, 0.3], [1.8, 3.8], [0.4, 6.0], [-1.8, 7.2], [-6, 7.2], [-14, 6.8], [-20, 6.4], [-20.6, 4.9]], 12, { metric: UVM.linen }), kit.linen, sh, 1.5);
     const el = G(sh, 0, -30, 0);
-    facet(knob(4.2, 1, 1.1, 1, 1), skin, el, 1).position.y = -0.5;
-    // the forearm: its belly under the elbow, narrowing to the wrist
-    facet(tube([[-1, 4.2], [-8, 5.0, 4.6, 0, 0.6], [-18, 3.9], [-26, 3.2, 2.4]], 8, { metric: UVS }), skinUV, el, 1.7);
+    // the forearm: out of the elbow's ball, its belly under the elbow,
+    // narrowing to the wrist, closed inside the hand
+    facet(tube([...ball(0, 4.0, 1), [-6, 4.8, 4.4, 0, 0.6], [-14, 4.2, 3.8], [-22, 3.2, 2.6], [-26.5, 2.8, 2.2], [-27.6, 2.0, 1.6], [-28.2, 0.3]], 12, { metric: UVS }), skinUV, el, 1.7);
     if (flayed) seam([[s * 4.4, -3, -0.5], [s * 4.2, -12, -2.2], [s * 2.8, -24, -1.8]], el, kit.ink, 0.35);
     const hand = G(el, 0, -29, 0);
     const hh = buildHand(kit, s, skin, { curl: o.curl }); hand.add(hh); hand.userData.grip = hh.userData.grip;
@@ -424,12 +462,12 @@ export function buildFigure(kit, rnd, o = {}) {
     const key = s < 0 ? 'r' : 'l';
     const hip = G(hips, s * 8.5, -4, 0);
     // the thigh: full under the hip, the quadriceps' swell, the knee's taper
-    facet(tube([[0, 8.8, 9.4, 0, 1.2], [-10, 8.6, 9.0, 1.0], [-22, 7.6, 8.0, 0.8], [-34, 6.4, 6.8], [-41, 5.8, 6.2]], 8, { metric: legUV }), legM, hip, 2);
+    // (one hull from a dome inside the trunk to the knee's ball)
+    facet(tube([[7.5, 0.3], [6.4, 5.0], [3.8, 7.8], [0, 8.8, 9.4, 0, 1.2], [-10, 8.6, 9.0, 1.0], [-22, 7.4, 7.8, 0.8], [-34, 5.9, 6.4], [-40, 5.3, 5.5], ...ball(-44, 5.2, -1)], 12, { metric: legUV }), legM, hip, 2);
     if (flayed) { seam([[s * 6.5, -2, -6.2], [s * 2.5, -16, -8.4], [-s * 3, -32, -6.4], [-s * 3.8, -40, -4.6]], hip, kit.ink, 0.45); seam([[-s * 7.8, -4, -2.6], [-s * 7.2, -20, -3.0], [-s * 5.8, -36, -2.4]], hip, kit.ink, 0.4); }
     const kn = G(hip, 0, -44, 0);
-    facet(knob(6.0, 1, 1.05, 0.9, 1), legS, kn, 1.2).position.set(0, -0.5, -1.2);
-    // the shin: the calf's swell behind, the ankle
-    facet(tube([[-1, 5.8, 6.2], [-8, 5.6, 6.6, 0, 1.8], [-20, 4.4, 4.8, 0, 0.6], [-30, 3.8, 4.0], [-37, 3.6, 3.8]], 8, { metric: legUV }), legM, kn, 1.8);
+    // the shin: out of the knee's ball, the calf's swell behind, the ankle
+    facet(tube([...ball(0, 5.2, 1), [-8, 5.4, 6.0, 0, 1.8], [-20, 4.2, 4.6, 0, 0.6], [-30, 3.4, 3.6], [-37, 3.0, 3.2], [-39, 2.6], [-40.4, 0.3]], 12, { metric: legUV }), legM, kn, 1.8);
     if (flayed) { seam([[s * 2.2, -3, -5.8], [s * 1.2, -16, -4.8], [s * 0.6, -34, -3.6]], kn, kit.ink, 0.4); seam([[0, -4, 8.2], [0, -14, 7.2], [0, -26, 5.0]], kn, kit.ink, 0.4); }
     const foot = G(kn, 0, -41, 0);
     // the foot: the heel's block, the instep's slope out to the toes
@@ -439,6 +477,7 @@ export function buildFigure(kit, rnd, o = {}) {
     legs[key] = { hip, kn, foot };
   });
   root.userData = { hips, torso, neck, head, arms, legs, mouth: hd.userData.mouth, phase: rnd() * 6.28 };
+  SOFT = soft0;
   return root;
 }
 
@@ -585,10 +624,20 @@ export function buildDeath(kit, rnd) {
 }
 // a scrap of cloth hanging from its top edge: a plane with a torn hem and
 // a few folds, down -y
+// (gathered narrow where it hangs from, flaring toward a torn hem, in deep
+// pleats that open as they fall: a straight-sided scrap with shallow folds
+// read as a plank strapped on)
 export function ragGeo(w, h, rnd) {
-  const g = new THREE.PlaneGeometry(w, h, 6, 12); g.translate(0, -h / 2, 0);
-  const p = g.attributes.position;
-  for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), k = -y / h; p.setZ(i, Math.sin(x * 0.9 + k * 4) * 2.2 * k + Math.sin(k * 11) * 0.8); if (k > 0.92) p.setX(i, x + (rnd() - 0.5) * 3); }
+  const g = new THREE.PlaneGeometry(w, h, 10, 16); g.translate(0, -h / 2, 0);
+  const p = g.attributes.position, ph = rnd() * 6, tear = [];
+  for (let i = 0; i <= 10; i++) tear.push((i % 2 ? 0.1 : 0.02) + rnd() * 0.12);
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), k = -y / h, u = x / w + 0.5;
+    const xx = x * (0.4 + 0.75 * k);
+    let yy = y;
+    if (k > 0.8) { const j = Math.round(u * 10); yy += tear[j] * h * (k - 0.8) / 0.2; }
+    p.setXYZ(i, xx, yy, Math.sin(u * PI * 3.2 + ph + k * 1.5) * (0.8 + 4.2 * k) + Math.sin(k * 7 + ph) * 1.2 * k);
+  }
   g.computeVertexNormals();
   return g;
 }

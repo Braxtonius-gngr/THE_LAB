@@ -98,6 +98,7 @@ const FRAG = /* glsl */`
   varying float vDepth;
   varying vec3 vAxisW;
   varying vec2 vTone;
+  uniform float uBare;     // the tone below which a plane is left as bare paper (a figure's lights held open wider than the land's)
   uniform float uToneMap;  // >0: the tone laid in from aTone (x: the value, y: how much of it) - an engraver's planned passage, the light only modelling it
   uniform vec3 uPaper;
   uniform vec3 uInk;
@@ -127,6 +128,9 @@ const FRAG = /* glsl */`
   uniform float uSteps;    // >0: the tone cut in this many steps, as an engraver turns a form in three or four
   uniform float uAxisOn;   // 1: the lines run with the form's long axis (uAxis, object space) wherever the face lets them
   uniform float uPitchPx;  // >0: the lines keep about this many pixels between them on screen - far off, fewer bolder lines, never a grey
+  uniform vec4 uRing;      // w > 0: the lines laid in rings round (x, y) in world xz, computed per pixel - a ring uv interpolated across the mesh's faces kinked at every edge into a zip; z: past this radius each line stands for twice the ground
+  uniform float uWobF;     // the hand's drift's scale (per unit): slow on the land, so a line undulates and never jitters
+  uniform float uSwell;    // 0..1: each line swells and tapers along its length, as a burin's cut does
 
   float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
   float vnoise(vec2 p) {
@@ -166,7 +170,7 @@ const FRAG = /* glsl */`
   float hatch(vec2 p, vec2 along, float t, float wobble) {
     vec2 d1 = vec2(-along.y, along.x);
     // the hand's wobble: a slow drift along each line so no line is ruled
-    float wob = (vnoise(p * 0.35) - 0.5) * wobble;
+    float wob = (vnoise(p * uWobF) - 0.5) * wobble;
     // the first set from a hairline to a fat cut; the second comes in past
     // the middle tone, the third in the deep dark
     // (the lit plane is left as paper: no line at all until the form turns)
@@ -174,8 +178,11 @@ const FRAG = /* glsl */`
     // each pair, and the first thin as it does, so the pitch halves and the
     // passage darkens without going to a solid)
     float close_ = smoothstep(0.5, 0.8, t);
-    float w1 = mix(0.0, 0.7, smoothstep(0.14, 0.7, t)) * (1.0 - 0.35 * close_);
+    float w1 = mix(0.0, 0.7, smoothstep(uBare, 0.7, t)) * (1.0 - 0.35 * close_);
     float w1b = 0.42 * close_;
+    // (the burin's swell: a line opens and closes along its length, slowly,
+    // each line on its own - one weight end to end read as a plotted trace)
+    if (uSwell > 0.0) { float sw = 1.0 + uSwell * (vnoise(vec2(dot(p, along) * 0.035, floor(dot(p, d1) * uFreq + wob) * 1.37)) - 0.5) * 2.0; w1 *= sw; w1b *= sw; }
     float w2 = mix(0.0, 0.42, smoothstep(0.62, 0.95, t));
     float w3 = mix(0.0, 0.3, smoothstep(0.8, 1.0, t));
     float ink;
@@ -226,7 +233,14 @@ const FRAG = /* glsl */`
     vec3 an = abs(n);
     vec2 p, along;
     vec3 ax = normalize(vAxisW);
-    if (uUvMode > 0.5) { p = vUv * uUvScale; along = vec2(-sin(uAngle), cos(uAngle)); }
+    // (uRing: past uRing.z each line stands for twice the ground, eased in
+    // over 60 units - a hard knee there doubled the pitch in a band, a moire
+    // belt where the ring's floor meets the hills)
+    if (uUvMode > 0.5) {
+      along = vec2(-sin(uAngle), cos(uAngle));
+      if (uRing.w > 0.5) { vec2 rd = vWorld.xz - uRing.xy; float rr = length(rd), kx = rr - uRing.z; p = vec2(atan(rd.x, rd.y) * rr, rr - 0.25 * (kx + sqrt(kx * kx + 3600.0)) + 15.0) * uUvScale; }
+      else p = vUv * uUvScale;
+    }
     else if (an.y > max(an.x, an.z)) { p = vWorld.xz; along = ax.xz; }
     else if (an.x > an.z) { p = vWorld.zy; along = ax.zy; }
     else { p = vWorld.xy; along = ax.xy; }
@@ -248,8 +262,10 @@ const FRAG = /* glsl */`
       float rag = (vnoise(wq + 7.0) - 0.5) * 0.32;
       // runs: narrow streaks that go further than the body of it
       float streak = pow(vnoise(vec2((vWorld.x - vWorld.z) * 0.32, 3.0)), 3.0) * 0.9;
-      bm = smoothstep(-0.02, 0.02, h - (1.0 - run) + rag + streak * run * 0.5);
-      bm *= 1.0 - smoothstep(1.0, 1.06, h + rag * 0.3);
+      // (both edges cut clean, a pixel wide wherever they fall: a band's
+      // worth of soft edge printed as an airbrush, not a second block)
+      float e1 = h - (1.0 - run) + rag + streak * run * 0.5, e2 = 1.0 - (h + rag * 0.3);
+      bm = clamp(e1 / max(fwidth(e1), 1e-4) + 0.5, 0.0, 1.0) * clamp(e2 / max(fwidth(e2), 1e-4) + 0.5, 0.0, 1.0);
     }
     // the wet pass: fresh ink spreads a little wider and the tone deepens
     // (blood is always a darker passage than the skin it runs on)
@@ -272,7 +288,7 @@ const FRAG = /* glsl */`
       // standing as the ground, so the figure prints dark, and only the
       // light cut out of it in bone lines, thin in the half tones, gone in
       // the shade (the tone before the blood: no blood, no plate tone)
-      float inkN = hatch(p, along, mix(0.02, 0.3, 1.0 - t), uWobble);
+      float inkN = hatch(p, along, mix(0.05, 0.5, 1.0 - t), uWobble);   // (the stroke count kept: the lights cut as fully as the positive's shade, so the ground keeps its lines and a figure its form)
       vec3 bone = vec3(0.91, 0.863, 0.753);
       col = mix(col, mix(uInk * 0.85, bone, inkN), uFlip);
     }
@@ -288,7 +304,7 @@ const FRAG = /* glsl */`
 // A sharable set of uniforms (uTime, uCamPos are driven per frame by
 // burinTick(); the rest are the material's own).
 export function engravingMaterial(opts = {}) {
-  const o = Object.assign({ paper: BONE, ink: INK, blood: BLOOD, freq: 1.1, angle: -0.6, tone: 0.0, wet: 0, bloodOn: false, bloodLo: 0, bloodHi: 1, spill: 0, ember: 0, sky: 0.28, keyI: 1.0, transparent: false, opacity: 1, side: THREE.FrontSide, uv: null, invert: false, wobble: 0.6, scroll: null, steps: 0, toneMap: false, axis: [0, 1, 0], pitch: 4.5 }, opts);
+  const o = Object.assign({ paper: BONE, ink: INK, blood: BLOOD, freq: 1.1, angle: -0.6, tone: 0.0, wet: 0, bloodOn: false, bloodLo: 0, bloodHi: 1, spill: 0, ember: 0, sky: 0.28, keyI: 1.0, transparent: false, opacity: 1, side: THREE.FrontSide, uv: null, invert: false, wobble: 0.6, scroll: null, steps: 0, toneMap: false, bare: 0.14, axis: [0, 1, 0], pitch: 4.5, wobF: 0.35, swell: 0, ring: null }, opts);
   const m = new THREE.ShaderMaterial({
     vertexShader: VERT, fragmentShader: FRAG,
     uniforms: {
@@ -298,8 +314,9 @@ export function engravingMaterial(opts = {}) {
       uBloodLo: { value: o.bloodLo }, uBloodHi: { value: o.bloodHi }, uBloodOn: { value: o.bloodOn ? 1 : 0 }, uBloodSpill: { value: o.spill },
       uEmber: { value: o.ember }, uTime: { value: 0 }, uOpacity: { value: o.opacity }, uCamPos: { value: new THREE.Vector3() },
       uInvert: { value: o.invert ? 1 : 0 }, uFlip: { value: 0 }, uGhost: { value: 0 }, uWobble: { value: o.wobble }, uUvMode: { value: o.uv ? 1 : 0 }, uUvScale: { value: new THREE.Vector2(o.uv ? o.uv[0] : 1, o.uv ? o.uv[1] : 1) },
-      uScroll: { value: new THREE.Vector2(o.scroll ? o.scroll[0] : 0, o.scroll ? o.scroll[1] : 0) }, uSteps: { value: o.steps }, uToneMap: { value: o.toneMap ? 1 : 0 },
-      uAxis: { value: new THREE.Vector3(...(o.axis || [0, 1, 0])) }, uAxisOn: { value: o.axis ? 1 : 0 }, uPitchPx: { value: o.pitch }
+      uScroll: { value: new THREE.Vector2(o.scroll ? o.scroll[0] : 0, o.scroll ? o.scroll[1] : 0) }, uSteps: { value: o.steps }, uToneMap: { value: o.toneMap ? 1 : 0 }, uBare: { value: o.bare },
+      uAxis: { value: new THREE.Vector3(...(o.axis || [0, 1, 0])) }, uAxisOn: { value: o.axis ? 1 : 0 }, uPitchPx: { value: o.pitch },
+      uRing: { value: new THREE.Vector4(...(o.ring || [0, 0, 0, 0])) }, uWobF: { value: o.wobF }, uSwell: { value: o.swell }
     },
     transparent: o.transparent, side: o.side, lights: false, fog: false
   });
@@ -333,20 +350,33 @@ const OUT_VERT = /* glsl */`
   }
 `;
 const OUT_FRAG = /* glsl */`
-  uniform vec3 uInk;
+  uniform vec3 uInk, uNeg;
   uniform float uFlip, uGhost;
   void main() {
-    // (in the freed negative the line is a bone cut between the dark forms;
-    // a ghost's line fades back toward the paper)
+    // (in the freed negative the line is a bone cut between the dark forms,
+    // and a halo the ink the forms are cut from; a ghost's line fades back
+    // toward the paper)
     vec3 bone = vec3(0.91, 0.863, 0.753);
-    vec3 c = mix(uInk, bone, uFlip);
+    vec3 c = mix(uInk, uNeg, uFlip);
     c = mix(c, bone, uGhost * 0.7);
     gl_FragColor = vec4(c, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment> }
 `;
-export function outlineMaterial(px = 2.2, ink = INK) {
-  return new THREE.ShaderMaterial({ vertexShader: OUT_VERT, fragmentShader: OUT_FRAG, uniforms: { uPx: { value: px }, uViewport: { value: new THREE.Vector2(1, 1) }, uInk: { value: ink.clone() }, uFlip: { value: 0 }, uGhost: { value: 0 } }, side: THREE.BackSide, depthWrite: true });
+const NEG_BONE = new THREE.Color(0.91, 0.863, 0.753);
+export function outlineMaterial(px = 2.2, ink = INK, neg = NEG_BONE) {
+  return new THREE.ShaderMaterial({ vertexShader: OUT_VERT, fragmentShader: OUT_FRAG, uniforms: { uPx: { value: px }, uViewport: { value: new THREE.Vector2(1, 1) }, uInk: { value: ink.clone() }, uNeg: { value: neg.clone() }, uFlip: { value: 0 }, uGhost: { value: 0 } }, side: THREE.BackSide, depthWrite: true });
+}
+// a halo: the paper knocked out round a figure where it stands against a
+// dark passage, as an engraver leaves a hair of white along a contour - an
+// inverted hull wider than the outline, behind it, the paper's own colour
+// (the ink in the negative)
+export function haloOf(mesh, px = 7) {
+  const o = new THREE.Mesh(mesh.geometry, outlineMaterial(px, BONE, INK.clone().multiplyScalar(0.85)));
+  o.userData.outline = true; o.userData.halo = true;
+  o.renderOrder = -2;
+  mesh.add(o);
+  return o;
 }
 export function outlineOf(mesh, px = 2.2, ink = INK) {
   const o = new THREE.Mesh(mesh.geometry, outlineMaterial(px, ink));

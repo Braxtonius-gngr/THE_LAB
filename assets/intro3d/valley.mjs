@@ -78,9 +78,12 @@ import * as THREE from '../vendor/three/three.module.js';
 import { CSS3DRenderer, CSS3DObject } from '../vendor/three/three.addons.js';
 import { tableKit as K } from './table.mjs';
 import { engravingMaterial, outlineOf, burinTick, BONE, INK, BLOOD, BLOOD_WET } from './burin.mjs';
-import { buildFigure, buildDeath, buildSkull, BODY_HIPS, GRIP, hold, reach, setArm, lerp3 } from './figure.mjs';
+import { buildFigure, buildDeath, buildSkull, BODY_HIPS, GRIP, hold, reach, setArm, lerp3, setHalo } from './figure.mjs';
+// (the figures stand off the dark hills on a hair of paper: a halo round
+// their main forms, in device pixels)
+setHalo(5);
 // the raw of a flayed man: the blood's red let down a little toward the paper, and its fibres
-const RAW_RED = new THREE.Color('#A8392C'), RAW_INK = new THREE.Color('#3A0D09');
+const FLUSH = BONE.clone().lerp(BLOOD, 0.16);   // (the flayed man's paper: bone, only flushed with the blood)
 
 export const DESTS = ['valley'];
 
@@ -132,7 +135,11 @@ const VIEW = [{ eye: [0, 130, -112], aim: [0, 70, 140], fov: 68 }, { eye: [0, 11
 const T = { fly: 4.8, uiIn: 0.6, lift: 0.55 };
 const SND = { wind: 0.06, bell: 0.22, saw: 0.05, crow: 0.09 };
 // The key: Holbein's light, high from the left and a little in front.
-const KEY_SEAT = new THREE.Vector3(0.82, 0.5, -0.22).normalize();
+// (the key from the plate's upper left and only a little before it, as the
+// engraver lights a page: the lights of a figure turned to you left open,
+// its far half cut into shade - lit from nearer the front, a figure turned
+// to you printed as blank paper)
+const KEY_SEAT = new THREE.Vector3(0.8, 0.52, -0.22).normalize();
 
 // ------------------------------------------------------------ helpers
 // (every surface here is the block's: paper left where the light falls,
@@ -235,7 +242,7 @@ let shadowGeo = null;
 function shade(parent, x, z, rx, rz, h = 60) {
   if (!shadowGeo) { shadowGeo = new THREE.CircleGeometry(1, 20); shadowGeo.rotateX(-HALF); }
   const sh = new THREE.Mesh(shadowGeo, parent.userData.kitShadow || shade.mat);
-  sh.position.set(x - h * 0.12, 0.45, z + h * 0.05); sh.scale.set(rx, 1, rz); sh.renderOrder = 0;
+  sh.position.set(x - h * 0.12, 0.45, z + h * 0.05); sh.scale.set(rx, 1, rz); sh.renderOrder = 0; sh.userData.shade = true;
   parent.add(sh);
   return sh;
 }
@@ -332,11 +339,27 @@ function vSawyer(kit, rnd) {
   // the saw: a broad toothed blade on a slant, its lower end sunk in the
   // cut, a cross handle at its upper end; it works along its own length
   const saw = new THREE.Group(); g.add(saw);
-  const blade = mesh(new THREE.BoxGeometry(SAW.len, 10, 0.8), kit.steel, saw, 1.6); blade.position.x = -SAW.len / 2;
-  for (let i = 0; i < 27; i++) { const t = mesh(new THREE.ConeGeometry(1.1, 2.4, 4), kit.steel, saw, 0); t.position.set(-4 - i * 2.1, -6.1, 0); t.rotation.x = PI; }
-  const grip = mesh(new THREE.CylinderGeometry(1.7, 1.7, 15, 8), kit.post, saw, 1.2); grip.position.set(-SAW.len - 1, 1, 0); grip.rotation.x = HALF;
+  // (the blade a long tapering plate with its teeth cut in its foot, so the
+  // silhouette is a saw's; laid in close cross-hatch as iron is, a bare glint
+  // along its back. Seen edge-on, or pale, it read as a striped stick or a
+  // third leg)
+  const bs = new THREE.Shape(); bs.moveTo(0, 3.6); bs.lineTo(-SAW.len, 5.6); bs.lineTo(-SAW.len, -5.6);
+  { const n = 22, w = SAW.len / n; for (let i = 0; i < n; i++) { const x0 = -SAW.len + i * w, yb = q => -5.6 + 2 * (q + SAW.len) / SAW.len; bs.lineTo(x0 + w * 0.3, yb(x0) - 2.4); bs.lineTo(x0 + w, yb(x0 + w)); } }
+  bs.lineTo(0, 3.6);
+  const bladeGeo = new THREE.ExtrudeGeometry(bs, { depth: 0.7, bevelEnabled: false }); bladeGeo.translate(0, 0, -0.35);
+  mesh(bladeGeo, kit.blade, saw, 1.4);
+  mesh(new THREE.BoxGeometry(SAW.len * 0.84, 1.1, 0.9), kit.glint, saw, 0).position.set(-SAW.len * 0.5, 2.8, 0);
+  // (its handle upright across the blade's end, in the blade's plane, so
+  // both fists on it stay in sight)
+  mesh(new THREE.CylinderGeometry(1.7, 1.7, 17, 8), kit.post, saw, 1.2).position.set(-SAW.len - 1.6, 0, 0);
   const SAW0 = V(0, 98, -8), SAWD = V(-Math.cos(SAW.tilt), Math.sin(SAW.tilt), 0).applyAxisAngle(V(0, 1, 0), SAW.yaw);
   saw.quaternion.setFromUnitVectors(V(-1, 0, 0), SAWD);
+  // (rolled about its length most of the way to the lens: the face and the
+  // teeth read, the blade still entering the kerf on a slant)
+  { const n = V(0, 0, 1).applyQuaternion(saw.quaternion), want = V(0, 0, -1).projectOnPlane(SAWD).normalize();
+    let a = Math.atan2(V(0, 0, 0).crossVectors(n, want).dot(SAWD), n.dot(want)); if (Math.abs(a) > HALF) a -= Math.sign(a) * PI;
+    saw.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(SAWD, a * 0.75)); }
+  const SAWY = V(0, 1, 0).applyQuaternion(saw.quaternion);
   // (the blood from the kerf a hand's breadth down the halves, no further: the halves read as a body, the cut as the cut)
   bleed(man, 0.5); bands.push([man, 104, 72]);
   bleed(saw); bands.push([saw, 101, 93]);
@@ -345,8 +368,12 @@ function vSawyer(kit, rnd) {
   // solved at the stroke's two ends and its middle, and read between (the
   // back bowed into the push)
   const sawAt = sx => SAW0.clone().addScaledVector(SAWD, sx * SAW.stroke);
-  const handleAt = (sx, side) => { const h = sawAt(sx).addScaledVector(SAWD, SAW.len + 1); const zz = V(0, 0, 1).applyAxisAngle(V(0, 1, 0), SAW.yaw); return h.addScaledVector(zz, side * 4.5).toArray(); };
-  const sawPose = [-1, 0, 1].map(sx => { dd.spine.rotation.x = -0.14 - sx * 0.1; saw.position.copy(sawAt(sx)); return { l: reach(dd.arms.l, handleAt(sx, 1), death, 12, { start: [1.3, 0, 0.3, 0.9] }), r: reach(dd.arms.r, handleAt(sx, -1), death, 12, { start: [1.3, 0, -0.3, 0.9] }) }; });
+  const handleAt = (sx, side) => sawAt(sx).addScaledVector(SAWD, SAW.len + 1.6).addScaledVector(SAWY, side * 4.8).toArray();
+  // (the elbows held down at his sides, under the line from shoulder to
+  // fist: left free, the search raised an upper arm level with his jaw and
+  // he read as biting a bone)
+  const elbowFor = (arm, hand) => { g.updateMatrixWorld(true); const sp = g.worldToLocal(arm.sh.getWorldPosition(V(0, 0, 0))); return sp.lerp(V(...hand), 0.45).add(V(0, -13, 0)).toArray(); };
+  const sawPose = [-1, 0, 1].map(sx => { dd.spine.rotation.x = -0.14 - sx * 0.1; saw.position.copy(sawAt(sx)); const hl = handleAt(sx, 1), hr = handleAt(sx, -1); return { l: reach(dd.arms.l, hl, death, 12, { start: [0.9, 0, 0.3, 1.2], elbow: elbowFor(dd.arms.l, hl) }), r: reach(dd.arms.r, hr, death, 12, { start: [0.9, 0, -0.3, 1.2], elbow: elbowFor(dd.arms.r, hr) }) }; });
   saw.position.copy(sawAt(0));
   dd.arms.l.hand.userData.grip(1); dd.arms.r.hand.userData.grip(1);
   const act = (tt, dt, w, still) => {
@@ -455,33 +482,48 @@ function vWindlass(kit, rnd) {
 function vFlaying(kit, rnd) {
   const g = new THREE.Group(), bands = [];
   // the tree: a trunk with a lean, two branches, a stump of a third
-  const trunk = mesh(lathe([[13, 0], [10, 30], [8.5, 80], [7, 130], [5.5, 170], [3, 200], [0.01, 201]], 12), kit.bark, g, 2);
-  const br = mesh(new THREE.CylinderGeometry(2.4, 4.4, 70, 8), kit.bark, g, 1.6); br.position.set(-26, 158, 2); br.rotation.z = 1.2;
-  const br2 = mesh(new THREE.CylinderGeometry(1.6, 3.4, 52, 8), kit.bark, g, 1.4); br2.position.set(16, 176, -4); br2.rotation.z = -0.9; br2.rotation.x = 0.3;
+  // (the branches leave the trunk above his head: from behind it, at its
+  // height, they stood out of his skull as a pair of horns)
+  const trunk = mesh(lathe([[13, 0], [10, 30], [8.5, 80], [7, 130], [6, 170], [5, 200], [4.2, 211], [3.4, 213.5], [0.01, 214]], 12), kit.bark, g, 2);   // (its top broken off just over the boughs: drawn up to a point above his head it stood there as a spike)
+  const br = mesh(new THREE.CylinderGeometry(2.4, 4.4, 70, 8), kit.bark, g, 1.6); br.position.set(-26, 200, 2); br.rotation.z = 1.2;
+  const br2 = mesh(new THREE.CylinderGeometry(1.6, 3.6, 76, 8), kit.bark, g, 1.4); br2.position.set(26, 202, -4); br2.rotation.z = -1.15;
   mesh(new THREE.CylinderGeometry(1.4, 2.6, 18, 7), kit.bark, g, 1.2).position.set(8, 118, -6), g.children[g.children.length - 1].rotation.z = -1.3;
   // the man, flayed, bound standing against the trunk, arms up and tied
-  const man = buildFigure(kit, rnd, { flayed: true }); g.add(man); restBody(man);
+  const man = buildFigure(kit, rnd, { flayed: true, pained: true }); g.add(man); restBody(man);
   man.position.set(0, 0, -12);
   shade(g, 0, -4, 24, 16, 80); shade(g, -44, 2, 22, 12);
   const d = man.userData;
   d.arms.l.sh.rotation.set(0, 0, 2.6); d.arms.r.sh.rotation.set(0, 0, -2.6); d.arms.l.el.rotation.x = 0.2; d.arms.r.el.rotation.x = 0.2;
-  d.neck.rotation.x = 0.5; d.neck.rotation.z = 0.3; d.legs.l.kn.rotation.x = KNEE_BACK * 0.25; d.legs.r.kn.rotation.x = KNEE_BACK * 0.1;
-  // the rope: round the wrists to the branch, round the waist to the trunk
-  const rope = mesh(new THREE.CylinderGeometry(0.8, 0.8, 30, 6), kit.rope, g, 0.8); rope.position.set(-6, 146, -8); rope.rotation.z = 0.4;
+  // (the head fallen forward and aside: thrown back, the open face read as a snarl)
+  d.neck.rotation.x = -0.45; d.neck.rotation.z = 0.3; d.legs.l.kn.rotation.x = KNEE_BACK * 0.25; d.legs.r.kn.rotation.x = KNEE_BACK * 0.1;
+  // the ropes: each wrist tied up to the branch over it, the waist to the trunk
+  const cords = [];
+  { g.updateMatrixWorld(true);
+    const brY = (b, x) => { const dir = V(0, 1, 0).applyEuler(b.rotation); return b.position.y + (x - b.position.x) / dir.x * dir.y; };
+    [[d.arms.l, br2], [d.arms.r, br]].forEach(([arm, b]) => {
+      const a = g.worldToLocal(arm.hand.getWorldPosition(V(0, 0, 0))), top = V(a.x, brY(b, a.x), b.position.z);
+      const L = a.distanceTo(top), c = mesh(new THREE.CylinderGeometry(0.8, 0.8, L, 6), kit.rope, g, 0.8);
+      c.position.copy(a).add(top).multiplyScalar(0.5); c.quaternion.setFromUnitVectors(V(0, 1, 0), top.clone().sub(a).normalize()); cords.push(c);
+    }); }
   const belt = mesh(new THREE.TorusGeometry(17, 1, 6, 20), kit.rope, g, 0.9); belt.position.set(0, 96, -8); belt.rotation.x = HALF;
   // the skin: a flat man, hung from the branch by its arms, the rest down
   const skinShape = new THREE.Shape();
-  [[0, 0], [8, -2], [10, -12], [18, -16], [34, -8], [36, -14], [20, -26], [16, -60], [20, -100], [16, -148], [6, -150], [4, -102], [0, -98], [-4, -102], [-6, -150], [-16, -148], [-20, -100], [-16, -60], [-20, -26], [-36, -14], [-34, -8], [-18, -16], [-10, -12], [-8, -2]].forEach(([x, y], i) => i ? skinShape.lineTo(x, y) : skinShape.moveTo(x, y));
+  [[0, 0], [8, -2], [10, -12], [18, -14], [26, -22], [30, -52], [24, -54], [19, -32], [16, -60], [20, -100], [16, -148], [6, -150], [4, -102], [0, -98], [-4, -102], [-6, -150], [-16, -148], [-20, -100], [-16, -60], [-19, -32], [-24, -54], [-30, -52], [-26, -22], [-18, -14], [-10, -12], [-8, -2]].forEach(([x, y], i) => i ? skinShape.lineTo(x, y) : skinShape.moveTo(x, y));
   const sg = new THREE.ShapeGeometry(skinShape, 4);
   { const p = sg.attributes.position; for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i); p.setZ(i, Math.sin(y * 0.06) * 3 + Math.sin(x * 0.2) * 1.5); } sg.computeVertexNormals(); }
   // (hung by its arms from the end of the low branch, face to you, pale
   // against the dark hill: a man's whole outline, emptied)
   const SKIN_Y = PI - 0.25;
-  const skin = mesh(sg, kit.skin, g, 0); skin.position.set(-52, 152, 4); skin.rotation.y = SKIN_Y; skin.scale.setScalar(0.82);
+  // (its own plate: a hide has a tone, hatched in its folds, never bare
+  // paper - a white cut-out read as a hole in the print)
+  const hideM = mat({ freq: 1.5, angle: 1.35, tone: 0.04, keyI: 0.5, sky: 0.5, bare: 0.1, wobble: 0.9, side: THREE.DoubleSide });
+  const skin = mesh(sg, hideM, g, 0); skin.position.set(-52, 199, 4); skin.rotation.y = SKIN_Y; skin.scale.setScalar(0.8);
+  // the cord it hangs by, up to the branch, and its feet well clear of the ground
+  { const cord = mesh(new THREE.CylinderGeometry(1.0, 1.0, 13, 6), kit.rope, g, 1.0); cord.position.set(-52, 204.5, 4); }
   // (a flat skin has no hull for an outline: its edge drawn as a line, a
   // little proud of both faces, so its arms, legs and head read)
   { const pts = skinShape.getPoints(6).map(q => V(q.x, q.y, Math.sin(q.y * 0.06) * 3 + Math.sin(q.x * 0.2) * 1.5)); pts.push(pts[0].clone());
-    const tube = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.1), pts.length * 3, 0.75, 4, false);
+    const tube = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.1), pts.length * 3, 0.8, 5, false);
     skin.add(new THREE.Mesh(tube, kit.ink)); }
   // Death with the knife at his flank, on the other side of him from the
   // skin, the other hand drawing back what is left of it at his shoulder
@@ -502,7 +544,7 @@ function vFlaying(kit, rnd) {
     setArm(dd.arms.r, cutAt); dd.arms.r.el.rotation.x += still ? 0 : Math.sin(tt * 1.9) * 0.08;
     dd.neck.rotation.y = still ? 0 : Math.sin(tt * 0.3) * 0.2;
   };
-  return { g, death, act, bands, drips: [[V(17, 100, -22), V(15, 2, -20)]], crows: [[-20, 212, 2], [26, 198, -8]], width: 120, victims: [man, skin, belt], freed: { pose: 'dance', at: [-18, 0, -46] } };
+  return { g, death, act, bands, drips: [[V(17, 100, -22), V(15, 2, -20)]], crows: [[-40, 208, 2], [40, 214, -4]], width: 120, victims: [man, skin, belt, ...cords], freed: { pose: 'dance', at: [-18, 0, -46] } };
 }
 // a dead tree: a trunk with a lean, two or three bare branches
 function buildTree(kit, rnd) {
@@ -605,10 +647,17 @@ function vGallows(kit, rnd) {
     // the noose: a coil round the neck and the knot standing out under the ear
     const coil = mesh(new THREE.TorusGeometry(5.2, 1.2, 6, 14), kit.rope, d.neck, 1.0); coil.position.y = 5; coil.rotation.x = HALF;
     const knot = mesh(new THREE.CylinderGeometry(1.9, 1.9, 6, 7), kit.rope, d.neck, 1.0); knot.position.set(-side * 5.6, 7.5, 0.5);
-    // (the arms bound behind: the upper arms back, the forearms folded in
-    // to the small of the back, out of the hanging line)
-    d.arms.l.sh.rotation.set(-0.32, 0, -0.1); d.arms.r.sh.rotation.set(-0.32, 0, 0.1);
-    d.arms.l.el.rotation.x = 0.75; d.arms.r.el.rotation.x = 0.75;
+    // (the wrists bound before him at the groin, the cord round them, the
+    // elbows at his sides: bound behind, the arms were lost behind the body
+    // and he read armless from the seat)
+    ['l', 'r'].forEach(s => {
+      const sx = s === 'l' ? 1 : -1;
+      // (reach's target is in the body's parent's frame, the rope's pivot)
+      reach(d.arms[s], V(-sx * 1.6, 95, -11).applyEuler(b.rotation).add(b.position).toArray(), b, 10, { start: [0.3, 0, sx * 0.15, 1.2], elbow: V(sx * 21, 115, 0).applyEuler(b.rotation).add(b.position).toArray() });
+      d.arms[s].hand.userData.grip(0.55);
+    });
+    { b.updateMatrixWorld(true); const wl = b.worldToLocal(d.arms.l.hand.getWorldPosition(V(0, 0, 0))), wr = b.worldToLocal(d.arms.r.hand.getWorldPosition(V(0, 0, 0)));
+      const cord = mesh(new THREE.TorusGeometry(3.2, 0.9, 5, 12), kit.rope, b, 0.9); cord.position.copy(wl.add(wr).multiplyScalar(0.5)); cord.rotation.set(0.2, HALF, 0); }
     d.legs.l.hip.rotation.set(0.04, 0, 0.05); d.legs.r.hip.rotation.set(-0.06, 0, -0.04);
     d.legs.l.kn.rotation.x = KNEE_BACK * (k ? 0.35 : 0.12); d.legs.r.kn.rotation.x = KNEE_BACK * 0.08;
     d.legs.l.foot.rotation.x = -0.95; d.legs.r.foot.rotation.x = -0.85;
@@ -647,7 +696,9 @@ function vStake(kit, rnd) {
   // shaft seen below him between his legs and its point standing out of
   // him by his neck - the body leant over until that shoulder is above the
   // fork, so the shaft passes straight through both)
-  const FEET = 52, FORK = FEET + BODY_HIPS - 9, SHOULDER = FEET + BODY_HIPS + 50, TIP = SHOULDER + 22;
+  // (his feet hang well clear of the mound and the stones: lower, they read
+  // as stood on them)
+  const FEET = 66, FORK = FEET + BODY_HIPS - 9, SHOULDER = FEET + BODY_HIPS + 50, TIP = SHOULDER + 32;
   const H = TIP;
   const stakeGeo = new THREE.CylinderGeometry(1.7, 5, TIP - 10, 9); stakeGeo.translate(0, (TIP - 10) / 2, 0);
   const stake = mesh(stakeGeo, kit.post, g, 2); stake.position.set(0, 0, 3);
@@ -670,9 +721,15 @@ function vStake(kit, rnd) {
   // (leant over on the shaft: turned at the fork until the shoulder it
   // comes out of stands above it)
   for (let k = 0; k < 4; k++) { g.updateMatrixWorld(true); const sh = g.worldToLocal(d.arms.l.sh.getWorldPosition(V(0, 0, 0))); piv.rotation.z += Math.atan2(sh.x - 0, sh.y - FORK); }
-  // (the legs hang straight down from the fork either side of the shaft,
-  // whatever the lean of the body above them)
-  d.legs.l.hip.rotation.set(0.1, 0, -piv.rotation.z + 0.16); d.legs.r.hip.rotation.set(-0.12, 0, -piv.rotation.z - 0.13);
+  // (slumped on it, whatever the lean of the body above: the thighs fallen
+  // open either side of the shaft and the shins hanging straight down from
+  // the knees, a diamond round the stake that reads from in front as a
+  // weight sat on it - knees bent only fore and aft vanish in the frontal
+  // view and he stood on air; the head dropped, the arms hanging dead)
+  d.legs.l.hip.rotation.set(0.25, 0, -piv.rotation.z + 0.7); d.legs.r.hip.rotation.set(0.2, 0, -piv.rotation.z - 0.62);
+  d.legs.l.kn.rotation.set(KNEE_BACK * 0.3, 0, -0.85); d.legs.r.kn.rotation.set(KNEE_BACK * 0.25, 0, 0.78);
+  d.neck.rotation.set(-0.62, 0.25, -0.62);   // (dropped and to the side, so a cheek and brow still show: further forward he showed only his crown)
+  d.arms.l.sh.rotation.set(0.1, 0, 0.12); d.arms.r.sh.rotation.set(0.15, 0, -0.14); d.arms.l.el.rotation.x = 0.2; d.arms.r.el.rotation.x = 0.25;
   // Death with the glass, looking up
   const death = buildDeath(kit, rnd); g.add(death); restSkeleton(death);
   // (stepped out to the side and toward you, clear of him, facing up at
@@ -685,19 +742,19 @@ function vStake(kit, rnd) {
   dd.neck.rotation.x = 0.5; dd.spine.rotation.x = 0.12;
   // the glass held up to his face at arm's length, as far as the arm goes
   const raised = reach(dd.arms.r, [face.x - 32, Math.min(face.y - 8, 194), face.z - 20], death, 12, { start: [2.4, 0, -0.2, 0.3] });
-  const glass = buildHourglass(kit, 20); glass.position.set(0, -12, -4); glass.rotation.x = 0.3; dd.arms.r.hand.add(glass); dd.arms.r.hand.userData.grip(0.45);
+  const glass = buildHourglass(kit, 26); glass.position.set(0, -15, -4); glass.rotation.x = 0.3; dd.arms.r.hand.add(glass); dd.arms.r.hand.userData.grip(0.45);
   g.add(pool(kit, rnd, 20)).position.set(-6, 0, 4);
   // (the blood from where the point came out, down his breast; the shaft
   // red from his fork to the ground)
   bleed(man, 0.17); bands.push([man, SHOULDER + 6, SHOULDER - 26]);
   bleed(stake, 0.95); bands.push([stake, FORK + 4, 0]);
   const act = (tt, dt, w, still) => {
-    d.arms.l.sh.rotation.x = (still ? 0 : Math.sin(tt * 0.5) * 0.06);
-    d.neck.rotation.z = -0.75 + (still ? 0 : Math.sin(tt * 0.35) * 0.08);
+    d.arms.l.sh.rotation.x = 0.1 + (still ? 0 : Math.sin(tt * 0.5) * 0.06);
+    d.neck.rotation.z = -0.5 + (still ? 0 : Math.sin(tt * 0.35) * 0.08);
     dd.neck.rotation.y = still ? 0 : Math.sin(tt * 0.4) * 0.15;
     setArm(dd.arms.r, raised); dd.arms.r.sh.rotation.x += still ? 0 : Math.sin(tt * 0.7) * 0.05;
   };
-  return { g, death, act, bands, drips: [[V(-2, FORK - 6, -2), V(-2, 2, 2)]], crows: [[0, TIP + 2, 3]], width: 100, victims: [man], freed: { pose: 'peace', at: [-22, 0, -26] } };
+  return { g, death, act, bands, drips: [[V(-2, FORK - 6, -2), V(-2, 2, 2)]], crows: [[0, TIP + 2, 3]], width: 100, victims: [man], freed: { pose: 'peace', at: [-44, 0, -26], beside: [62, -6] } };
 }
 // VII. THE DRAGGING. Death striding off to your left, leant into it, a man
 // behind him by one ankle: flat on his back, dragged feet first, the leg up
@@ -709,7 +766,11 @@ function vDragging(kit, rnd) {
   // (the drag laid on a slant: the near end, Death, toward you on your left,
   // the body running back from him into the valley - so the long line of it
   // fits its window)
-  const dg = G(g, 0, 0, 0); dg.rotation.y = 0.5;
+  // (turned well back into the valley - Death striding out of it toward
+  // you, the man dragged after him back into the depth - and set back so
+  // Death stands where he did: the whole length of him, head and trailed
+  // arms too, stays inside the window instead of running off its edge)
+  const dg = G(g, 26, 0, 37); dg.rotation.y = 1.1;
   const death = buildDeath(kit, rnd); dg.add(death); restSkeleton(death);
   death.position.set(72, 0, 14); death.rotation.y = -HALF + 0.3;   // (facing +x, your left, a little toward you)
   const dd = death.userData;
@@ -730,7 +791,11 @@ function vDragging(kit, rnd) {
   man.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(V(0, 0, 1), V(-1, 0, 0), V(0, -1, 0)));   // (head to -x, face up)
   const d = man.userData;
   d.legs.r.hip.rotation.set(1.0, 0, 0.06); d.legs.r.kn.rotation.x = KNEE_BACK * 0.06;   // (the near leg, hauled up by its ankle)
-  d.legs.l.hip.rotation.set(0.42, 0, -0.18); d.legs.l.kn.rotation.x = KNEE_BACK * 0.8;            // (the other drawn up, the knee to the sky)
+  // (the other leg trailed along the ground behind, a little apart - drawn
+  // up, its knee knotted with Death's feet - its foot slack along it, the
+  // sole turned down: square to the leg, the sole faced you end-on as a
+  // black blot by Death's foot and read as his head)
+  d.legs.l.hip.rotation.set(0.12, 0, -0.22); d.legs.l.kn.rotation.x = KNEE_BACK * 0.12; d.legs.l.foot.rotation.x = -0.9;
   d.arms.l.sh.rotation.set(2.95, 0, 0.62); d.arms.r.sh.rotation.set(2.85, 0, -0.7);
   d.arms.l.el.rotation.x = 0.1; d.arms.r.el.rotation.x = 0.15;
   d.neck.rotation.x = 0.35;
@@ -775,7 +840,7 @@ function vDragging(kit, rnd) {
     d.neck.rotation.x = 0.35 + (still ? 0 : Math.sin(wv - 0.6) * 0.1);
     d.arms.l.sh.rotation.z = 0.62 + (still ? 0 : Math.sin(wv + 1) * 0.08);
   };
-  return { g, death, act, bands, drips: [], crows: [[-100, 2, 62]], width: 150, victims: [man], freed: { pose: 'peace', at: [22, 0, -26], kneel: [44, 4] } };
+  return { g, death, act, bands, drips: [], crows: [[-100, 2, 62]], width: 150, victims: [man], freed: { pose: 'peace', at: [14, 0, -22], beside: [-60, -6] } };
 }
 const VIGNETTES = [vSawyer, vFlaying, vWheel, vDragging, vGallows, vWindlass, vStake];
 // (the lab: one vignette built alone, for the study page - the kit's
@@ -787,7 +852,7 @@ export const VIGNETTE_NAMES = ['sawyer', 'flaying', 'wheel', 'dragging', 'gallow
 // figures and its posts, in front of them, and drawn in within 44 of the
 // middle so the next stations' frames never see it; the sawyer's set low
 // to the side of the head that hangs over the pool)
-const SPOTS = [[0, 0, -36, 56, -40], [0, 0, -36, 56, -40], [0, 0, 40, 96, -40], [0, 0, -44, 120, -40], [0, 0, -32, 56, -30], [0, 0, -44, 64, -40], [0, 0, 40, 104, -40]];
+const SPOTS = [[0, 0, -36, 56, -40], [0, 0, -36, 56, -40], [0, 0, 40, 96, -40], [0, 0, 44, 88, -40], [0, 0, -32, 56, -30], [0, 0, -44, 64, -40], [0, 0, 40, 104, -40]];
 
 // Your hands (you are the dealer): two of Death's forearms reaching in from
 // under the frame, the right on the hourglass's cap, the left over the skull
@@ -861,13 +926,18 @@ function buildGround() {
     // all round: dark at their foot, where the figures stand against them,
     // opening toward the crest, so every torment has a dark field behind it
     // whichever way the hill happens to face the light
-    const v = 0.66 - 0.3 * smoother((r - 620) / 300) + (n1(p.getX(i) * 0.006 + 9, p.getZ(i) * 0.006) - 0.5) * 0.08;
+    const v = 0.57 - 0.3 * smoother((r - 620) / 300) + (n1(p.getX(i) * 0.006 + 9, p.getZ(i) * 0.006) - 0.5) * 0.08;   // (below the cross set's tone: at 0.66 the foot crossed and closed into a black belt that shouted over the figures)
     tone[i * 2] = v; tone[i * 2 + 1] = smoother((r - 430) / 50);
   }
   geo.setAttribute('aTone', new THREE.BufferAttribute(tone, 2));
   // the ground's cut: level strokes round the ring at a mid tone, so the
   // figures (their lights bare paper) stand off it, as in his plates
-  const g = new THREE.Mesh(geo, mat({ uv: [1, 1], angle: -HALF, freq: 0.6, tone: 0.42, sky: 0.4, keyI: 1.0, wobble: 0.35, toneMap: true }));
+  // (its rings worked out per pixel from the world point under it, `ring`,
+  // set once the seat is placed: the uv rings, interpolated across the
+  // mesh's faces, kinked at every edge into a zip; the hand's drift slow and
+  // each stroke swelling and thinning along its length, so a line undulates
+  // as a cut one does and never jitters like a plotted trace)
+  const g = new THREE.Mesh(geo, mat({ uv: [1, 1], angle: -HALF, freq: 0.6, tone: 0.42, sky: 0.4, keyI: 1.0, wobble: 0.6, wobF: 0.05, swell: 0.45, toneMap: true }));
   g.userData.height = (x, z) => groundHeight(x, z, n1, n2);
   return g;
 }
@@ -899,13 +969,25 @@ function skyTex() {
     g.fillStyle = '#E8DCC0'; g.fillRect(0, 0, W, H);
     const rnd = seeded(29);
     g.strokeStyle = '#1A0F0C'; g.lineCap = 'round';
-    // the low band: long horizontals broken, denser toward the horizon
-    for (let y = H * 0.7; y < H; y += 7 + rnd() * 5) { let x = 0; while (x < W) { const l = 60 + rnd() * 260; g.lineWidth = 1.2 + rnd() * 1.4 * (y / H); g.globalAlpha = 0.45 + 0.5 * (y / H); g.beginPath(); g.moveTo(x, y + (rnd() - 0.5) * 3); g.lineTo(x + l, y + (rnd() - 0.5) * 3); g.stroke(); x += l + 20 + rnd() * 120; } }
-    // the sky itself ruled, as his cutter ruled it: level lines the whole
-    // way up, a little wider apart and finer toward the top, so the sky
-    // takes a light tone and the figures stand on it as the lights (the
-    // clouds, drawn after, knock them out)
-    for (let y = H * 0.06; y < H * 0.7; y += 8 + (1 - y / H) * 6 + rnd() * 2) { let x = 0; while (x < W) { const l = 220 + rnd() * 520; g.lineWidth = 0.8 + 0.7 * (y / H); g.globalAlpha = 0.32 + 0.3 * (y / H); g.beginPath(); g.moveTo(x, y + (rnd() - 0.5) * 2); g.lineTo(x + l, y + (rnd() - 0.5) * 2); g.stroke(); x += l + 8 + rnd() * 40; } }
+    // the sky ruled as his cutter ruled it: unbroken level lines across the
+    // whole plate, heaviest at the top and thinning toward the hills until
+    // they give out above them, so the sky pales into the distance and the
+    // crest stands dark against it (lines broken into dashes, and darker
+    // low down, read as a screen's scanlines); each line drawn in short runs
+    // whose weight swells and thins along it, as a burin cuts
+    for (let y = H * 0.04; y < H * 0.72; y += 7.5 + rnd() * 1.2) {
+      const k = Math.max(0, 1 - y / (H * 0.72)), ph = rnd() * 6, wy = (rnd() - 0.5) * 2;
+      g.globalAlpha = 0.25 + 0.5 * k;
+      // (every wave in it a whole number of turns across the plate, which
+      // wraps round the sky four times: no step where its ends meet)
+      const at = x => y + wy * Math.sin(2 * PI * 3 * x / W + ph) + Math.sin(2 * PI * x / W + ph * 2) * 1.2;
+      let px = 0, py = at(0);
+      for (let i = 1; i <= 96; i++) {
+        const x = i * W / 96, ny = at(x);
+        g.lineWidth = Math.max(0.15, (0.3 + 1.7 * k) * (0.75 + 0.25 * Math.sin(2 * PI * 7 * x / W + ph)));
+        g.beginPath(); g.moveTo(px, py); g.lineTo(x, ny); g.stroke(); px = x; py = ny;
+      }
+    }
     g.globalAlpha = 1;
     // the clouds, as Holbein's cutter drew them: each one mass with a
     // scalloped top (the billows overlap, one continuous edge, never loose
@@ -921,21 +1003,32 @@ function skyTex() {
       const belly = cy + ht * 0.32;
       const topAt = x => { let y = belly; for (const [bx, by, r] of bill) { const d = x - bx; if (Math.abs(d) < r) y = Math.min(y, by - Math.sqrt(r * r - d * d)); } return y; };
       const xa = bill[0][0] - bill[0][2], xb = bill[n - 1][0] + bill[n - 1][2];
+      // (the underside in shallow lobes of its own, never a straight cut)
+      const lobes = 2 + Math.floor(wdt / 70), ph = rnd() * PI;
+      const botAt = x => belly + ht * 0.07 * Math.abs(Math.sin((x - xa) / (xb - xa) * PI * lobes + ph * 0.2)) + ht * 0.04 * Math.sin((x - xa) / (xb - xa) * PI);
       const path = new Path2D();
       path.moveTo(xa, belly);
       for (let x = xa; x <= xb; x += 2) path.lineTo(x, Math.min(belly, topAt(x)));
-      path.lineTo(xb, belly);
-      path.bezierCurveTo(cx + wdt * 0.25, belly + ht * 0.08, cx - wdt * 0.25, belly + ht * 0.1, xa, belly);
+      for (let x = xb; x >= xa; x -= 2) path.lineTo(x, botAt(x));
       path.closePath();
       // (the paper inside, so the sky's lines stop at the cloud)
       g.fillStyle = '#E8DCC0'; g.fill(path);
       g.save(); g.clip(path);
-      const top = belly - ht * 0.55;
-      for (let y = top; y < belly + ht * 0.12; y += 4.2) { const k = (y - top) / (belly - top); g.globalAlpha = 0.35 + 0.55 * Math.min(1, k); g.lineWidth = 0.7 + 1.5 * Math.min(1, k); g.beginPath(); g.moveTo(cx - wdt, y + (rnd() - 0.5) * 1.2); g.lineTo(cx + wdt, y + (rnd() - 0.5) * 1.2); g.stroke(); }
+      // (its shade cut in strokes that follow the lobed underside up into
+      // the heap, heaviest at the bottom and giving out before the lit
+      // tops: hatched level from a flat cut, and over most of it, the heaps
+      // read as tombstones standing on the ridge)
+      for (let j = 0, d = 1.4; d < ht * 0.5; j++, d += 3.3) {
+        const k = 1 - d / (ht * 0.5);
+        g.globalAlpha = 0.3 + 0.6 * k; g.lineWidth = 0.5 + 1.4 * k;
+        g.beginPath(); g.moveTo(xa, botAt(xa) - d);
+        for (let x = xa + 4; x <= xb; x += 4) g.lineTo(x, botAt(x) - d - Math.sin(x * 0.05 + j) * 0.6);
+        g.stroke();
+      }
       g.restore(); g.globalAlpha = 1;
       g.lineWidth = 1.8; g.stroke(path);
     };
-    for (let c = 0; c < 9; c++) cloud(c / 9 * W + rnd() * W / 12, H * (0.52 + rnd() * 0.12), 130 + rnd() * 150, 26 + rnd() * 16);
+    for (let c = 0; c < 9; c++) cloud(c / 9 * W + rnd() * W / 12, H * (0.48 + rnd() * 0.08), 130 + rnd() * 150, 26 + rnd() * 16);   // (lifted clear of the crest, short of the frame's top)
     g.globalAlpha = 1;
     // birds: a few 'v's
     for (let i = 0; i < 26; i++) { const x = rnd() * W, y = H * (0.3 + rnd() * 0.4), s = 4 + rnd() * 7; g.lineWidth = 1.6; g.beginPath(); g.moveTo(x - s, y - s * 0.4); g.quadraticCurveTo(x - s * 0.4, y + s * 0.3, x, y); g.quadraticCurveTo(x + s * 0.4, y + s * 0.3, x + s, y - s * 0.4); g.stroke(); }
@@ -1152,18 +1245,18 @@ function valleySound() {
 // figure study page)
 export function valleyKit() {
   const kit = {
-    bone: mat({ freq: 1.2, angle: 1.2, tone: -0.06 }),
+    bone: mat({ freq: 1.2, angle: 1.2, tone: -0.06, bare: 0.2 }),
     // (a long bone: strokes down its length; a joint or a skull: its
     // rings; a rib: strokes along the rib)
-    shaft: mat({ uv: [14, 1], angle: 0, tone: -0.12, wobble: 0.7 }),
-    ball: mat({ freq: 1.3, angle: 1.0, tone: -0.12 }),
+    shaft: mat({ uv: [14, 1], angle: 0, tone: -0.12, wobble: 0.7, bare: 0.2 }),
+    ball: mat({ freq: 1.3, angle: 1.0, tone: -0.12, bare: 0.2 }),
     rib: mat({ uv: [1, 9], angle: HALF, tone: -0.1, wobble: 0.6 }),
-    skull: mat({ freq: 1.25, angle: 1.1, tone: -0.14, keyI: 1.3, sky: 0.24, wobble: 0.5 }),
+    skull: mat({ freq: 1.25, angle: 1.1, tone: -0.14, keyI: 1.3, sky: 0.24, wobble: 0.5, bare: 0.2 }),
     // (flesh: the paper, hatched along the limb; the face in its rings;
     // hair a dark passage; the raw of a wound or a flayed man is blood)
-    flesh: mat({ freq: 1.2, angle: -0.55, tone: -0.14, keyI: 1.4, sky: 0.44, wobble: 0.5 }),
-    fleshUV: mat({ uv: [12, 5], angle: HALF - 0.28, tone: -0.14, keyI: 1.4, sky: 0.44, wobble: 0.4 }),
-    face: mat({ freq: 1.25, angle: 1.1, tone: -0.12, keyI: 1.4, sky: 0.44, wobble: 0.45 }),
+    flesh: mat({ freq: 1.2, angle: -0.55, tone: -0.06, keyI: 1.0, sky: 0.44, wobble: 0.5, bare: 0.16 }),
+    fleshUV: mat({ uv: [12, 5], angle: HALF - 0.28, tone: -0.06, keyI: 1.0, sky: 0.44, wobble: 0.4, bare: 0.16 }),
+    face: mat({ freq: 1.25, angle: 1.1, tone: -0.08, keyI: 1.15, sky: 0.44, wobble: 0.45 }),
     hair: mat({ uv: [24, 8], angle: 0.3, tone: 0.58, freq: 1.6, wobble: 1.2 }),
     raw: mat({ paper: BLOOD, tone: 0.34, freq: 1.4, angle: -0.4, keyI: 1.2 }),
     rawUV: mat({ paper: BLOOD, uv: [12, 5], angle: 0.1, tone: 0.34, freq: 1.3, keyI: 1.2 }),
@@ -1172,7 +1265,7 @@ export function valleyKit() {
     skin: mat({ freq: 1.0, angle: 1.2, tone: -0.02, wobble: 0.8, side: THREE.DoubleSide }),
     river: mat({ paper: BLOOD, uv: [8, 60], angle: 0.1, tone: 0.22, freq: 1.0, wobble: 1.8, scroll: [0, 6], steps: 0 }),
     cloth: mat({ freq: 0.9, angle: 1.3, tone: 0.3, wobble: 0.8, side: THREE.DoubleSide }),
-    linen: mat({ uv: [18, 4], angle: HALF - 0.16, tone: -0.06, sky: 0.36, wobble: 0.5 }),
+    linen: mat({ uv: [18, 4], angle: HALF - 0.16, tone: -0.04, keyI: 1.05, sky: 0.36, wobble: 0.5, bare: 0.18 }),
     // (a plank or a beam, long in x: the grain runs its length; a turned
     // timber - any cylinder, standing or laid - its own length)
     wood: mat({ freq: 0.9, angle: HALF, tone: 0.22, wobble: 0.45, axis: [1, 0, 0] }),
@@ -1180,6 +1273,8 @@ export function valleyKit() {
     woodRing: mat({ uv: [1, 10], angle: HALF, tone: 0.22, freq: 0.9, wobble: 0.5 }),
     bark: mat({ uv: [12, 4], angle: 0.12, tone: 0.44, freq: 1.4, wobble: 1.1 }),
     iron: mat({ freq: 1.6, angle: 0.3, tone: 0.5 }),
+    blade: mat({ freq: 2.4, angle: 0.3, tone: 0.95, keyI: 0.5, sky: 0.08, wobble: 0.2 }),
+    glint: mat({ freq: 2.4, angle: 0.3, tone: -1.2, keyI: 1.0, wobble: 0.2 }),
     steel: mat({ freq: 1.8, angle: 0.02, tone: 0.1, wobble: 0.3, axis: [0, 0, 1] }),
     rope: mat({ uv: [6, 1], angle: 0.9, tone: 0.3, freq: 2 }),
     stone: mat({ freq: 1.3, angle: 0.5, tone: 0.1, wobble: 0.8, steps: 3 }),
@@ -1187,11 +1282,12 @@ export function valleyKit() {
     // (a flayed man: the muscle in its fibres, fine lines along the limb over the red)
     rawCap: mat({ paper: BLOOD, tone: 0.4, freq: 1.6, angle: 0.4, side: THREE.DoubleSide }),
     // (a flayed man: the fibres cut in blood on the paper - the page's own sanguine - so the figure keeps its silhouette and the lines read as muscle)
-    // (the flayed: the raw printed as the blood's own block - the second
-    // colour laid over the whole of him - with the fibres cut over it in a
-    // dark red, so he reads as a man with no skin, not a white man lit red)
-    muscle: mat({ paper: RAW_RED, ink: RAW_INK, freq: 2.0, angle: -0.4, tone: 0.08, sky: 0.3, wobble: 0.5 }),
-    muscleUV: mat({ paper: RAW_RED, ink: RAW_INK, uv: [12, 5], angle: HALF - 0.28, tone: 0.08, sky: 0.3, freq: 2.0, wobble: 0.5 }),
+    // (the flayed: his fibres cut in the blood's own crimson on a paper only
+    // flushed with it, close and heavy, so he reads red at a distance and as
+    // muscle near to - the whole of him laid in a flat block of red read as
+    // a painted devil)
+    muscle: mat({ paper: FLUSH, ink: BLOOD, freq: 2.0, angle: -0.4, tone: 0.24, keyI: 1.0, sky: 0.3, wobble: 0.5, bare: 0.08 }),
+    muscleUV: mat({ paper: FLUSH, ink: BLOOD, uv: [12, 5], angle: HALF - 0.28, tone: 0.24, keyI: 1.0, sky: 0.3, freq: 2.0, wobble: 0.5, bare: 0.08 }),
     // (a cast shadow: parallel cuts on the ground, no light to it)
     shadow: mat({ tone: 0.02, keyI: 0, sky: 0, angle: -0.55, freq: 0.7, wobble: 0.5, steps: 0, axis: [1, 0, 0.7] }),
     ink: new THREE.MeshBasicMaterial({ color: INK })
@@ -1228,6 +1324,7 @@ export async function prepareTable(opts) {
   const STATIONS = cards.map((c, i) => { const th = ringAngle(i), r = RING.r + (RING_DR[i] || 0), [x, z] = ringAt(th, r); return { th, r, x, z }; });
   PADS = STATIONS.map((st, i) => [st.x, st.z, RING_UP[i] || 0]);
   const ground = buildGround(); seat.add(ground);
+  { seat.updateMatrixWorld(true); const c = ground.localToWorld(V(RING.c[0], 0, RING.c[1])); ground.material.uniforms.uRing.value.set(c.x, c.z, 420, 1); }
   const height = ground.userData.height;
   await breathe();
   const river = buildRiver(kit, height); seat.add(river);
@@ -1296,7 +1393,9 @@ export async function prepareTable(opts) {
     v.plates = ownMats(v.g, dset);
   });
   const freedRnd = seeded(77);
-  const freedFigs = [0, 1].map(k => { const f = buildFigure(kit, freedRnd, { shirt: true, hose: true, beard: k === 0 }); restBody(f); f.visible = false; f.userData.plates = ownMats(f); return f; });
+  // (the freed are clean-shaven: in the negative a beard printed as a black
+  // wedge under the chin, a gaping jaw)
+  const freedFigs = [0, 1].map(k => { const f = buildFigure(kit, freedRnd, { calm: true, shirt: true, hose: true }); restBody(f); f.visible = false; f.userData.plates = ownMats(f); return f; });
   const setPlates = (pl, flip, ghost) => { pl.mats.forEach(m => { m.uniforms.uFlip.value = flip; m.uniforms.uGhost.value = ghost; }); pl.outs.forEach(m => { m.uniforms.uFlip.value = flip; m.uniforms.uGhost.value = ghost; }); };
   const FREE = { IN: 0.8, HOLD: 3.8, OUT: 1.1 };
   const snapOf = root => { const out = []; root.traverse(o => out.push([o, o.position.clone(), o.quaternion.clone()])); return out; };
@@ -1304,6 +1403,12 @@ export async function prepareTable(opts) {
     const v = F.p.userData.v;
     v.victims.forEach(b => { b.visible = !on; });
     v.gore.forEach(m => { m.visible = !on; });
+    // (the station's cast shadows lie where its figures stood: while it is
+    // freed they go, and each freed figure and its Death carries its own
+    // under its feet - left, they lay ahead of the freed man as black holes)
+    if (!v.shades) { v.shades = []; v.g.traverse(o => { if (o.userData.shade) v.shades.push(o); }); v.deathShade = shade(v.death, 0, 0, 13, 8, 0); }
+    v.shades.forEach(o => { o.visible = !on; }); v.deathShade.visible = on;
+    F.figs.forEach(f => { if (!f.userData.shadow) f.userData.shadow = shade(f, 0, 0, 13, 8, 0); });
     if (on) {
       F.snap = snapOf(v.death);
       // (a Death built inside a turned group - the dragging's slant - is
@@ -1379,27 +1484,40 @@ export async function prepareTable(opts) {
         u.neck.rotation.set(o === v.death ? 0.08 : 0.26, o === v.death ? Math.sin(k * 1.7) * 0.5 : -Math.sign(dx) * 0.25, 0);
       });
     } else if (v.freed.pose === 'peace') {
-      // he stands whole by the empty stake (or where he was dragged), the
-      // hands open, the face up; his Death kneels by him with the skull bowed
-      // (a line of dancers would not fit the dragging's window past the
-      // dealer)
+      // he stands whole by the empty stake (or where he was dragged), his
+      // weight on one leg, the hands open at his sides, the face lifted; his
+      // Death stands by him, turned to him, the skull bowed, a hand laid on
+      // his shoulder (a line of dancers would not fit the dragging's window)
       const f = F.figs[0], u = f.userData, cam = camIn(v);
       f.position.set(at[0], 0, at[2]); f.rotation.set(0, Math.atan2(-(cam.x - at[0]), -(cam.z - at[2])), 0);
-      u.hips.position.y = BODY_HIPS + Math.sin(k * 1.6) * 0.6;
-      u.arms.l.sh.rotation.set(0.15, 0, 0.55); u.arms.r.sh.rotation.set(0.15, 0, -0.55);
-      u.arms.l.el.rotation.x = 0.4; u.arms.r.el.rotation.x = 0.4;
-      u.legs.l.hip.rotation.set(0, 0, 0.04); u.legs.r.hip.rotation.set(0, 0, -0.04);
-      u.neck.rotation.set(0.34, 0, 0);
-      const [kx, kz] = v.freed.kneel || [26, 8];
-      v.death.position.set(at[0] + kx, 0, at[2] + kz); faceTo(v.death, at[0], at[2]);
+      u.hips.position.y = BODY_HIPS - 1.2 + Math.sin(k * 1.6) * 0.6; u.hips.rotation.z = 0.05;
+      u.arms.l.sh.rotation.set(0.22, 0, 0.3); u.arms.r.sh.rotation.set(0.28, 0, -0.34);
+      u.arms.l.el.rotation.x = 0.35; u.arms.r.el.rotation.x = 0.42;
+      u.legs.l.hip.rotation.set(0.1, 0, -0.02); u.legs.l.kn.rotation.x = KNEE_BACK * 0.16; u.legs.r.hip.rotation.set(-0.02, 0, -0.06);
+      u.neck.rotation.set(0.22, 0, -0.05);
+      // (beside him across the line of sight - to your left of him, or to
+      // your right where `beside` is negative (the dragging's placard stands
+      // on his left), clear of his arm and a little nearer you - so he never
+      // stands half hidden behind the man he frees)
+      const [kx, kz] = v.freed.beside || [60, -6];
+      const fx = cam.x - at[0], fz = cam.z - at[2], fl = Math.hypot(fx, fz) || 1;
+      v.death.position.set(at[0] - fz / fl * kx - fx / fl * kz, 0, at[2] + fx / fl * kx - fz / fl * kz); faceTo(v.death, at[0], at[2]);
       restSkeleton(v.death);
-      // (down on one knee: the near thigh forward, its shin planted; the far
-      // knee on the ground, its shin laid back; a joint's +x tips back, so
-      // the bow is -x)
-      du.hips.position.y = 47;
-      du.legs.l.hip.rotation.x = 1.5; du.legs.l.kn.rotation.x = KNEE_BACK * 1.5;
-      du.legs.r.hip.rotation.x = 0; du.legs.r.kn.rotation.x = KNEE_BACK * 1.57;
-      du.neck.rotation.set(-0.55, 0, 0); du.spine.rotation.x = -0.22;
+      du.neck.rotation.set(-0.45, 0, 0); du.spine.rotation.x = -0.1;
+      // (the hand laid on the top of his near shoulder, the arm out across
+      // the gap in sight: solved once, with whichever of Death's arms gets
+      // there)
+      if (!v.peaceArm) {
+        v.g.updateMatrixWorld(true);
+        const shs = ['l', 'r'].map(sd => v.g.worldToLocal(u.arms[sd].sh.getWorldPosition(V(0, 0, 0))));
+        const t = shs.sort((p1, p2) => p1.distanceTo(v.death.position) - p2.distanceTo(v.death.position))[0];
+        const best = ['l', 'r'].map(sd => {
+          const an = reach(du.arms[sd], [t.x, t.y + 3, t.z - 1], v.death, 10, { start: [0.9, 0, sd === 'l' ? 0.2 : -0.2, 0.5] });
+          return { sd, an, miss: du.arms[sd].miss };
+        }).sort((a2, b2) => a2.miss - b2.miss)[0];
+        v.peaceArm = best; restSkeleton(v.death); du.neck.rotation.set(-0.45, 0, 0); du.spine.rotation.x = -0.1;
+      }
+      setArm(du.arms[v.peaceArm.sd], v.peaceArm.an); du.arms[v.peaceArm.sd].hand.userData.grip(0.3);
     } else {
       // he walks off from beside the wheel toward the hills, his back to
       // you, clear of its rim; his Death stands where he was and watches
@@ -1414,9 +1532,13 @@ export async function prepareTable(opts) {
   };
   // how far each Death turns his skull to look at you
   pivots.forEach(p => { const d = p.userData.v.death; const wp = d.getWorldPosition(V(0, 0, 0)); seat.worldToLocal(wp); const want = Math.atan2(wp.x, wp.z + 116); p.userData.toSeat = ((want - p.userData.deathYaw + PI) % (2 * PI) + 2 * PI) % (2 * PI) - PI; });
-  // far off on the hills: more gallows, in silhouette, round the half ring
+  // far off on the hills: more gallows, in silhouette - out past the half
+  // ring's ends, where only a wide frame turned to an end finds them (each
+  // station's frame spans the whole step to its neighbours, so one set
+  // anywhere round the ring sat on a station's beam or was cut by the top of
+  // its frame)
   const far = new THREE.Group(); seat.add(far);
-  [[-1.25, 820], [-0.62, 900], [0.08, 980], [0.7, 880], [1.3, 800]].forEach(([th, r]) => { const [x, z] = ringAt(th, r), h = height(x, z), g = new THREE.Group(); g.position.set(x, h - 2, z); g.rotation.y = rnd() * 6; far.add(g); mesh(new THREE.BoxGeometry(6, 150, 6), kit.post, g, 1.6).position.y = 75; mesh(new THREE.BoxGeometry(70, 6, 6), kit.wood, g, 1.4).position.set(20, 148, 0); const sk = buildDeath(kit, rnd); restSkeleton(sk); sk.position.set(40, 142 - 165, 0); sk.scale.setScalar(0.9); sk.userData.neck.rotation.z = 0.5; g.add(sk); });
+  [[-2.7, 820], [-2.35, 900], [2.35, 900], [2.7, 820], [3.1, 980]].forEach(([th, r]) => { const [x, z] = ringAt(th, r), h = height(x, z), g = new THREE.Group(); g.position.set(x, h - 2, z); g.rotation.y = rnd() * 6; far.add(g); mesh(new THREE.BoxGeometry(6, 150, 6), kit.post, g, 1.6).position.y = 75; mesh(new THREE.BoxGeometry(70, 6, 6), kit.wood, g, 1.4).position.set(20, 148, 0); const sk = buildDeath(kit, rnd); restSkeleton(sk); sk.position.set(40, 142 - 165, 0); sk.scale.setScalar(0.9); sk.userData.neck.rotation.z = 0.5; g.add(sk); });
   // the ground dressed, as a woodcutter fills it: stones, bones, a skull or
   // two - on the ring's floor between the stations, clear of their pads
   const dress = new THREE.Group(); seat.add(dress);
@@ -1736,7 +1858,11 @@ export async function prepareTable(opts) {
       crows.instanceMatrix.needsUpdate = true;
     };
     let lastT = 0;
-    const keyW = KEY_SEAT.clone().applyQuaternion(seat.quaternion);
+    // (the key turns with you: the light falls from the plate's upper left
+    // in every frame, whichever torment you face, as it does in a book of
+    // plates - so every station is lit alike)
+    const keyW = new THREE.Vector3(), KEY_UP = new THREE.Vector3(0, 1, 0);
+    const keyAt = () => keyW.copy(KEY_SEAT).applyAxisAngle(KEY_UP, yaw).applyQuaternion(seat.quaternion);
     // (the freed: the flash's state lives with the flight - it reads the clock)
     let freeing = null, freeQueue = [], freeN = 0;
     const startFreed = p => {
@@ -1792,7 +1918,7 @@ export async function prepareTable(opts) {
       if (!fo.reduced) { sky.userData.tex.offset.x = tt * 0.0025 + w * 0.002; skyNeg.material.map.offset.x = sky.userData.tex.offset.x; }
       placeDrops(tt, fo.reduced ? 0 : dt);
       placeCrows(tt, w);
-      burinTick(seat, camera, world.renderer, tt, keyW);
+      burinTick(seat, camera, world.renderer, tt, keyAt());
       poseCard(tt);
       sheetEl.style.visibility = tt < FLY ? 'hidden' : '';
       const stg = world.canvas.parentElement;
