@@ -517,7 +517,10 @@ function buildAnatomy(pouch, m, a) {
   ];
   const sh = facet(sweep(pts, [r * 1.08, r, r * 0.98, r * 1.02, r * 0.55], 14, UVM.linen), m, g, 0);
   sh.userData.pouch = true;
-  g.userData = { lobes, shaft: sh, sway: a.sway, params: a };
+  // (for a physics pass - the lab's: where the mass sits, where the shaft
+  // roots and ends, their radii; all in this group's own units)
+  lobes.forEach(l => { l.userData.p0 = l.position.clone(); });
+  g.userData = { lobes, shaft: sh, sway: a.sway, params: a, mass: [0, -avgDrop, -0.6], shaftRoot: pts[0], shaftTip: pts[pts.length - 1], lobeR: avgLR, shaftR: r };
   return g;
 }
 
@@ -542,6 +545,60 @@ export function pouchSway(fig, ph, amp = 1) {
   const g = p.children[0], k = (g && g.userData.sway) || 1;
   p.rotation.z = Math.sin(ph - 0.6) * 0.07 * amp * k;
   p.rotation.x = (p.userData.rx0 == null ? (p.userData.rx0 = p.rotation.x) : p.userData.rx0) + Math.abs(Math.sin(ph - 0.6)) * 0.05 * amp * k;
+}
+
+// ------------------------------------------------------------ the joints' sleeves
+// (a build's men only.) A short hull over each joint - shoulder, elbow, hip,
+// knee - drawn from a ring on the limb above to a ring on the limb below,
+// along a curve through the joint, its rings turned part way from the one
+// limb's frame to the other's: so a bent elbow is one bent form, not two
+// tubes meeting in a ball, and a lifted arm or thigh has an armpit and a
+// groin. Rebuilt in place each frame a pose changes (updateSleeves).
+const SLV = { rings: 8, n: 14 };
+function addSleeve(root, list, m, metric, spec) {
+  const R = SLV.rings, n = SLV.n, pos = new Float32Array(R * n * 3), uv = [], idx = [];
+  const len = spec.len || 12, circ = PI * ((spec.ra[0] + spec.rb[0]) / 2 + (spec.ra[1] + spec.rb[1]) / 2);
+  const fq = 1.3 / (metric[2] || 1.3), mu = DENS * fq / metric[0], mv = DENS * fq / metric[1];
+  for (let j = 0; j < R; j++) for (let i = 0; i < n; i++) uv.push(i / n * circ * mu, j / (R - 1) * len * mv);
+  for (let j = 0; j < R - 1; j++) for (let i = 0; i < n; i++) { const i2 = (i + 1) % n, a = j * n + i, b = j * n + i2, c = (j + 1) * n + i, d = (j + 1) * n + i2; idx.push(a, b, c, b, d, c); }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(idx);
+  const mesh = new THREE.Mesh(geo, m); mesh.frustumCulled = false; root.add(mesh);
+  const o = outlineOf(mesh, spec.outline || 1.4); o.frustumCulled = false;
+  list.push(Object.assign({ mesh }, spec));
+}
+const _A = new THREE.Vector3(), _B = new THREE.Vector3(), _J = new THREE.Vector3(), _C = new THREE.Vector3(), _inv = new THREE.Matrix4(), _mm = new THREE.Matrix4();
+const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion(), _qr = new THREE.Quaternion(), _rv = new THREE.Vector3();
+const frameIn = (obj, q) => { _mm.multiplyMatrices(_inv, obj.matrixWorld); _mm.decompose(_C, q, _rv); return q; };
+export function updateSleeves(fig) {
+  const S = fig.userData.sleeves; if (!S || !S.length) return;
+  fig.updateMatrixWorld(true);
+  _inv.copy(fig.matrixWorld).invert();
+  const R = SLV.rings, n = SLV.n;
+  for (const s of S) {
+    _A.set(...s.a); s.pa.localToWorld(_A).applyMatrix4(_inv);
+    _B.set(...s.b); s.pb.localToWorld(_B).applyMatrix4(_inv);
+    _J.set(0, 0, 0); s.pb.localToWorld(_J).applyMatrix4(_inv);
+    frameIn(s.pa, _qa); frameIn(s.pb, _qb);
+    const P = s.mesh.geometry.attributes.position;
+    for (let j = 0; j < R; j++) {
+      const t = j / (R - 1), u = 1 - t;
+      // the curve A -> J -> B, and the ring's frame turned from the one limb's to the other's
+      const cx = u * u * _A.x + 2 * u * t * _J.x + t * t * _B.x, cy = u * u * _A.y + 2 * u * t * _J.y + t * t * _B.y, cz = u * u * _A.z + 2 * u * t * _J.z + t * t * _B.z;
+      _qr.slerpQuaternions(_qa, _qb, t);
+      const bulge = (s.bulge || 0) * Math.sin(PI * t);
+      const rx = s.ra[0] + (s.rb[0] - s.ra[0]) * t + bulge, rz = s.ra[1] + (s.rb[1] - s.ra[1]) * t + bulge;
+      for (let i = 0; i < n; i++) {
+        const a = i / n * PI * 2;
+        _rv.set(Math.cos(a) * rx, 0, Math.sin(a) * rz).applyQuaternion(_qr);
+        P.setXYZ(j * n + i, cx + _rv.x, cy + _rv.y, cz + _rv.z);
+      }
+    }
+    P.needsUpdate = true;
+    s.mesh.geometry.computeVertexNormals();
+  }
 }
 
 // ------------------------------------------------------------ a build
@@ -665,7 +722,18 @@ export function buildFigure(kit, rnd, o = {}) {
   // wedge under the chin, a gaping jaw)
   // (a build widens the cloth round the hips with them)
   const fx = B ? secAt(T, 0).rx / 16.0 : 1, fz = B ? (secAt(T, 5.0).rz + secAt(T, 5.0).front) / 10.8 : 1;
-  if (o.shirt && !flayed) { const sh = facet(loft([...(o.hose ? [] : [{ y: -21.0, rx: 15.0 * fx, rz: 11.6 * fz }, { y: -15.0, rx: 15.6 * fx, rz: 11.6 * fz }, { y: -11.4, rx: 15.8 * fx, rz: 11.6 * fz }]), ...T.slice(3, 15).map(s => Object.assign({}, s, { rx: s.rx + 1.4, rz: s.rz + 1.2 })), { y: 56.2, rx: 6.6, rz: 6.0 }], { n: 16, metric: UVM.linen, cap: false }), kit.linen, hips, 1.5); sh.position.z = 0.2; }
+  // (a build's men have buttocks: two masses under the seat, fuller with
+  // mass, rounder with muscle, falling a little with age - the trunk's own
+  // seat is nearly flat. They press the cloth out from behind; the shirt's
+  // tail is let out over them.)
+  const gk = B ? 1 + 0.30 * B.mass + 0.15 * B.muscle - 0.12 * B.age : 1, gb = B ? 2.8 * gk : 0;
+  if (B && !o.split) {
+    // (in the cloth over them, as the pouch is: the hose, the shirt's tail, or
+    // the loincloth drawn round them - a lifted thigh never bares them)
+    const gm = o.hose || o.shirt ? kit.linen : (kit.breech || kit.linen);
+    [-1, 1].forEach(sx => { const gl = facet(knob(7.0 * gk, 1.0, 1.08, 0.85, 2), gm, hips, 1.4); gl.position.set(sx * 7.0 * fx, -7.0 - 2.2 * Math.max(0, B.age), 7.6 * fz); gl.rotation.set(-0.22, sx * 0.28, sx * 0.08); });
+  }
+  if (o.shirt && !flayed) { const sh = facet(loft([...(o.hose ? [] : [{ y: -21.0, rx: 15.0 * fx, rz: 11.6 * fz, back: gb * 0.6 }, { y: -15.0, rx: 15.6 * fx, rz: 11.6 * fz, back: gb }, { y: -11.4, rx: 15.8 * fx, rz: 11.6 * fz, back: gb }]), ...T.slice(3, 15).map(s => Object.assign({}, s, { rx: s.rx + 1.4, rz: s.rz + 1.2 })), { y: 56.2, rx: 6.6, rz: 6.0 }], { n: 16, metric: UVM.linen, cap: false }), kit.linen, hips, 1.5); sh.position.z = 0.2; }
   // (the cloth gathered closed under the fork: its flat end printed as a
   // black hole where a body bent or lying shows it from below)
   // (a breechcloth wrapped close round the hips and over the tops of the
@@ -721,7 +789,9 @@ export function buildFigure(kit, rnd, o = {}) {
     // (narrow at its root in the fork and full, deep and rounded at its foot,
     // carried low between the thighs: set wide and high it read as a pad of
     // belly fat, not a man)
-    pouch = G(hips, 0, -8.6, (o.hose ? -7.2 : covered ? -8.8 : -10.0) + (B ? dF(-9.0) : 0));
+    // (a build's man: rooted on the skin of the pelvis at the fork's front,
+    // so it stays fixed to him in any pose, and grows from there)
+    pouch = G(hips, 0, -8.6, B ? frontAt(T, -8.6) - 0.3 : (o.hose ? -7.2 : covered ? -8.8 : -10.0));
     if (B && B.height !== 1) pouch.scale.setScalar(1 / B.height);
     const m = o.hose || covered ? kit.linen : (kit.breech || kit.linen);
     const anat = Object.assign(anatomyFor(rnd), o.anatomy || {});
@@ -749,8 +819,23 @@ export function buildFigure(kit, rnd, o = {}) {
     for (let t = 0; t < 5; t++) { const toe = facet(tube([[0, 0.8], [-2.2 + t * 0.2, 0.7]], 5), skin, foot, 0.6); toe.position.set((t - 2) * 1.5 * s - s * 0.4, -2.9, -12.4 + Math.abs(t - 0.5) * 0.5); toe.rotation.x = HALF; }
     legs[key] = { hip, kn, foot };
   });
+  // the joints' sleeves (a build's men): shoulder, elbow, hip, knee
+  const sleeves = [];
+  if (B && !flayed) {
+    const armM = skinUV, shM = o.shirt ? kit.linen : skinUV, shUV = o.shirt ? UVM.linen : UVS;
+    [-1, 1].forEach(s => {
+      const k = s < 0 ? 'r' : 'l', A = arms[k], L = legs[k], hx = L.hip.position.x;
+      addSleeve(root, sleeves, shM, shUV, { pa: hips, a: [s * (A.sh.position.x * s - 4.2), 42.5, A.sh.position.z], pb: A.sh, b: [0, -10, 0], ra: [6.4 * kA, 6.0 * kA], rb: [6.2 * kA, 5.9 * kA], bulge: 0.6, len: 14 });
+      addSleeve(root, sleeves, armM, UVS, { pa: A.sh, a: [0, -22, 0], pb: A.el, b: [0, -8, 0], ra: [4.65 * kA, 4.45 * kA], rb: [4.9 * kF, 4.4 * kF], bulge: 0.15, len: 16 });
+      addSleeve(root, sleeves, legM, legUV, { pa: hips, a: [hx * 0.72, -1.0, 0.4], pb: L.hip, b: [0, -15, 0], ra: [8.6 * kT, 9.2 * kT], rb: [8.75 * kT, 9.15 * kT], bulge: 0.4, len: 18, outline: 1.8 });
+      addSleeve(root, sleeves, legM, legUV, { pa: L.hip, a: [0, -33, 0], pb: L.kn, b: [0, -9, 0], ra: [6.1 * kT, 6.6 * kT], rb: [5.45 * kS, 6.1 * kS], bulge: 0.25, len: 18 });
+    });
+  }
   if (B && B.height !== 1) root.scale.setScalar(B.height);
-  root.userData = { hips, torso, neck, head, arms, legs, pouch, mouth: hd.userData.mouth, phase: rnd() * 6.28, build: B };
+  root.userData = { hips, torso, neck, head, arms, legs, pouch, mouth: hd.userData.mouth, phase: rnd() * 6.28, build: B, sleeves,
+    // (what the anatomy's physics collides with, in the man's own units: the thighs' radius, the belly's front)
+    colliders: B ? { thighR: 8.0 * kT, bellyR: -frontAt(T, 12), bellyZ: 0 } : null };
+  if (sleeves.length) updateSleeves(root);
   SOFT = soft0;
   return root;
 }
