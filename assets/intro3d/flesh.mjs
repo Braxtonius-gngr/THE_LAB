@@ -104,7 +104,9 @@ export class FleshSim {
   step(dt) {
     const P = this.pouch, g = this.inner; if (!P || !g) return false;
     const u = g.userData, s = g.scale.x, sc = this.fig.getWorldScale(_w).x * P.scale.x * s;
-    const loose = Math.max(0.2, u.sway || 1), k = K / loose, c = C / Math.sqrt(loose);
+    // (what he wears stiffens and damps it: see FABRIC in figure.mjs)
+    const H = this.fig.userData.hold || {}, loose = Math.max(0.2, u.sway || 1), k = K / loose * (H.k || 1), c = C / Math.sqrt(loose) * (H.c || 1);
+    const lobeMax = LOBE.max * (H.lobe == null ? 1 : H.lobe), lobeK = LOBE.k / Math.max(0.3, H.lobe == null ? 1 : H.lobe);
     const T0 = new THREE.Vector3(), T1 = new THREE.Vector3(), root = new THREE.Vector3();
     this.targets(T0, T1, root);
     const L0 = T0.distanceTo(this.anchor), L1 = T1.distanceTo(this.anchor);
@@ -162,9 +164,9 @@ export class FleshSim {
       // jolts (its change of velocity - gravity it hangs against cancels out)
       jolt.subVectors(this.v[0], vm).divideScalar(STEP).applyQuaternion(_qi).divideScalar(sc);
       this.lobe.forEach((L, i) => {
-        _a.copy(L.o).multiplyScalar(-LOBE.k).addScaledVector(L.v, -LOBE.c).addScaledVector(jolt, -(i ? 1.12 : 1));
+        _a.copy(L.o).multiplyScalar(-lobeK).addScaledVector(L.v, -LOBE.c).addScaledVector(jolt, -(i ? 1.12 : 1));
         L.v.addScaledVector(_a, STEP); L.o.addScaledVector(L.v, STEP);
-        if (L.o.length() > LOBE.max) { L.o.setLength(LOBE.max); L.v.multiplyScalar(0.5); }
+        if (L.o.length() > lobeMax) { L.o.setLength(lobeMax); L.v.multiplyScalar(0.5); }
       });
     }
     this.pose(T0, root);
@@ -180,9 +182,15 @@ export class FleshSim {
     _a.subVectors(T0, this.anchor).applyQuaternion(_qi).normalize();
     _b.subVectors(this.p[0], this.anchor).applyQuaternion(_qi).normalize();
     _q.setFromUnitVectors(_a, _b);
-    // (the cup of the cloth over it gives, turning part of the way with it)
-    const cup = this.fig.userData.cup;
-    if (cup) cup.quaternion.identity().slerp(_q, 0.6);
+    // (how far it is swung off its rest, for the lab's readout)
+    this.swing = 2 * Math.acos(Math.min(1, Math.abs(_q.w)));
+    // (the cup of the cloth over it gives, turning with it - a lab man's all
+    // the way, so it is never swung out of what he wears; the valley's part way)
+    const cup = this.fig.userData.cup, H = this.fig.userData.hold;
+    if (cup) cup.quaternion.identity().slerp(_q, H ? (H.follow == null ? 1 : H.follow) : 0.6);
+    // (a loincloth's front flap swings out with it from the belt, most of the way)
+    const flap = this.fig.userData.flap;
+    if (flap) flap.quaternion.identity().slerp(_q, 0.8);
     P.quaternion.copy(_q).multiply(_restQ.setFromAxisAngle(_x, this.restAll()));
     P.updateMatrixWorld(true);
     // the shaft: in the inner group's frame, from its root toward the tip particle
@@ -193,8 +201,9 @@ export class FleshSim {
       _a.subVectors(t0, r0).normalize(); _b.subVectors(tip, r0).normalize();
       _q.setFromUnitVectors(_a, _b);
       // (never folded back on itself)
-      const ang = 2 * Math.acos(Math.min(1, Math.abs(_q.w)));
-      if (ang > 2.3) _q.slerp(new THREE.Quaternion(), 1 - 2.3 / ang);
+      // (and inside cloth only as far as the cloth lets it)
+      const ang = 2 * Math.acos(Math.min(1, Math.abs(_q.w))), lim = H && H.bend != null ? H.bend : 2.3;
+      if (ang > lim) _q.slerp(new THREE.Quaternion(), 1 - lim / ang);
       sh.quaternion.copy(_q);
       sh.position.copy(r0).sub(r0.clone().applyQuaternion(_q));
     }

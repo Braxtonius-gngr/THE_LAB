@@ -38,7 +38,11 @@ const MEN = [
   { name: 'Heavy', build: { height: 1.0, mass: 1, muscle: 0.2, age: 0.3 }, beard: true },
   { name: 'Small', build: { height: 0.88, mass: 0.05, muscle: 0.1, age: 0.1 } }
 ];
-const OUTFITS = { none: { nude: true }, minimal: { brief: true }, loin: {}, shirt: { shirt: true }, hose: { hose: true }, both: { shirt: true, hose: true } };
+// (tightest hold to loosest; see FABRIC in figure.mjs)
+const OUTFITS = { compression: { under: 'compression' }, minimal: { brief: true }, hose: { hose: true }, both: { shirt: true, hose: true }, boxerBriefs: { under: 'boxerBriefs' }, longJohns: { under: 'longJohns' }, boxers: { under: 'boxers' }, loin: {}, shirt: { shirt: true }, none: { nude: true } };
+// (with no fabric at all - None - the anatomy is drawn as the physics proxy,
+// never as a body; in a cloth it can slip out of, it is painted brown)
+const bare = () => state.outfit === 'none';
 // the anatomy's rest, degrees forward off the body's down: with physics on,
 // a bias the tissue leans toward (gravity and the body do the rest); with it
 // off, the fixed angle it is held at
@@ -47,7 +51,7 @@ const REST = { stand: 0, walk: 0, jog: 0, rope: 0, jump: 0, climb: 0, seat: 40, 
 const REST_FIXED = { stand: 0, walk: 0, jog: 0, rope: 0, jump: 0, climb: 0, seat: 80, hung: 150 };
 
 const state = {
-  look: 'ink', pose: 'stand', outfit: 'loin', focus: -1, frame: 'all', physics: true,
+  look: 'ink', pose: 'stand', outfit: 'loin', face: 'auto', focus: -1, frame: 'all', physics: true,
   rest: Object.assign({}, REST), restFixed: Object.assign({}, REST_FIXED), hungMode: 'physics', paused: false
 };
 const restOf = () => (state.physics && !(state.pose === 'hung' && state.hungMode === 'valley') ? state.rest : state.restFixed);
@@ -72,7 +76,7 @@ const STUDIO = {
   linen: clay(0xd8d2c4), breech: clay(0x6f6457), hair: clay(0x3b332c), hairGrey: clay(0xb3afa8),
   bone: clay(0xe6dccb), raw: clay(0x7c2424), rawUV: clay(0x7c2424), muscle: clay(0x9a4a40), muscleUV: clay(0x9a4a40),
   ink: new THREE.MeshBasicMaterial({ color: 0x17110e }), post: clay(0x5c4a3a), wood: clay(0x5c4a3a), rope: clay(0x8a7a5e),
-  areola: clay(0x9a7462),
+  areola: clay(0x9a7462), lip: clay(0xae8a78),
   floor: clay(0x34343a), wall: clay(0x45454c)
 };
 const toStudio = new Map(), toInk = new Map();
@@ -126,7 +130,8 @@ function build(i) {
   if (s.man) { s.g.remove(s.man); s.man.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
   const man = buildFigure(kit, seeded(101 + i * 7), Object.assign({
     build: m.build, beard: !!m.beard, recede: m.recede || 0, hairMat: m.grey ? kit.hairGrey : kit.hair,
-    anatomy: getAnatomy()   // (every man the sliders' values exactly - no per-man scatter, so the line compares)
+    anatomy: getAnatomy(),   // (every man the sliders' values exactly - no per-man scatter, so the line compares)
+    face: state.face === 'valley' ? 'valley' : undefined
   }, OUTFITS[state.outfit]));
   const u = man.userData;
   if (u.pouch) { u.pouch0 = u.pouch.position.clone(); }
@@ -134,10 +139,16 @@ function build(i) {
   u.ropes = ['l', 'r'].map(k => { const r = new THREE.Mesh(new THREE.TorusGeometry(6.4, 0.9, 6, 12), kit.rope); r.position.y = 2; r.rotation.x = PI / 2; r.visible = false; u.legs[k].foot.add(r); return r; });
   s.g.add(man); s.man = man;
   s.sim = u.pouch ? new FleshSim(man) : null;
-  if (state.outfit === 'none') proxy(man);
+  if (bare()) proxy(man);
+  setFaceOf(man);
   applyLook(man);
   return man;
 }
+// the face: by the pose unless one is picked - calm standing, walking or
+// seated; effort in a jog, a skip, a jump or a climb; strain hung head down
+// ('valley': the valley's own head, its scream, for comparison - a rebuild)
+const faceFor = () => state.face !== 'auto' ? state.face : ({ jog: 'effort', rope: 'effort', jump: 'effort', climb: 'effort', hung: 'pain' })[state.pose] || 'calm';
+function setFaceOf(man) { if (man.userData.setFace && state.face !== 'valley') man.userData.setFace(faceFor()); }
 function buildAll() {
   figures.length = 0;
   slots.forEach(s => { const man = build(s.i); if (man.userData.pouch) figures.push(man); });
@@ -361,12 +372,10 @@ function holdReadout(now) {
   const el = document.getElementById('hold'); if (!el) return;
   const s = slots[Math.max(0, state.focus)], u = s.man.userData, P = u.pouch;
   if (!P || !s.sim || !physicsOn(s)) { el.textContent = state.physics ? '' : 'Physics off: held at the rest angle'; return; }
-  const q = P.quaternion, rest = (s.sim.rest || 0) + (u.lift || 0);
-  const tilt = 2 * Math.acos(Math.min(1, Math.abs(q.w)));
-  const swing = Math.abs(tilt - rest) * 180 / Math.PI;
+  const swing = (s.sim.swing || 0) * 180 / Math.PI;
   holdLog.push([now, swing]); while (holdLog.length && now - holdLog[0][0] > 3000) holdLog.shift();
   const peak = Math.max(...holdLog.map(h => h[1]));
-  const sup = u.support, fabric = { none: 'None', minimal: 'Brief', loin: 'Loincloth', shirt: 'Shirt (brief under)', hose: 'Hose', both: 'Shirt + hose' }[state.outfit];
+  const sup = u.support, fabric = state.outfit === 'both' ? 'Shirt + hose' : (u.hold && u.hold.name) || state.outfit;
   el.textContent = `${MEN[s.i].name} · ${fabric}: swing ${swing.toFixed(0)}° · peak ${peak.toFixed(0)}° (3s) · hold ${!sup || sup >= 180 ? 'none' : sup + '° max'}${u.lift ? ', lifted ' + Math.round(u.lift * 180 / Math.PI) + '°' : ''}`;
 }
 function physicsOn(s) { return state.physics && s.sim && !(state.pose === 'hung' && state.hungMode === 'valley'); }
@@ -500,12 +509,17 @@ document.querySelectorAll('[data-look]').forEach(b => b.addEventListener('click'
 }));
 document.querySelectorAll('[data-pose]').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('[data-pose]').forEach(x => x.classList.toggle('on', x === b));
-  state.pose = b.dataset.pose; pose(0, true); ui.tools();
+  state.pose = b.dataset.pose; slots.forEach(s => s.man && setFaceOf(s.man)); pose(0, true); ui.tools();
   if (state.focus >= 0) goTo(state.frame, state.focus);   // (the man's moved: the view follows, once)
 }));
 document.querySelectorAll('[data-outfit]').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('[data-outfit]').forEach(x => x.classList.toggle('on', x === b));
   state.outfit = b.dataset.outfit; buildAll();
+}));
+document.querySelectorAll('[data-face]').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('[data-face]').forEach(x => x.classList.toggle('on', x === b));
+  const was = state.face; state.face = b.dataset.face;
+  if (was === 'valley' || state.face === 'valley') buildAll(); else { slots.forEach(s => s.man && setFaceOf(s.man)); dirty = true; }
 }));
 document.querySelectorAll('[data-frame]').forEach(b => b.addEventListener('click', () => {
   const f = b.dataset.frame;
@@ -568,7 +582,7 @@ initDevOverlay(figures, {
   onAuthed: open,
   // (a slider moved: the overlay rebuilt each man's anatomy in place - give
   // the new pieces the room's look and put them back in the pose)
-  onChange() { slots.forEach(s => { if (state.outfit === 'none') proxy(s.man); applyLook(s.man); }); awake = 1; pose(0); }
+  onChange() { slots.forEach(s => { if (bare()) proxy(s.man); applyLook(s.man); }); awake = 1; pose(0); }
 });
 // the lab's own hook for the visual checks (scripts in a headless browser)
 window.__lab = { state, setLook, pose: (f) => pose(0, f), step: dt => pose(dt), redraw: () => { dirty = true; }, goTo, buildAll, slots, ui, view, camera, framing };
