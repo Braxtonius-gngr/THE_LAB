@@ -720,14 +720,14 @@ function vStake(kit, rnd) {
   const FEET = 66, FORK = FEET + BODY_HIPS - 9, SHOULDER = FEET + BODY_HIPS + 50, TIP = SHOULDER + 32;
   const H = TIP;
   const stakeGeo = new THREE.CylinderGeometry(1.7, 5, TIP - 10, 9); stakeGeo.translate(0, (TIP - 10) / 2, 0);
-  const stake = mesh(stakeGeo, kit.post, g, 2); stake.position.set(0, 0, 3);
+  const stake = mesh(stakeGeo, kit.post, g, 2); stake.position.set(0, 0, 0);
   const point = mesh(new THREE.ConeGeometry(1.7, 10, 9), kit.post, stake, 1.4); point.position.y = TIP - 5;
   // the mound it is planted in, the blood run down into it
-  const mound = mesh(new THREE.SphereGeometry(24, 16, 8, 0, PI * 2, 0, HALF), kit.stone, g, 1.4); mound.scale.set(1, 0.36, 0.9); mound.position.set(0, -0.5, 3);
+  const mound = mesh(new THREE.SphereGeometry(24, 16, 8, 0, PI * 2, 0, HALF), kit.stone, g, 1.4); mound.scale.set(1, 0.36, 0.9); mound.position.set(0, -0.5, 0);
   const piv = G(g, 0, FORK, 0);
   const man = buildFigure(kit, rnd, { hose: true, beard: true }); piv.add(man); restBody(man);
   man.position.set(0, -(BODY_HIPS - 9), 0); man.rotation.set(0.06, 0.18, 0.05);   // (nearly square on: turned three-quarters he showed his back, not his fall)
-  shade(g, 0, 3, 26, 16, 20); shade(g, -44, -12, 22, 12); shade(g, 0, 0, 16, 10, 120);
+  shade(g, 0, 0, 26, 16, 20); shade(g, -44, -12, 22, 12); shade(g, 0, 0, 16, 10, 120);
   const d = man.userData;
   // the slump: the head fallen away from the point, the arms hanging, one
   // hand at the shaft below him; the legs dangling apart either side of it
@@ -768,7 +768,7 @@ function vStake(kit, rnd) {
   // the glass held up to his face at arm's length, as far as the arm goes
   const raised = reach(dd.arms.r, [face.x - 32, Math.min(face.y - 8, 194), face.z - 20], death, 12, { start: [2.4, 0, -0.2, 0.3] });
   const glass = buildHourglass(kit, 26); glass.position.set(0, -15, -4); glass.rotation.x = 0.3; dd.arms.r.hand.add(glass); dd.arms.r.hand.userData.grip(0.45);
-  g.add(pool(kit, rnd, 20)).position.set(-6, 0, 4);
+  g.add(pool(kit, rnd, 20)).position.set(-6, 0, 1);
   // (the blood from where the point came out, down his breast; the shaft
   // red from his fork to the ground)
   bleed(man, 0.17); bands.push([man, SHOULDER + 6, SHOULDER - 26]);
@@ -780,7 +780,7 @@ function vStake(kit, rnd) {
     dd.neck.rotation.y = still ? 0 : Math.sin(tt * 0.4) * 0.15;
     setArm(dd.arms.r, raised); dd.arms.r.sh.rotation.x += still ? 0 : Math.sin(tt * 0.7) * 0.05;
   };
-  return { g, death, act, bands, drips: [[V(-2, FORK - 6, -2), V(-2, 2, 2)]], crows: [[0, TIP + 2, 3]], width: 100, victims: [man], freed: { pose: 'peace', at: [-44, 0, -26], beside: [52, -6] } };
+  return { g, death, act, bands, drips: [[V(-2, FORK - 6, -2), V(-2, 2, -1)]], crows: [[0, TIP + 2, 0]], width: 100, victims: [man], freed: { pose: 'peace', at: [-44, 0, -26], beside: [52, -6] } };
 }
 // VII. THE DRAGGING. Death striding off to your left, leant into it, a man
 // behind him by one ankle: flat on his back, dragged feet first, the leg up
