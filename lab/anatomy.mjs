@@ -38,7 +38,7 @@ const MEN = [
   { name: 'Heavy', build: { height: 1.0, mass: 1, muscle: 0.2, age: 0.3 }, beard: true },
   { name: 'Small', build: { height: 0.88, mass: 0.05, muscle: 0.1, age: 0.1 } }
 ];
-const OUTFITS = { loin: {}, shirt: { shirt: true }, hose: { hose: true }, both: { shirt: true, hose: true } };
+const OUTFITS = { minimal: { brief: true }, loin: {}, shirt: { shirt: true }, hose: { hose: true }, both: { shirt: true, hose: true } };
 // the anatomy's rest, degrees forward off the body's down: with physics on,
 // a bias the tissue leans toward (gravity and the body do the rest); with it
 // off, the fixed angle it is held at
@@ -72,6 +72,7 @@ const STUDIO = {
   linen: clay(0xd8d2c4), breech: clay(0x6f6457), hair: clay(0x3b332c), hairGrey: clay(0xb3afa8),
   bone: clay(0xe6dccb), raw: clay(0x7c2424), rawUV: clay(0x7c2424), muscle: clay(0x9a4a40), muscleUV: clay(0x9a4a40),
   ink: new THREE.MeshBasicMaterial({ color: 0x17110e }), post: clay(0x5c4a3a), wood: clay(0x5c4a3a), rope: clay(0x8a7a5e),
+  areola: clay(0x9a7462),
   floor: clay(0x34343a), wall: clay(0x45454c)
 };
 const toStudio = new Map(), toInk = new Map();
@@ -153,7 +154,7 @@ function applyLook(root) {
     // made with: find its ink plate either way)
     if (!o.userData.inkMat) o.userData.inkMat = toInk.get(o.material) || o.material;
     const ink = o.userData.inkMat;
-    o.material = studio ? (toStudio.get(ink) || STUDIO.flesh) : ink;
+    o.material = studio ? (toStudio.get(ink) || STUDIO[ink.userData && ink.userData.studioKey] || STUDIO.flesh) : ink;
     o.castShadow = o.receiveShadow = studio;
   });
 }
@@ -185,6 +186,8 @@ function stillFlesh(u) {
   const d = g.userData;
   if (d.shaft) { d.shaft.quaternion.identity(); d.shaft.position.set(0, 0, 0); }
   (d.lobes || []).forEach(l => { if (l.userData.p0) l.position.copy(l.userData.p0); });
+  if (d.updateSac) d.updateSac();
+  if (u.cup) u.cup.quaternion.identity();
 }
 // (age carries the head forward and eases the knees; the face is lifted
 // back to look ahead)
@@ -326,7 +329,7 @@ function poseMan(s, t) {
   if (u.pouch) {
     const valley = P === 'hung' && state.hungMode === 'valley';
     if (valley) { stillFlesh(u); u.pouch.rotation.set(0.14, 0, PI); u.pouch.position.set(0, -13.0, -11.0); }
-    else if (!state.physics) { stillFlesh(u); if (P !== 'walk') u.pouch.rotation.x = restA; else u.pouch.rotation.x += restA; }
+    else if (!state.physics) { stillFlesh(u); const lift = u.lift || 0; if (P !== 'walk') u.pouch.rotation.x = restA + lift; else u.pouch.rotation.x += restA + lift; }
     else if (s.sim) s.sim.rest = restA;
   }
   updateSleeves(man);
