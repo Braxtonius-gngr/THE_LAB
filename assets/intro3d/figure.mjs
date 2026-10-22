@@ -352,6 +352,195 @@ function buildHead(kit, o = {}) {
   return head;
 }
 
+// ------------------------------------------------------------ a man's anatomy
+// Under the cloth a man is built as a man is: a sac holding two lobes that
+// hang a little unevenly, and the shaft attached at its root above them,
+// hanging down over the top of the lobes and pushed forward and out by
+// them as it rests on them. Everything is in the cloth's own material with
+// ------------------------------------------------------------ anatomy
+// A man's anatomy under the cloth, set before render and never reshaped by
+// physics or scene events. Every parameter is a dev setting: adjustable in
+// real time for tuning (each change rebuilds the mesh), but locked behind
+// authentication in the dev overlay — never exposed to the scene or the UI.
+//
+// Parameters (all set before render; rebuild() regenerates the mesh live):
+//   size       overall scale of the whole system (1.5 = generous start)
+//   length     the shaft's length (scale, gorge amplifies toward max)
+//   girth      the shaft's thickness (scale, gorge amplifies toward max)
+//   depth      how far the lobes push the shaft forward and out
+//   fullnessL  left lobe fill 0–100 (0 = empty/slack, 100 = round/high)
+//   fullnessR  right lobe fill 0–100
+//   hangL      left lobe drop 0–100 (0 = tight/close, 100 = as low as sac allows)
+//   hangR      right lobe drop 0–100
+//   gorge      0–100: scales girth, length, size toward their max
+//              (0 = natural soft resting state, NOT absent; 100 = full max)
+//   sway       physics response amplitude (how freely it answers motion)
+//
+// Gravity comes from the pose: the `pouch` group's orientation is set by
+// valley.mjs per figure (the sawyer hung head-down turns it end for end).
+// `pouchSway` adds a small lagging pendulum on top — rotation only, never
+// a reshape.
+let ANATOMY = {
+  size: 1.5, length: 1.5, girth: 1.5, depth: 1.2,
+  fullnessL: 65, fullnessR: 60,
+  hangL: 45, hangR: 55,
+  gorge: 0, sway: 1.0
+};
+export function setAnatomy(o) { ANATOMY = Object.assign({}, ANATOMY, o); }
+export function getAnatomy() { return Object.assign({}, ANATOMY); }
+
+// (each man his own: the defaults varied per-man by a seeded rng)
+function anatomyFor(rnd) {
+  const v = (base, k) => base * (1 + (rnd() - 0.5) * k);
+  const pct = (base, k) => Math.max(0, Math.min(100, base + (rnd() - 0.5) * k));
+  return {
+    size: v(ANATOMY.size, 0.16),
+    length: v(ANATOMY.length, 0.24),
+    girth: v(ANATOMY.girth, 0.2),
+    depth: v(ANATOMY.depth, 0.3),
+    fullnessL: pct(ANATOMY.fullnessL, 30),
+    fullnessR: pct(ANATOMY.fullnessR, 30),
+    hangL: pct(ANATOMY.hangL, 40),
+    hangR: pct(ANATOMY.hangR, 40),
+    gorge: ANATOMY.gorge,
+    sway: ANATOMY.sway
+  };
+}
+
+// a tube swept along points with a radius at each (rings of n), closed at
+// both ends, with UVs laid in world units so the hatch matches the body
+function sweep(pts, radii, n = 12, metric) {
+  const c = new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(...p)));
+  const S = Math.max(8, pts.length * 4), pos = [], uv = [], idx = [];
+  const frames = c.computeFrenetFrames(S, false);
+  const rAt = t => { const f = t * (radii.length - 1), i = Math.min(radii.length - 2, Math.floor(f)), k = f - i; return radii[i] * (1 - k) + radii[i + 1] * k; };
+  const fq = metric ? 1.3 / (metric[2] || 1.3) : 1;
+  const mu = metric ? DENS * fq / metric[0] : 1;
+  const mv = metric ? DENS * fq / metric[1] : 1;
+  // arc length along the curve for v-coordinate
+  const vAt = [0]; let runLen = 0;
+  for (let j = 1; j <= S; j++) { runLen += c.getPointAt(j / S).distanceTo(c.getPointAt((j - 1) / S)); vAt.push(runLen); }
+  for (let j = 0; j <= S; j++) {
+    const t = j / S, p = c.getPointAt(t), r = rAt(t), N = frames.normals[j], B = frames.binormals[j];
+    const circ = 2 * PI * r;
+    for (let i = 0; i < n; i++) {
+      const a = i / n * PI * 2;
+      pos.push(p.x + r * (Math.cos(a) * N.x + Math.sin(a) * B.x), p.y + r * (Math.cos(a) * N.y + Math.sin(a) * B.y), p.z + r * (Math.cos(a) * N.z + Math.sin(a) * B.z));
+      uv.push(metric ? (i / n) * circ * mu : i / n, metric ? vAt[j] * mv : j / S);
+    }
+  }
+  for (let j = 0; j < S; j++) for (let i = 0; i < n; i++) { const a = j * n + i, b = j * n + (i + 1) % n, c2 = a + n, d = b + n; idx.push(a, b, c2, b, d, c2); }
+  [0, S].forEach((j, k) => { const p = c.getPointAt(k), ci = pos.length / 3; pos.push(p.x, p.y, p.z); uv.push(0.5, k ? vAt[S] * mv : 0); for (let i = 0; i < n; i++) { const a = j * n + i, b = j * n + (i + 1) % n; if (k) idx.push(ci, a, b); else idx.push(ci, b, a); } });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  return g;
+}
+
+// resolve gorge: at 0% the params are natural (unchanged), at 100% they
+// reach the max the creation params allow — gorge amplifies girth, length,
+// size toward their ceiling, never past it
+function applyGorge(a) {
+  const g = Math.max(0, Math.min(100, a.gorge)) / 100;
+  // the max each param can reach is 1.6× its creation value (the ceiling
+  // is proportional to the man's own build, not a global constant)
+  const amp = (base) => base * (1 + g * 0.6);
+  return Object.assign({}, a, {
+    size: amp(a.size),
+    length: amp(a.length),
+    girth: amp(a.girth)
+  });
+}
+
+function buildAnatomy(pouch, m, a) {
+  // clear any previous build (for live rebuild)
+  while (pouch.children.length) {
+    const c = pouch.children[0];
+    if (c.geometry) c.geometry.dispose();
+    pouch.remove(c);
+  }
+  const resolved = applyGorge(a);
+  const g = new THREE.Group(); pouch.add(g); g.scale.setScalar(resolved.size);
+
+  // the two lobes, each with its own fullness and hang
+  // fullness 0–100: 0 slack/empty, 100 round/full
+  // hang 0–100: 0 tight to the body, 100 as low as the sac loft allows
+  const fL = a.fullnessL / 100, fR = a.fullnessR / 100;
+  const hL = a.hangL / 100, hR = a.hangR / 100;
+  // lobe radius grows with fullness; drop grows with hang and inversely
+  // with fullness (a full lobe sits higher, an empty one sags)
+  const lobeR = f => 2.7 + f * 0.7;
+  const lobeDrop = (f, h) => 6.4 + (1 - f) * 2.6 + h * 3.2;
+  const lobeSquash = f => 1.12 + (1 - f) * 0.2;
+  const lrL = lobeR(fL), lrR = lobeR(fR);
+  const dropL = lobeDrop(fL, hL), dropR = lobeDrop(fR, hR);
+  const lobes = [
+    { sx: -1, lr: lrL, drop: dropL, full: fL, squash: lobeSquash(fL) },
+    { sx:  1, lr: lrR, drop: dropR, full: fR, squash: lobeSquash(fR) }
+  ].map(({ sx, lr, drop, full, squash }) => {
+    const lobe = facet(knob(lr, 1.0, squash, 1.0, 2), m, g, 0);
+    lobe.position.set(sx * (lr * 0.62), -drop, -0.6);
+    lobe.rotation.z = sx * 0.12;
+    lobe.userData.pouch = true;
+    return lobe;
+  });
+
+  // the sac loft wrapping both lobes: its profile follows whichever lobe
+  // hangs lower (fruit in a mesh bag — the bag stretches to hold them)
+  const avgLR = (lrL + lrR) / 2;
+  const sacLow = -Math.max(dropL, dropR) - 0.45;
+  facet(loft([
+    { y: 1.0, rx: 2.0, rz: 1.6 },
+    { y: -2.0, rx: avgLR * 1.15, rz: avgLR * 0.9 },
+    { y: sacLow + avgLR * 0.3, rx: avgLR * 1.55, rz: avgLR * 0.95 },
+    { y: sacLow - avgLR * 0.55, rx: avgLR * 1.25, rz: avgLR * 0.8 },
+    { y: sacLow - avgLR * 0.95, rx: 0.3, rz: 0.3 }
+  ], { n: 14, metric: UVM.linen }), m, g, 0).position.z = -0.4;
+
+  // the shaft: attached at the root above the lobes, it falls forward
+  // over their top and lies down the front of them, pushed out by their
+  // depth; gorge amplifies its girth and length toward the max
+  const L = 9.6 * resolved.length;
+  const r = 1.75 * resolved.girth;
+  const avgDrop = (dropL + dropR) / 2;
+  const front = -0.6 - avgLR - r * 0.75 - (a.depth - 1) * 1.2;
+  const pts = [
+    [0, 0.6, -1.4],
+    [0, -1.6, front * 0.62],
+    [0, -avgDrop + avgLR * 0.55, front],
+    [0, -avgDrop - avgLR * 0.2, front - 0.15],
+    [0, -2.0 - L, front + 0.5]
+  ];
+  const sh = facet(sweep(pts, [r * 1.08, r, r * 0.98, r * 1.02, r * 0.55], 14, UVM.linen), m, g, 0);
+  sh.userData.pouch = true;
+  g.userData = { lobes, shaft: sh, sway: a.sway, params: a };
+  return g;
+}
+
+// rebuild in place: tear down the old mesh and build with new params,
+// keeping the pouch group's position and orientation (for the dev overlay)
+export function rebuildAnatomy(fig, newParams) {
+  const p = fig.userData.pouch; if (!p) return;
+  const old = p.children[0] && p.children[0].userData.params;
+  const a = Object.assign({}, old || anatomyFor(() => 0.5), newParams);
+  // find the material from any existing mesh child
+  let m = null;
+  p.traverse(c => { if (!m && c.isMesh && c.material) m = c.material; });
+  if (!m) return;
+  buildAnatomy(p, m, a);
+}
+
+// its answer to the body's motion: a small lagging pendulum swing
+// (ph = the stride's phase, amp = how hard the body moves)
+// This ONLY rotates the group — it never changes scale or vertex positions
+export function pouchSway(fig, ph, amp = 1) {
+  const p = fig.userData.pouch; if (!p) return;
+  const g = p.children[0], k = (g && g.userData.sway) || 1;
+  p.rotation.z = Math.sin(ph - 0.6) * 0.07 * amp * k;
+  p.rotation.x = (p.userData.rx0 == null ? (p.userData.rx0 = p.rotation.x) : p.userData.rx0) + Math.abs(Math.sin(ph - 0.6)) * 0.05 * amp * k;
+}
+
 // ------------------------------------------------------------ the body
 // o.flayed: the raw muscle, no hair; o.shirt, o.hose, o.beard; o.split: the
 // torso cut in two from the fork up (the sawyer's man), halves parting on a
@@ -485,15 +674,8 @@ export function buildFigure(kit, rnd, o = {}) {
     // belly fat, not a man)
     pouch = G(hips, 0, -8.6, o.hose ? -7.2 : covered ? -8.8 : -10.0);
     const m = o.hose || covered ? kit.linen : (kit.breech || kit.linen);
-    // (two forms under the cloth, as a man is made: a broad rounded base low
-    // in the fork, two lobes side by side, and resting forward on it a
-    // narrower, deeper mass that hangs down over it - one smooth knob, with
-    // nothing under it to sit on, read as a doll's)
-    [-1, 1].forEach(sx => { const lobe = facet(knob(3.2, 1.0, 1.1, 1.0, 2), m, pouch, 0); lobe.position.set(sx * 1.6, -7.8, -1.0); lobe.userData.pouch = true; });
-    const pg = facet(loft([{ y: 1.4, rx: 1.6, rz: 1.6 }, { y: -0.8, rx: 2.4, rz: 2.8, front: 0.6 }, { y: -3.6, rx: 2.6, rz: 3.1, front: 0.9 }, { y: -6.8, rx: 2.6, rz: 3.0, front: 0.8 }, { y: -9.4, rx: 2.3, rz: 2.6, front: 0.5 }, { y: -11.0, rx: 1.4, rz: 1.6 }, { y: -11.6, rx: 0.3, rz: 0.3 }], { n: 12, metric: UVM.linen }), m, pouch, 0);
-    pg.position.z = -2.4;
-    pouch.rotation.x = -0.1; pouch.scale.setScalar(1.12);   // (true to a man's size: smaller, it still read as a doll's)
-    pg.userData.pouch = true;
+    const anat = Object.assign(anatomyFor(rnd), o.anatomy || {});
+    buildAnatomy(pouch, m, anat);
   }
   const legs = {};
   const legM = o.hose && !flayed ? kit.linen : skinUV, legS = o.hose && !flayed ? kit.linen : skin, legUV = o.hose && !flayed ? UVM.linen : UVS;
