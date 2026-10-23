@@ -170,6 +170,12 @@ const PARAMS = [
   { key: 'sway',      label: 'Sway',        min: 0,    max: 3,   step: 0.1 },
 ];
 
+// saved slider states (this browser only; nothing loads on its own, so a
+// bad set can never stick - a reload is always the baseline)
+const PRESETS_KEY = 'dev_overlay_presets_v1';
+function readPresets() { try { return JSON.parse(localStorage.getItem(PRESETS_KEY) || '{}') || {}; } catch (_) { return {}; } }
+function writePresets(all) { try { localStorage.setItem(PRESETS_KEY, JSON.stringify(all)); } catch (_) { /* storage blocked */ } }
+
 // ── overlay DOM ──────────────────────────────────────────────────────
 function buildOverlayUI(figures, opts = {}) {
   const root = document.createElement('div');
@@ -201,7 +207,7 @@ function buildOverlayUI(figures, opts = {}) {
     title.style.marginBottom = open ? '8px' : '0';
   });
 
-  const current = getAnatomy();
+  const live = getAnatomy();
 
   PARAMS.forEach(p => {
     const row = document.createElement('div');
@@ -212,17 +218,19 @@ function buildOverlayUI(figures, opts = {}) {
     const span = document.createElement('span');
     span.textContent = p.label;
     const val = document.createElement('span');
-    val.textContent = String(current[p.key]);
+    val.textContent = String(live[p.key]);
     val.style.color = '#8cf';
     lbl.appendChild(span);
     lbl.appendChild(val);
 
     const slider = document.createElement('input');
     slider.type = 'range';
+    slider.dataset.key = p.key;
+    slider._val = val;
     slider.min = p.min;
     slider.max = p.max;
     slider.step = p.step;
-    slider.value = current[p.key];
+    slider.value = live[p.key];
     slider.style.cssText = 'width:100%;accent-color:#4af;' + (opts.compact ? 'margin:0;height:18px;' : '');
 
     slider.addEventListener('input', () => {
@@ -241,39 +249,78 @@ function buildOverlayUI(figures, opts = {}) {
     body.appendChild(row);
   });
 
-  // reset button
-  const reset = document.createElement('button');
-  reset.textContent = 'Reset defaults';
-  reset.style.cssText = [
-    'margin-top:8px', 'width:100%', 'padding:6px', 'border:1px solid #555',
+  // ── whole-panel moves: baseline, the floor, the ceiling, saved states ──
+  const sliders = () => [...body.querySelectorAll('input[type=range][data-key]')];
+  const fmt = (p, v) => (p.step >= 1 ? String(v) : Number(v).toFixed(2));
+  // set every slider at once and rebuild the men a single time
+  function setAll(vals) {
+    const patch = {};
+    sliders().forEach(sl => {
+      const p = PARAMS.find(q => q.key === sl.dataset.key);
+      if (!p || vals[p.key] == null || !isFinite(vals[p.key])) return;
+      const v = Math.min(p.max, Math.max(p.min, +vals[p.key]));
+      sl.value = v; sl._val.textContent = fmt(p, v); patch[p.key] = v;
+    });
+    setAnatomy(patch);
+    figures.forEach(fig => rebuildAnatomy(fig, patch));
+    if (opts.onChange) opts.onChange(patch);
+  }
+  const current = () => { const o = {}; sliders().forEach(sl => { o[sl.dataset.key] = parseFloat(sl.value); }); return o; };
+  const extreme = side => { const o = {}; PARAMS.forEach(p => { o[p.key] = p[side]; }); return o; };
+
+  const btnCss = [
+    'margin-top:6px', 'width:100%', 'padding:6px', 'border:1px solid #555',
     'background:#222', 'color:#ccc', 'border-radius:4px', 'cursor:pointer',
     'font:11px monospace',
   ].join(';');
-  reset.addEventListener('click', () => {
-    const defaults = Object.assign({}, DEFAULTS);
-    setAnatomy(defaults);
-    root.querySelectorAll('input[type=range]').forEach((sl, i) => {
-      const p = PARAMS[i];
-      sl.value = defaults[p.key];
-      sl.previousElementSibling
-        ? sl.parentElement.querySelector('span:last-child').textContent =
-            p.step >= 1 ? String(defaults[p.key]) : defaults[p.key].toFixed(2)
-        : null;
-    });
-    figures.forEach(fig => rebuildAnatomy(fig, defaults));
-    if (opts.onChange) opts.onChange(defaults);
-  });
-  body.appendChild(reset);
+  const mkBtn = (text, fn) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = text; b.style.cssText = btnCss; b.addEventListener('click', fn); return b; };
+
+  // three across: back to the creation values, everything to its minimum, to its maximum
+  const trio = document.createElement('div');
+  trio.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;grid-column:1/-1;';
+  trio.append(
+    mkBtn('Baseline', () => setAll(Object.assign({}, DEFAULTS))),
+    mkBtn('All min', () => setAll(extreme('min'))),
+    mkBtn('All max', () => setAll(extreme('max'))),
+  );
+  body.appendChild(trio);
+
+  // saved states: named sets of slider values, kept in this browser only
+  const saves = document.createElement('div');
+  saves.style.cssText = 'display:grid;grid-template-columns:1fr auto auto auto;gap:6px;align-items:center;margin-top:6px;grid-column:1/-1;';
+  const pick = document.createElement('select');
+  pick.style.cssText = 'min-width:0;padding:5px;background:#111;color:#ddd;border:1px solid #555;border-radius:4px;font:11px monospace;';
+  const small = b => { b.style.marginTop = '0'; b.style.width = 'auto'; b.style.padding = '5px 8px'; return b; };
+  function refresh(sel) {
+    const all = readPresets(), names = Object.keys(all).sort();
+    pick.innerHTML = '';
+    const none = document.createElement('option'); none.value = ''; none.textContent = names.length ? 'Saved states…' : 'No saved states';
+    pick.appendChild(none);
+    names.forEach(n => { const o = document.createElement('option'); o.value = n; o.textContent = n; pick.appendChild(o); });
+    pick.value = sel && all[sel] ? sel : '';
+  }
+  const save = small(mkBtn('Save', () => {
+    const name = (prompt('Name this state:', pick.value || '') || '').trim();
+    if (!name) return;
+    const all = readPresets(); all[name] = current(); writePresets(all); refresh(name);
+  }));
+  const load = small(mkBtn('Load', () => { const all = readPresets(); if (all[pick.value]) setAll(all[pick.value]); }));
+  const del = small(mkBtn('Delete', () => {
+    if (!pick.value || !confirm(`Delete "${pick.value}"?`)) return;
+    const all = readPresets(); delete all[pick.value]; writePresets(all); refresh();
+  }));
+  pick.addEventListener('change', () => { const all = readPresets(); if (all[pick.value]) setAll(all[pick.value]); });
+  saves.append(pick, save, load, del);
+  body.appendChild(saves);
+  refresh();
 
   // copy-params button
   const copy = document.createElement('button');
   copy.textContent = 'Copy params';
-  copy.style.cssText = reset.style.cssText;
+  copy.style.cssText = btnCss + ';grid-column:1/-1;';
   copy.addEventListener('click', () => {
     const vals = {};
-    PARAMS.forEach((p, i) => {
-      vals[p.key] = parseFloat(root.querySelectorAll('input[type=range]')[i].value);
-    });
+    Object.assign(vals, current());
     navigator.clipboard.writeText(JSON.stringify(vals, null, 2))
       .then(() => { copy.textContent = 'Copied ✓'; setTimeout(() => copy.textContent = 'Copy params', 1200); });
   });
