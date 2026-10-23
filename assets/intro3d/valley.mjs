@@ -396,11 +396,17 @@ function vSawyer(kit, rnd) {
     // the stroke: a slow draw back, a bite forward, the frame giving
     const s = still ? 0 : Math.sin(tt * 2.6), c = still ? 0 : Math.cos(tt * 2.6);
     saw.position.copy(sawAt(s));
-    dd.spine.rotation.x = -0.14 - s * 0.1;
+    // Death leans into the push stroke and straightens on the pull
+    dd.spine.rotation.x = -0.14 - s * 0.14;
     setArm(dd.arms.l, lerp3(sawPose[0].l, sawPose[1].l, sawPose[2].l, s)); setArm(dd.arms.r, lerp3(sawPose[0].r, sawPose[1].r, sawPose[2].r, s));
-    dd.hips.position.y = 88 - Math.abs(c) * 1.5;
+    // deeper hip drop on the push, rising on the pull — weight into it
+    dd.hips.position.y = 88 - Math.abs(c) * 2.5 - Math.max(0, s) * 1.5;
+    // the head dips with the push, lifts on the pull
+    dd.neck.rotation.x = still ? 0 : s * -0.1;
+    // weight shifts side to side with the stroke
+    dd.hips.rotation.z = still ? 0 : c * 0.04;
     man.rotation.y = (still ? 0 : Math.sin(tt * 0.7) * 0.05) + w * 0.12;
-    man.rotation.x = still ? 0 : c * 0.012;
+    man.rotation.x = still ? 0 : c * 0.015;
     d.arms.r.sh.rotation.x = 0.12 + (still ? 0 : Math.sin(tt * 1.3) * 0.06);
     beam.position.y = H + (still ? 0 : Math.abs(c) * -0.6);
   };
@@ -481,8 +487,15 @@ function vWindlass(kit, rnd) {
     // the arm follows the crank's handle: the shoulder and elbow swing round
     const f = ((a / (PI * 2)) % 1 + 1) % 1 * 8, n0 = Math.floor(f) % 8, n1 = (n0 + 1) % 8, k = f - Math.floor(f);
     setArm(dd.arms.r, turn[n0].map((v, j) => v + (turn[n1][j] - v) * k));
-    dd.spine.rotation.z = still ? 0 : Math.cos(a) * 0.05;
+    // Death leans into the crank: weight shifts with the turn
+    const ca = Math.cos(a), sa = Math.sin(a);
+    dd.spine.rotation.z = still ? 0 : ca * 0.08;
+    dd.spine.rotation.x = -0.12 - (still ? 0 : Math.max(0, -sa) * 0.1);   // bows into the push
+    dd.hips.position.y = 92 - (still ? 0 : Math.max(0, -sa) * 3);          // drops weight into it
+    dd.hips.rotation.z = still ? 0 : ca * 0.04;                             // hip sway
+    dd.legs.r.kn.rotation.x = 0.3 + (still ? 0 : Math.max(0, sa) * 0.15); // steps into crank
     dd.neck.rotation.y = 0.5 + (still ? 0 : Math.sin(tt * 0.5) * 0.15);
+    dd.neck.rotation.x = still ? 0 : Math.max(0, -sa) * -0.08;             // head dips with effort
     // the man: a hand lifts and falls, the head rolls
     d.arms.r.el.rotation.x = 0.25 + (still ? 0 : Math.max(0, Math.sin(tt * 0.9)) * 0.7);
     d.neck.rotation.z = still ? 0 : Math.sin(tt * 0.6) * 0.3;
@@ -549,8 +562,17 @@ function vFlaying(kit, rnd) {
   const dd = death.userData;
   dd.spine.rotation.x = -0.12; dd.legs.r.hip.rotation.x = -0.3; dd.legs.l.hip.rotation.x = 0.25; dd.legs.l.kn.rotation.x = KNEE_BACK * 0.3;
   const knife = mesh(new THREE.BoxGeometry(0.6, 2.6, 16), kit.iron, g, 1.2); knife.position.z = 6; hold(dd.arms.r.hand, knife, { axis: 'z' });   // (the blade out past the thumb)
-  const cutAt = reach(dd.arms.r, [17, 104, -21], death, 12, { start: [0.9, 0, -0.3, 1.0] });
-  reach(dd.arms.l, [15, 146, -19], death, 12, { start: [1.4, 0, 0.3, 0.6] }); dd.arms.l.hand.userData.grip(0.7);
+  // the knife hand: solved at three heights along the cut - a short drag
+  // down through the skin, the blade biting, then lifted back to the top
+  const cutPoses = [-1, 0, 1].map(sx => {
+    const cy = 116 + sx * 12;   // (drag down 12 cm each way from the mid-cut)
+    return reach(dd.arms.r, [15 + sx * 2, cy, -19 - sx * 1], death, 12, { start: [0.9, 0, -0.3, 1.0] });
+  });
+  // the left hand: gripping at the shoulder and pulling the skin back -
+  // solved at two positions, a hold and a peel
+  const holdAt = reach(dd.arms.l, [12, 148, -17], death, 12, { start: [1.4, 0, 0.3, 0.6] });
+  const peelAt = reach(dd.arms.l, [6, 152, -24], death, 12, { start: [1.4, 0, 0.3, 0.6] });
+  dd.arms.l.hand.userData.grip(0.7);
   g.add(pool(kit, rnd, 26)).position.set(0, 0, -16);
   bleed(trunk); bands.push([trunk, 150, 0]);
   const act = (tt, dt, w, still) => {
@@ -558,8 +580,20 @@ function vFlaying(kit, rnd) {
     skin.rotation.y = SKIN_Y + (still ? 0 : Math.sin(tt * 1.1) * 0.12) + w * 0.6;
     skin.rotation.x = (still ? 0 : Math.sin(tt * 0.8 + 1) * 0.06) - w * 0.25;
     d.neck.rotation.z = 0.3 + (still ? 0 : Math.sin(tt * 0.45) * 0.25);
-    setArm(dd.arms.r, cutAt); dd.arms.r.el.rotation.x += still ? 0 : Math.sin(tt * 1.9) * 0.08;
-    dd.neck.rotation.y = still ? 0 : Math.sin(tt * 0.3) * 0.2;
+    // the cutting stroke: a deliberate drag down then a lift back up
+    // (a 2.8 s cycle: the slow bite down for 0.6, the lift for 0.4)
+    const cs = still ? 0 : Math.sin(tt * 2.2);
+    setArm(dd.arms.r, lerp3(cutPoses[0], cutPoses[1], cutPoses[2], cs));
+    // Death leans into the cut on the down-stroke, straightens on the lift
+    dd.spine.rotation.x = -0.12 - (still ? 0 : Math.max(0, cs) * 0.1);
+    // the left hand peels: alternates between hold and pull-back
+    const pk = still ? 0 : (Math.sin(tt * 1.1) * 0.5 + 0.5);
+    setArm(dd.arms.l, holdAt.map((v, j) => v + (peelAt[j] - v) * pk));
+    // the head watches the blade, tracking down the cut
+    dd.neck.rotation.y = (still ? 0 : Math.sin(tt * 0.3) * 0.2);
+    dd.neck.rotation.x = still ? 0 : cs * -0.08;
+    // shift weight with the stroke
+    dd.hips.position.y = 92 - (still ? 0 : Math.max(0, cs) * 2);
   };
   return { g, death, act, bands, drips: [[V(17, 100, -22), V(15, 2, -20)]], crows: [[-40, 208, 2], [40, 214, -4]], width: 120, victims: [man, skin, belt, ...cords], freed: { pose: 'dance', at: [-18, 0, -46] } };
 }
@@ -618,18 +652,26 @@ function vWheel(kit, rnd) {
   // (no band of blood round him: across his belly it read as a red corset;
   // the blood is at the breaks, and drips off the rim under them)
   const act = (tt, dt, w, still) => {
-    // the blow: a long wind-up, the bar brought down, a settle (a 3.4 s cycle)
-    const c = still ? 0.3 : (tt % 3.4) / 3.4;
-    const up = smoother(c / 0.55) * (1 - smoother((c - 0.62) / 0.1)), down = smoother((c - 0.62) / 0.1) * (1 - smoother((c - 0.78) / 0.22));
-    const raise = up * 2.4 + down * -0.5, rec = down * 0.12;
+    // the blow: a slow, deliberate wind-up, the bar brought crashing down,
+    // a pause of recovery (a 3.8 s cycle with more time on the wind-up)
+    const c = still ? 0.3 : (tt % 3.8) / 3.8;
+    const up = smoother(c / 0.55) * (1 - smoother((c - 0.60) / 0.06));
+    const down = smoother((c - 0.60) / 0.06) * (1 - smoother((c - 0.72) / 0.28));
+    const raise = up * 2.6 + down * -0.6, rec = down * 0.14;
     // (a limb's +x swings it forward: held forward and down, wound up over
     // and behind the head, brought down through the front onto the wheel;
-    // the back arched on the wind-up, bowed on the blow)
+    // the back arched on the wind-up, bowed hard on the blow)
     const th = 0.9 + raise * 1.12;
     dd.arms.r.sh.rotation.set(th, 0, -0.3); dd.arms.l.sh.rotation.set(th, 0, 0.3);
-    dd.arms.r.el.rotation.x = 0.4 + up * 0.6; dd.arms.l.el.rotation.x = 0.4 + up * 0.6;
-    dd.spine.rotation.x = -0.15 + up * 0.22 - down * 0.4;
-    dd.hips.position.y = 92 - down * 5 + up * 1.5;
+    dd.arms.r.el.rotation.x = 0.4 + up * 0.7; dd.arms.l.el.rotation.x = 0.4 + up * 0.7;
+    // spine: arches well back on the wind-up, crashes forward on the blow
+    dd.spine.rotation.x = -0.15 + up * 0.35 - down * 0.55;
+    // hips: rises slightly on the wind-up, drops hard on the blow
+    dd.hips.position.y = 92 - down * 7 + up * 2;
+    // front knee bends deeper on the blow — a lunge
+    dd.legs.r.kn.rotation.x = KNEE_BACK * 0.4 + down * 0.35;
+    // neck: tips back on the wind-up (watching the bar rise), snaps forward on the blow
+    dd.neck.rotation.x = still ? 0 : up * 0.2 - down * 0.25;
     wh.rotation.z = (still ? 0 : Math.sin(tt * 0.3) * 0.03) + rec + w * 0.05;
     d.arms.l.sh.rotation.z = 2.15 + (still ? 0 : Math.sin(tt * 2.3) * 0.05);   // (a twitch)
   };
@@ -697,11 +739,17 @@ function vGallows(kit, rnd) {
   [-1, 1].forEach(s => shade(g, s * W / 2, 0, 9, 7, 30)); shade(g, 4, -26, 22, 12); shade(g, -30, 0, 14, 9, 150); shade(g, 30, 0, 14, 9, 150);
   const act = (tt, dt, w, still) => {
     const wv = still ? 0 : tt * 3.2;
-    stepSkeleton(death, wv, 1.3);
-    dd.hips.position.y = 92 + (still ? 0 : Math.max(0, Math.sin(wv)) * 7);
-    dd.arms.l.sh.rotation.set(0.35 + (still ? 0 : Math.sin(wv * 2) * 0.35), 0, 0.4); dd.arms.r.sh.rotation.set(0.35 + (still ? 0 : Math.cos(wv * 2) * 0.35), 0, -0.4);
-    dd.arms.l.el.rotation.x = 1.1 + (still ? 0 : Math.sin(wv * 2 + 0.6) * 0.35); dd.arms.r.el.rotation.x = 1.1 + (still ? 0 : Math.cos(wv * 2 + 0.6) * 0.35);
-    dd.neck.rotation.set(0.25, still ? 0 : Math.sin(wv * 0.5) * 0.4, still ? 0 : Math.sin(wv) * 0.15);
+    stepSkeleton(death, wv, 1.6);   // (bigger dance amplitude)
+    // a higher bounce: Death is joyful here
+    dd.hips.position.y = 92 + (still ? 0 : Math.max(0, Math.sin(wv)) * 10);
+    // drumming: bigger strokes, alternating - the sticks really come down
+    const lHit = still ? 0 : Math.sin(wv * 2), rHit = still ? 0 : Math.cos(wv * 2);
+    dd.arms.l.sh.rotation.set(0.3 + lHit * 0.55, 0, 0.4); dd.arms.r.sh.rotation.set(0.3 + rHit * 0.55, 0, -0.4);
+    dd.arms.l.el.rotation.x = 1.0 + (still ? 0 : Math.sin(wv * 2 + 0.6) * 0.5); dd.arms.r.el.rotation.x = 1.0 + (still ? 0 : Math.cos(wv * 2 + 0.6) * 0.5);
+    // the head bobs and sways with the beat
+    dd.neck.rotation.set(0.25 + (still ? 0 : Math.max(0, lHit) * -0.15), still ? 0 : Math.sin(wv * 0.5) * 0.45, still ? 0 : Math.sin(wv) * 0.2);
+    // spine sways with the dance
+    dd.spine.rotation.z = still ? 0 : Math.sin(wv * 0.5) * 0.08;
     hanged.forEach((h, i) => { h.piv.rotation.z = (still ? 0 : Math.sin(tt * 0.8 + h.ph) * 0.05) + w * 0.22 * (i ? 0.7 : 1); h.piv.rotation.x = (still ? 0 : Math.sin(tt * 0.6 + h.ph) * 0.03) + w * 0.06; h.b.rotation.y = h.face + (still ? 0 : Math.sin(tt * 0.31 + h.ph) * 0.32) + w * 0.4 * (i ? -1 : 1); });   // (they turn on the rope a little, and back - never round to show their backs)
   };
   return { g, death, act, bands, drips: [], crows: [[-50, H + 6, 0], [0, H + 6, 0], [44, H + 6, 0], [-W / 2, H + 5, 0]], width: 160, victims: hanged.map(h => h.b), freed: { pose: 'dance', at: [0, 0, -30], two: true } };
@@ -777,8 +825,20 @@ function vStake(kit, rnd) {
   const act = (tt, dt, w, still) => {
     d.arms.l.sh.rotation.x = 0.4 + (still ? 0 : Math.sin(tt * 0.5) * 0.06);
     d.neck.rotation.z = -0.85 + (still ? 0 : Math.sin(tt * 0.35) * 0.08);
-    dd.neck.rotation.y = still ? 0 : Math.sin(tt * 0.4) * 0.15;
-    setArm(dd.arms.r, raised); dd.arms.r.sh.rotation.x += still ? 0 : Math.sin(tt * 0.7) * 0.05;
+    // Death: theatrical presentation — weight shifts, glass tilts, head tracks
+    const sw = still ? 0 : Math.sin(tt * 0.4);
+    dd.neck.rotation.y = still ? 0 : sw * 0.18;
+    dd.neck.rotation.x = 0.28 + (still ? 0 : Math.sin(tt * 0.6) * 0.06);   // looks up and down
+    setArm(dd.arms.r, raised); dd.arms.r.sh.rotation.x += still ? 0 : Math.sin(tt * 0.7) * 0.08;
+    // tilt the glass slowly, presenting it
+    glass.rotation.z = still ? 0 : Math.sin(tt * 0.35) * 0.15;
+    // weight shift side to side — he's savoring, not standing at attention
+    dd.hips.position.y = 92 + (still ? 0 : Math.sin(tt * 0.3) * 1.5);
+    dd.hips.rotation.z = still ? 0 : sw * 0.04;
+    dd.spine.rotation.z = still ? 0 : sw * -0.05;                           // counter-sway
+    dd.spine.rotation.x = 0.04 + (still ? 0 : Math.max(0, sw) * 0.06);     // leans in when looking up
+    // left arm gestures slightly — not dead at his side
+    dd.arms.l.sh.rotation.x = -0.15 + (still ? 0 : Math.sin(tt * 0.5) * 0.1);
   };
   return { g, death, act, bands, drips: [[V(-2, FORK - 6, -2), V(-2, 2, -1)]], crows: [[0, TIP + 2, 0]], width: 100, victims: [man], freed: { pose: 'peace', at: [-44, 0, -26], beside: [52, -6] } };
 }
@@ -854,17 +914,26 @@ function vDragging(kit, rnd) {
   const grip0 = gripAt();
   const act = (tt, dt, w, still) => {
     const wv = still ? 0 : tt * 2.2;
-    // (the haul: each heave he leans into it and sinks on the front knee,
-    // then straightens; the feet stay where they stand)
+    // (the haul: each heave he leans hard into the pull, sinks on the front
+    // knee and bows his spine, then straightens and gathers for the next)
     const hv = still ? 0 : Math.pow(Math.max(0, Math.sin(wv)), 2);
-    stride(); dd.hips.position.y -= hv * 2.4;
-    dd.spine.rotation.x = BEND - hv * 0.14; dd.spine.rotation.z = still ? 0 : Math.sin(wv * 0.5) * 0.03;
+    const rec = still ? 0 : Math.pow(Math.max(0, -Math.sin(wv)), 2) * 0.3;   // recovery: a lighter lift
+    stride();
+    dd.hips.position.y -= hv * 5 - rec * 1.5;   // deep drop on the heave
+    dd.legs.r.kn.rotation.x += hv * 0.25;   // front knee bends more on the pull
+    dd.spine.rotation.x = BEND - hv * 0.28 + rec * 0.06;   // strong bow forward
+    dd.spine.rotation.z = still ? 0 : Math.sin(wv * 0.5) * 0.05;   // a little sway
+    // the head dips with the effort, lifts on recovery
+    dd.neck.rotation.x = still ? 0 : hv * -0.12 + rec * 0.08;
+    // the free arm swings back with the heave (counterbalance)
+    dd.arms.l.sh.rotation.x = 0.5 - hv * 0.4 + rec * 0.15;
+    dd.arms.l.el.rotation.x = 0.6 + hv * 0.3;
     setArm(dd.arms.r, rArm);
     // the body jerks on after the hand, along the ground
     const gp = gripAt();
     man.position.set(MAN0.x + (gp.x - grip0.x), MAN0.y, MAN0.z + (gp.z - grip0.z));
-    d.neck.rotation.x = 0.35 + (still ? 0 : Math.sin(wv - 0.6) * 0.1);
-    d.arms.l.sh.rotation.z = 0.62 + (still ? 0 : Math.sin(wv + 1) * 0.08);
+    d.neck.rotation.x = 0.35 + (still ? 0 : Math.sin(wv - 0.6) * 0.15);
+    d.arms.l.sh.rotation.z = 0.62 + (still ? 0 : Math.sin(wv + 1) * 0.12);
   };
   return { g, death, act, bands, drips: [], crows: [[-100, 2, 62]], width: 150, victims: [man], freed: { pose: 'peace', at: [14, 0, -22], beside: [-52, -6] } };
 }
