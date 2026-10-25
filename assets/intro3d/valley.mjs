@@ -219,6 +219,20 @@ function buildHourglass(kit, h = 14) {
 }
 
 const restBody = restSkeleton;   // (the same joints)
+// the valley's men are the app's figures (figure.mjs `build`: one skinned
+// skin, its soft tissue and cloth - the lab's men), each a little different
+// in mass, muscle and age at the valley's height, with the lab's faces set
+// to the valley's cast: calm or in pain. The sawn man (split) and the flayed
+// man keep the valley's own rig: their cuts are not a build's. A build's man
+// steps his soft tissue each frame from his own motion (`softFigs`).
+const softFigs = [];
+function buildMan(kit, rnd, o) {
+  const build = { height: 1, mass: (rnd() - 0.5) * 0.5, muscle: (rnd() - 0.5) * 0.5, age: rnd() * 0.5 };
+  const man = buildFigure(kit, rnd, Object.assign({ build }, o));
+  if (man.userData.setFace) man.userData.setFace(o.calm ? 'calm' : 'pain');
+  if (man.userData.soft) softFigs.push(man);
+  return man;
+}
 // a run of blood on a part: its own plate, the mask from the wound down
 // (hi, lo in world y - set once the part is placed)
 function bleed(obj, spill = 1, wet = 1) {
@@ -420,7 +434,7 @@ function vWindlass(kit, rnd) {
   const top = mesh(new THREE.BoxGeometry(98, 5, 42), kit.wood, g, 1.8); top.position.set(0, TH, 0);
   [-1, 1].forEach(s => { const tr = mesh(new THREE.BoxGeometry(5, TH, 34), kit.post, g, 1.6); tr.position.set(s * 40, TH / 2 - 2.5, 0); tr.rotation.y = 0.12 * s; });
   const lie = G(g, 0, TH + 10, 4); lie.rotation.y = -HALF;                 // (lying along x, head to the right, face up)
-  const man = buildFigure(kit, rnd, { beard: rnd() < 0.5 }); lie.add(man); restBody(man);
+  const man = buildMan(kit, rnd, { beard: rnd() < 0.5 }); lie.add(man); restBody(man);
   shade(g, 0, 0, 56, 26, 40); shade(g, 50, -70, 22, 12); shade(g, 44, -34, 10, 20, 30);
   const d = man.userData;
   man.rotation.x = HALF; man.position.set(0, 0, -(BODY_HIPS - 10));
@@ -629,7 +643,7 @@ function vWheel(kit, rnd) {
   // shins snapped back behind it through the spokes; the arms out along the
   // upper spokes, the forearms broken back over the rim; lashed at wrist
   // and knee
-  const man = buildFigure(kit, rnd, { hose: true }); wh.add(man); restBody(man);
+  const man = buildMan(kit, rnd, { hose: true }); wh.add(man); restBody(man);
   shade(g, 0, 0, 40, 26, 70); shade(g, -58, 10, 22, 12);
   man.position.set(0, -BODY_HIPS + 4, -5);
   const d = man.userData;
@@ -697,7 +711,7 @@ function vGallows(kit, rnd) {
     // the ground and the rope reads from the beam down to the knot)
     const ROPE = 30;
     mesh(new THREE.CylinderGeometry(1.9, 1.9, ROPE + 4, 7), kit.rope, piv, 1.2).position.y = -ROPE / 2 - 1;
-    const b = buildFigure(kit, rnd, { shirt: true, hose: k === 1, beard: k === 0 }); restBody(b);
+    const b = buildMan(kit, rnd, { shirt: true, hose: k === 1, beard: k === 0 }); restBody(b);
     const face = k ? -0.22 : 0.18;
     // (the knot at the rope's end: the neck joint is 147 up the body, the coil 5 above it)
     b.position.y = -(ROPE + 152); b.rotation.y = face; piv.add(b);
@@ -773,7 +787,7 @@ function vStake(kit, rnd) {
   // the mound it is planted in, the blood run down into it
   const mound = mesh(new THREE.SphereGeometry(24, 16, 8, 0, PI * 2, 0, HALF), kit.stone, g, 1.4); mound.scale.set(1, 0.36, 0.9); mound.position.set(0, -0.5, 0);
   const piv = G(g, 0, FORK, 0);
-  const man = buildFigure(kit, rnd, { hose: true, beard: true }); piv.add(man); restBody(man);
+  const man = buildMan(kit, rnd, { hose: true, beard: true }); piv.add(man); restBody(man);
   man.position.set(0, -(BODY_HIPS - 9), 0); man.rotation.set(0.06, 0.18, 0.05);   // (nearly square on: turned three-quarters he showed his back, not his fall)
   shade(g, 0, 0, 26, 16, 20); shade(g, -44, -12, 22, 12); shade(g, 0, 0, 16, 10, 120);
   const d = man.userData;
@@ -873,7 +887,7 @@ function vDragging(kit, rnd) {
   dd.arms.l.sh.rotation.set(0.5, 0, 0.15); dd.arms.l.el.rotation.x = 0.6;   // (the free arm swung forward, with the stride)
   // the man: flat on his back, dragged feet first by one ankle - the leg up
   // to Death's hand, his arms trailed out over his head, the head lolled
-  const man = buildFigure(kit, rnd, { shirt: true }); dg.add(man); restBody(man);
+  const man = buildMan(kit, rnd, { shirt: true }); dg.add(man); restBody(man);
   man.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(V(0, 0, 1), V(-1, 0, 0), V(0, -1, 0)));   // (head to -x, face up)
   const d = man.userData;
   d.legs.r.hip.rotation.set(1.0, 0, 0.06); d.legs.r.kn.rotation.x = KNEE_BACK * 0.06;   // (the near leg, hauled up by its ankle)
@@ -1492,7 +1506,7 @@ export async function prepareTable(opts) {
   const freedRnd = seeded(77);
   // (the freed are clean-shaven: in the negative a beard printed as a black
   // wedge under the chin, a gaping jaw)
-  const freedFigs = [0, 1].map(k => { const f = buildFigure(kit, freedRnd, { calm: true, shirt: true, hose: true }); restBody(f); f.visible = false; f.userData.plates = ownMats(f); return f; });
+  const freedFigs = [0, 1].map(k => { const f = buildMan(kit, freedRnd, { calm: true, shirt: true, hose: true }); restBody(f); f.visible = false; f.userData.plates = ownMats(f); return f; });
   const setPlates = (pl, flip, ghost) => { pl.mats.forEach(m => { m.uniforms.uFlip.value = flip; m.uniforms.uGhost.value = ghost; }); pl.outs.forEach(m => { m.uniforms.uFlip.value = flip; m.uniforms.uGhost.value = ghost; }); };
   const FREE = { IN: 0.8, HOLD: 3.8, OUT: 1.1 };
   const snapOf = root => { const out = []; root.traverse(o => out.push([o, o.position.clone(), o.quaternion.clone()])); return out; };
@@ -2017,6 +2031,8 @@ export async function prepareTable(opts) {
         d.placard.rotation.x = w * 0.06;
       });
       if (freeing) stepFreed(tt);
+      // (the men's soft tissue, from how each has just moved)
+      softFigs.forEach(f => f.userData.soft.update(dt));
       // the sky drifts
       if (!fo.reduced) { sky.userData.tex.offset.x = tt * 0.0025 + w * 0.002; skyNeg.material.map.offset.x = sky.userData.tex.offset.x; }
       placeDrops(tt, fo.reduced ? 0 : dt);

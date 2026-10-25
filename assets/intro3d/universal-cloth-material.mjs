@@ -246,6 +246,9 @@ function patch(mat, uniforms, normals, uvName, maskName) {
   };
   const key = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
   mat.customProgramCacheKey = () => key() + '|uc-cloth-3' + (normals ? 'n' : '') + (uvName || '') + '|' + (maskName || '');
+  // (a clone keeps the patch, on the same uniforms: a scene that gives each
+  // figure its own copy of a plate - the valley's ownMats - keeps the cloth)
+  mat.clone = function () { return patch(new this.constructor().copy(this), uniforms, normals, uvName, maskName); };
   return mat;
 }
 
