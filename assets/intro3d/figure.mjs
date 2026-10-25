@@ -837,26 +837,24 @@ function areolaMat(kit) {
   return (kit._areola = m);
 }
 function dsMat(m, key) { const d = m.clone(); d.side = THREE.DoubleSide; d.userData = Object.assign({}, m.userData, { studioKey: key }); return d; }
-// each fabric's hold on the anatomy, tightest to loosest: support, the most
-// (degrees) it lets it swing off its rest; lift, how far it carries it up and
-// forward (radians); k and c, how much stiffer and more damped it makes the
-// tissue's own spring; lobe, how much of the lobes' jiggle it lets through;
-// bend, how far (radians) it lets the shaft bend on its own inside it - in a
-// snug cloth no further than the cup's room; follow, how much of its swing
-// the cloth over it turns with (1: all of it, so it shifts and bulges inside
-// but never leaves); slip, a loose cloth it can slip out of in a hard move -
-// so it is drawn painted in the cloth's brown, never as skin; ease, the room
-// in the seat (over the brief's); room, in the cup.
+// each fabric, tightest to loosest: support, the most (degrees) it lets the
+// anatomy swing off its rest; lift, how far it rests carried up and forward
+// (radians); slip, a loose cloth it can slip out of in a hard move - so it
+// is drawn painted in the cloth's brown, never as skin; ease, the room in
+// the seat (over the brief's). (The cloth no longer stiffens, damps or
+// shapes the anatomy, and the cup no longer carries it: the cup is a plain
+// fitted shell with a finger's room, turning part way with what is in it -
+// the owner's rollback, until cloth that follows the body is built.)
 export const FABRIC = {
-  compression: { name: 'Compression', support: 10, lift: 0.70, k: 3.2, c: 2.4, lobe: 0.30, bend: 0.04, follow: 1, ease: -0.4, room: 0.4 },
-  brief:       { name: 'Brief',       support: 16, lift: 0.62, k: 2.4, c: 1.8, lobe: 0.45, bend: 0.07, follow: 1, ease: 0,    room: 0.9 },
-  hose:        { name: 'Hose',        support: 22, lift: 0.55, k: 1.9, c: 1.5, lobe: 0.55, bend: 0.08, follow: 1, ease: 0.2,  room: 1.0 },
-  boxerBriefs: { name: 'Boxer briefs', support: 28, lift: 0.48, k: 1.6, c: 1.3, lobe: 0.65, bend: 0.09, follow: 1, ease: 0.3, room: 1.1 },
-  longJohns:   { name: 'Long johns',  support: 36, lift: 0.40, k: 1.35, c: 1.15, lobe: 0.75, bend: 0.1, follow: 1, ease: 0.5, room: 1.3 },
-  boxers:      { name: 'Boxers',      support: 50, lift: 0.22, k: 1.1, c: 1.0, lobe: 0.90, bend: 0.4, follow: 0.7, slip: true, ease: 2.0,  room: 2.4 },
-  loin:        { name: 'Loincloth',   support: 60, lift: 0.15, k: 1.0, c: 1.0, lobe: 1.0,  bend: 0.45, follow: 0.6, slip: true, ease: 0,    room: 2.0 },
-  shirt:       { name: 'Shirt (nothing under)', support: 75, lift: 0, k: 1.0, c: 1.0, lobe: 1.0, bend: 2.3, follow: 0, slip: true },
-  none:        { name: 'None',        support: 180, lift: 0, k: 1.0, c: 1.0, lobe: 1.0, bend: 2.3, follow: 0 }
+  compression: { name: 'Compression', support: 10, lift: 0.62, ease: -0.4 },
+  brief:       { name: 'Brief',       support: 16, lift: 0.62, ease: 0 },
+  hose:        { name: 'Hose',        support: 22, lift: 0.62, ease: 0.2 },
+  boxerBriefs: { name: 'Boxer briefs', support: 28, lift: 0.48, ease: 0.3 },
+  longJohns:   { name: 'Long johns',  support: 36, lift: 0.40, ease: 0.5 },
+  boxers:      { name: 'Boxers',      support: 50, lift: 0.22, slip: true, ease: 2.0 },
+  loin:        { name: 'Loincloth',   support: 60, lift: 0.4, slip: true, ease: 0 },
+  shirt:       { name: 'Shirt (nothing under)', support: 75, lift: 0, slip: true },
+  none:        { name: 'None',        support: 180, lift: 0 }
 };
 // which fabric holds him: the snuggest thing he has on over the fork
 function fabricOf(o) { return o.nude ? 'none' : o.under || (o.hose ? 'hose' : o.brief ? 'brief' : o.shirt ? 'shirt' : 'loin'); }
@@ -898,7 +896,7 @@ function dress(kit, o, T, hips, arms, legs, pouch, x, sleeves) {
   let cup = null;
   // (a brief holds the anatomy up and forward against him: it rests turned
   // that far, and the cup is fitted to it there; a loincloth's wrap less so)
-  const lift = F.lift, R = F.room || 0.9;
+  const lift = F.lift, R = 0.9;
   if (pouch) {
     pouch.rotation.x = lift; pouch.updateMatrixWorld(true);
     hips.updateMatrixWorld(true);
@@ -906,17 +904,6 @@ function dress(kit, o, T, hips, arms, legs, pouch, x, sleeves) {
     pouch.traverse(c => { if (!c.isMesh || c.userData.outline) return; c.geometry.computeBoundingBox(); b.copy(c.geometry.boundingBox).applyMatrix4(mm.multiplyMatrices(inv, c.matrixWorld)); box.union(b); });
     const P = pouch.position, top = P.y + 1.5, bot = box.min.y - 1.3, H = top - bot;
     const hx = (box.max.x - box.min.x) / 2 + R, hz = (box.max.z - box.min.z) / 2 + R, cz = (box.min.z + box.max.z) / 2 - P.z;
-    // (and band by band near the root, where it is lifted out over the
-    // cup's narrow top: how far forward and wide it reaches at each height)
-    const band = [], vv = new THREE.Vector3();
-    pouch.traverse(c => { if (!c.isMesh || c.userData.outline) return; mm.multiplyMatrices(inv, c.matrixWorld); const q = c.geometry.attributes.position;
-      for (let i = 0; i < q.count; i++) { vv.fromBufferAttribute(q, i).applyMatrix4(mm); band.push([vv.x - P.x, vv.y - P.y, vv.z - P.z]); } });
-    const fit = (sec) => {
-      let fz = Infinity, w = 0;
-      band.forEach(([vx, vy, vz]) => { if (Math.abs(vy - sec.y) < 1.4) { fz = Math.min(fz, vz); w = Math.max(w, Math.abs(vx)); } });
-      if (fz < Infinity) { sec.rz = Math.max(sec.rz, sec.z - fz + R * 0.8); sec.rx = Math.max(sec.rx, w + R * 0.8); }
-      return sec;
-    };
     pouch.rotation.x = 0;
     x.cupFront = P.z + cz - hz; x.cupBot = bot;
     if (!shirtOnly) {
@@ -924,10 +911,8 @@ function dress(kit, o, T, hips, arms, legs, pouch, x, sleeves) {
     facet(loft(densify([
       // (grown out of the brief: its top inside the brief's front, swelling
       // out below over the anatomy - no edge, no gap between the two)
-      fit({ y: 6.0, rx: Math.min(6.0, hx * 0.66), rz: 3.0, z: 0.8 }),
-      fit({ y: 3.6, rx: hx * 0.74, rz: hz * 0.55, z: cz * 0.4 }),
-      fit({ y: 1.5, rx: hx * 0.84, rz: hz * 0.74, z: cz * 0.58 }),
-      fit({ y: -0.6, rx: hx * 0.92, rz: hz * 0.86, z: cz * 0.78 }),
+      { y: 6.0, rx: Math.min(5.5, hx * 0.6), rz: 2.6, z: 0.6 },
+      { y: 1.5, rx: hx * 0.82, rz: hz * 0.7, z: cz * 0.55 },
       { y: top - H * 0.32 - P.y, rx: hx, rz: hz, z: cz },
       { y: top - H * 0.78 - P.y, rx: hx * 0.92, rz: hz * 0.9, z: cz },
       { y: bot - P.y, rx: 0.3, rz: 0.3, z: cz }
