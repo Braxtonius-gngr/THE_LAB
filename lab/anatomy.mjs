@@ -15,10 +15,18 @@
 //     belly, or the valley's present flip (turned end for end about the
 //     body's depth, which keeps the front out but mirrors left and right)
 // The dev overlay's sliders act on every man in the room; a pose or an
-// outfit rebuilds the men with the values the sliders hold.
+// outfit rebuilds the men with the values the sliders hold. Its sliders are
+// grouped by part (the weight pouch, the lobes), each part its own tab.
+//   - compare: two models side by side, each with its own build, face and
+//     slider values (their panels docked at the sides of the view on a wide
+//     screen, under it on a phone); the same or different values
+//   - faces: each man a face variant of his own, or one for all
+//   - None paints the anatomy as the physics proxy: orange see-through,
+//     the lobes blue (L) and red (R) with the pouch orange, or opaque brown
+//   - every panel and the settings dock fold away for a clear view
 import * as THREE from '../assets/vendor/three/three.module.js';
 import { valleyKit } from '../assets/intro3d/valley.mjs';
-import { buildFigure, BODY_HIPS, getAnatomy, updateSleeves } from '../assets/intro3d/figure.mjs';
+import { buildFigure, BODY_HIPS, getAnatomy, updateSleeves, FACE_VARIANTS } from '../assets/intro3d/figure.mjs';
 import { FleshSim } from '../assets/intro3d/flesh.mjs';
 import { burinTick, engravingMaterial, paperMaterial, BONE } from '../assets/intro3d/burin.mjs';
 import { initDevOverlay } from '../assets/intro3d/dev-overlay.mjs';
@@ -50,9 +58,18 @@ const ANIMATED = { walk: 1, jog: 1, rope: 1, jump: 1, climb: 1 };
 const REST = { stand: 0, walk: 0, jog: 0, rope: 0, jump: 0, climb: 0, seat: 40, hung: 0 };
 const REST_FIXED = { stand: 0, walk: 0, jog: 0, rope: 0, jump: 0, climb: 0, seat: 80, hung: 150 };
 
+const VARS = Object.keys(FACE_VARIANTS);
 const state = {
   look: 'ink', pose: 'stand', outfit: 'loin', face: 'auto', focus: -1, frame: 'all', physics: true,
-  rest: Object.assign({}, REST), restFixed: Object.assign({}, REST_FIXED), hungMode: 'physics', paused: false
+  rest: Object.assign({}, REST), restFixed: Object.assign({}, REST_FIXED), hungMode: 'physics', paused: false,
+  // (None's paint: 'orange' see-through, 'split' lobes blue/red and the
+  // pouch orange, 'brown' opaque - nothing bare in a physics test)
+  paint: 'orange',
+  // (the line's faces: 'auto' each man his own variant, or one for all)
+  shape: 'auto',
+  // two models side by side, each with its own build, face and values
+  compare: false,
+  models: [{ man: 2, face: 'plain', params: getAnatomy() }, { man: 2, face: 'square', params: getAnatomy() }]
 };
 const restOf = () => (state.physics && !(state.pose === 'hung' && state.hungMode === 'valley') ? state.rest : state.restFixed);
 
@@ -104,8 +121,9 @@ floor.userData.ink = floorInk; floor.userData.studio = STUDIO.floor; wall.userDa
 const seeded = seed => () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
 // (the first man on the left as you face the line: the camera looks down +z, so screen-left is +x)
 const xOf = i => ((MEN.length - 1) / 2 - i) * SPACING;
-const slots = MEN.map((m, i) => {
-  const g = new THREE.Group(); g.position.x = xOf(i); g.userData.slot = i; scene.add(g);
+function mkSlot(i, x, k) {
+  const m = MEN[i];
+  const g = new THREE.Group(); g.position.x = x; g.userData.slot = k == null ? i : k; scene.add(g);
   const h = m.build.height;
   // the seat: a block under the thighs, its top at the thighs' undersides
   const seat = new THREE.Mesh(new THREE.BoxGeometry(52 * h, 41 * h, 58 * h), kit.wood);
@@ -121,17 +139,38 @@ const slots = MEN.map((m, i) => {
   const rungs = []; for (let k = 0; k < 11; k++) { const r = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.7, 52 * h, 8), kit.wood); r.rotation.z = PI / 2; r.castShadow = true; lad.add(r); rungs.push(r); }
   // the skipping rope (rebuilt each frame between his hands)
   const rope = new THREE.Mesh(new THREE.BufferGeometry(), kit.rope); rope.visible = false; rope.frustumCulled = false; g.add(rope);
-  return { i, g, man: null, seat, gal, H, lad, rungs, rope, sim: null };
-});
+  return { i, k, g, man: null, seat, gal, H, lad, rungs, rope, sim: null };
+}
+const slots = MEN.map((m, i) => mkSlot(i, xOf(i)));
+// the comparison's two models, A on the left as you face them
+const CMP_X = 62;
+const cmpSlots = [null, null];
+function makeCmp(k) {
+  const old = cmpSlots[k];
+  if (old) { scene.remove(old.g); old.g.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+  const s = mkSlot(state.models[k].man, k ? -CMP_X : CMP_X, k); s.g.visible = state.compare; cmpSlots[k] = s;
+  // (its place in the world now, before the first pose reads it: the joints'
+  // sleeves are laid from it, and a new group's world matrix is stale until a render)
+  s.g.updateMatrixWorld(true);
+  return s;
+}
+makeCmp(0); makeCmp(1);
+const active = () => state.compare ? cmpSlots : slots;
+const nameOf = s => s.k != null ? `${'AB'[s.k]} · ${MEN[s.i].name}` : MEN[s.i].name;
 const figures = [];   // (the overlay's live list - refilled in place on a rebuild)
+const cmpFigs = [[], []];   // (each model's, likewise)
 
-function build(i) {
-  const s = slots[i], m = MEN[i];
+// (a man's face variant: a model's own, or the line's pick - each his own by default)
+const faceVarOf = s => s.k != null ? state.models[s.k].face : (state.shape === 'auto' ? VARS[s.i % VARS.length] : state.shape);
+function build(s) {
+  const m = MEN[s.i], i = s.i;
   if (s.man) { s.g.remove(s.man); s.man.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
   const man = buildFigure(kit, seeded(101 + i * 7), Object.assign({
     build: m.build, beard: !!m.beard, recede: m.recede || 0, hairMat: m.grey ? kit.hairGrey : kit.hair,
-    anatomy: getAnatomy(),   // (every man the sliders' values exactly - no per-man scatter, so the line compares)
-    face: state.face === 'valley' ? 'valley' : undefined
+    // (every man the sliders' values exactly - no per-man scatter, so the
+    // line compares; a model its own panel's)
+    anatomy: s.k != null ? Object.assign({}, state.models[s.k].params) : getAnatomy(),
+    face: state.face === 'valley' ? 'valley' : undefined, faceVar: faceVarOf(s)
   }, OUTFITS[state.outfit]));
   const u = man.userData;
   if (u.pouch) { u.pouch0 = u.pouch.position.clone(); }
@@ -150,8 +189,15 @@ function build(i) {
 const faceFor = () => state.face !== 'auto' ? state.face : ({ jog: 'effort', rope: 'effort', jump: 'effort', climb: 'effort', hung: 'pain' })[state.pose] || 'calm';
 function setFaceOf(man) { if (man.userData.setFace && state.face !== 'valley') man.userData.setFace(faceFor()); }
 function buildAll() {
-  figures.length = 0;
-  slots.forEach(s => { const man = build(s.i); if (man.userData.pouch) figures.push(man); });
+  figures.length = 0; cmpFigs.forEach(a => { a.length = 0; });
+  slots.forEach(s => { s.g.visible = !state.compare; }); cmpSlots.forEach(s => { s.g.visible = state.compare; });
+  active().forEach(s => { const man = build(s); if (man.userData.pouch) (s.k != null ? cmpFigs[s.k] : figures).push(man); });
+  pose(0, true);
+}
+// (one man again - a model whose build or face changed)
+function rebuildOne(s) {
+  const man = build(s), list = s.k != null ? cmpFigs[s.k] : figures;
+  const at = list.indexOf(man); if (s.k != null) { list.length = 0; if (man.userData.pouch) list.push(man); } else if (at < 0 && man.userData.pouch) list.push(man);
   pose(0, true);
 }
 
@@ -159,17 +205,27 @@ function buildAll() {
 // (with no fabric the lab draws the anatomy as see-through debug shapes - the
 // mass, the shaft, the lobes - moving exactly as the simulation moves them,
 // in either look: it is a readout of the physics, not a body)
-const PROXY = new THREE.MeshStandardMaterial({ color: 0xff7a1a, emissive: 0x5a2200, transparent: true, opacity: 0.5, depthWrite: false, roughness: 0.6 });
-const PROXY_WIRE = new THREE.MeshBasicMaterial({ color: 0xffb070, wireframe: true, transparent: true, opacity: 0.55 });
+const proxyMat = (c, e) => new THREE.MeshStandardMaterial({ color: c, emissive: e, transparent: true, opacity: 0.5, depthWrite: false, roughness: 0.6 });
+const wireMat = c => new THREE.MeshBasicMaterial({ color: c, wireframe: true, transparent: true, opacity: 0.55 });
+const PROXY = { orange: proxyMat(0xff7a1a, 0x5a2200), L: proxyMat(0x2f7bff, 0x0a2260), R: proxyMat(0xff2f2f, 0x5a0808) };
+const PROXY_WIRE = { orange: wireMat(0xffb070), L: wireMat(0x8fb8ff), R: wireMat(0xff9a9a) };
+// (brown: opaque paint, no wire - what the cloth's slip paint is in a garment)
+// (the ink look has no lights: there it is a flat paint; the studio lights it)
+const BROWN = { ink: new THREE.MeshBasicMaterial({ color: 0x5b4030 }), studio: new THREE.MeshStandardMaterial({ color: 0x5b4030, roughness: 0.9 }) };
 function proxy(man) {
   const P = man.userData.pouch; if (!P) return;
+  const brown = state.paint === 'brown';
   P.traverse(o => {
-    if (!o.isMesh) return;
+    if (!o.isMesh || o.userData.wire === true) return;
     if (o.userData.outline) { o.visible = false; o.userData.ink = o.userData.studio = null; o.userData.proxyHidden = true; return; }
-    o.material = PROXY; o.userData.ink = PROXY; o.userData.studio = PROXY;
-    if (!o.userData.wire) { const w = new THREE.Mesh(o.geometry, PROXY_WIRE); w.userData.ink = w.userData.studio = PROXY_WIRE; w.userData.wire = true; o.userData.wire = w; o.add(w); }
+    const part = state.paint === 'split' && o.userData.side ? o.userData.side : 'orange';
+    const ink = brown ? BROWN.ink : PROXY[part], studio = brown ? BROWN.studio : PROXY[part];
+    o.material = state.look === 'studio' ? studio : ink; o.userData.ink = ink; o.userData.studio = studio;
+    if (!o.userData.wire) { const w = new THREE.Mesh(o.geometry, PROXY_WIRE[part]); w.userData.wire = true; o.userData.wire = w; o.add(w); }
+    const w = o.userData.wire; w.material = PROXY_WIRE[part]; w.userData.ink = w.userData.studio = PROXY_WIRE[part]; w.visible = !brown; w.userData.proxyHidden = brown;
   });
 }
+function setPaint(p) { state.paint = p; if (bare()) active().forEach(s => { proxy(s.man); applyLook(s.man); }); dirty = true; }
 
 // ---------- looks ----------
 function applyLook(root) {
@@ -177,6 +233,7 @@ function applyLook(root) {
   root.traverse(o => {
     if (!o.isMesh) return;
     if (o.userData.proxyHidden) { o.visible = false; return; }
+    if (o.userData.wire === true) { o.visible = true; return; }
     if (o.userData.outline) { o.visible = !studio; return; }
     if (o.userData.ink) { o.material = studio ? o.userData.studio : o.userData.ink; return; }
     // (a mesh built since the last switch carries whichever plate it was
@@ -370,18 +427,18 @@ let tAnim = 0, awake = 0;
 const holdLog = [];
 function holdReadout(now) {
   const el = document.getElementById('hold'); if (!el) return;
-  const s = slots[Math.max(0, state.focus)], u = s.man.userData, P = u.pouch;
+  const s = active()[Math.max(0, state.focus)], u = s.man.userData, P = u.pouch;
   if (!P || !s.sim || !physicsOn(s)) { el.textContent = state.physics ? '' : 'Physics off: held at the rest angle'; return; }
   const swing = (s.sim.swing || 0) * 180 / Math.PI;
   holdLog.push([now, swing]); while (holdLog.length && now - holdLog[0][0] > 3000) holdLog.shift();
   const peak = Math.max(...holdLog.map(h => h[1]));
   const sup = u.support, fabric = state.outfit === 'both' ? 'Shirt + hose' : (u.hold && u.hold.name) || state.outfit;
-  el.textContent = `${MEN[s.i].name} · ${fabric}: swing ${swing.toFixed(0)}° · peak ${peak.toFixed(0)}° (3s) · hold ${!sup || sup >= 180 ? 'none' : sup + '° max'}${u.lift ? ', lifted ' + Math.round(u.lift * 180 / Math.PI) + '°' : ''}`;
+  el.textContent = `${nameOf(s)} · ${fabric}: swing ${swing.toFixed(0)}° · peak ${peak.toFixed(0)}° (3s) · hold ${!sup || sup >= 180 ? 'none' : sup + '° max'}${u.lift ? ', lifted ' + Math.round(u.lift * 180 / Math.PI) + '°' : ''}`;
 }
 function physicsOn(s) { return state.physics && s.sim && !(state.pose === 'hung' && state.hungMode === 'valley'); }
 function pose(dt, fresh) {
   if (ANIMATED[state.pose] && !state.paused) tAnim += dt;
-  slots.forEach(s => {
+  active().forEach(s => {
     poseMan(s, tAnim);
     if (!physicsOn(s)) return;
     if (fresh) { s.sim.reset(); awake = 2; }   // (let it settle into the new pose under gravity)
@@ -399,27 +456,40 @@ let tween = null;
 // the clear strip of screen between the slider panel (or the top bar) and
 // the dock: the view is centred in it and a man fitted to its height
 function band() {
-  const H = window.innerHeight, over = document.getElementById('dev-anatomy-overlay'), bar = $('#bar'), dock = $('#dock');
+  const H = window.innerHeight, Wd = window.innerWidth, bar = $('#bar'), dock = $('#dock');
   let top = bar && !bar.classList.contains('hidden') ? bar.getBoundingClientRect().bottom : 0;
-  if (over) top = Math.max(top, over.getBoundingClientRect().bottom);
+  // (a panel docked across the top pushes the strip down; one at a side
+  // narrows it - while it is open; one under the view is in the dock)
+  let left = 0, right = Wd;
+  document.querySelectorAll('.dev-anatomy-panel').forEach(over => {
+    const r = over.getBoundingClientRect(), d = over.dataset.dock;
+    if (d === 'top') top = Math.max(top, r.bottom);
+    else if (r.height > 60 && d === 'left') left = Math.max(left, r.right);
+    else if (r.height > 60 && d === 'right') right = Math.min(right, r.left);
+  });
   const bottom = dock && !dock.classList.contains('hidden') ? dock.getBoundingClientRect().top : H;
   const t = Math.min(top + 8, H * 0.6), b = Math.max(bottom - 8, t + H * 0.25);
-  return { H, cy: (t + b) / 2, frac: (b - t) / H };
+  const l = Math.min(left + 8, Wd * 0.4), rr = Math.max(right - 8, l + Wd * 0.3);
+  return { H, W: Wd, cy: (t + b) / 2, frac: (b - t) / H, cx: (l + rr) / 2, fw: (rr - l) / Wd };
 }
-// (the projection's centre slid down into the strip; its inverse kept for the taps' rays)
+// (the projection's centre slid into the strip - down, and across past a
+// side panel; its inverse kept for the taps' rays)
 function aimIntoBand() {
-  const { H, cy } = band();
+  const { H, W, cy, cx } = band();
   camera.updateProjectionMatrix();
   camera.projectionMatrix.elements[9] = -(1 - 2 * cy / H);
+  camera.projectionMatrix.elements[8] = -(2 * cx / W - 1);
   camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
 }
 function framing(frame, i) {
-  const tanV = Math.tan(camera.fov * DEG / 2), tanH = tanV * camera.aspect, frac = band().frac;
+  const B = band(), tanV = Math.tan(camera.fov * DEG / 2), tanH = tanV * camera.aspect * B.fw, frac = B.frac;
   if (frame === 'all' || i < 0) {
-    const half = SPACING * MEN.length / 2 + 40;
+    const half = state.compare ? CMP_X + 70 : SPACING * MEN.length / 2 + 40;
+    // (the two models: fitted to their height in the strip, and to their width)
+    if (state.compare) return { target: new THREE.Vector3(0, 98, 0), dist: Math.max(half / tanH, 112 / (tanV * frac)) * 1.04, yaw: 0, pitch: 0.08 };
     return { target: new THREE.Vector3(0, 100, 0), dist: Math.max(half / tanH, 600) * 1.02, yaw: 0, pitch: 0.12 };
   }
-  const s = slots[i];
+  const s = active()[i];
   s.man.updateMatrixWorld(true);
   if (frame === 'close' && s.man.userData.pouch) {
     const p = new THREE.Vector3(); s.man.userData.pouch.getWorldPosition(p);
@@ -437,7 +507,7 @@ function goTo(frame, i) {
   state.frame = frame; state.focus = i;
   // (a close-up has the man to himself: the rest of the line steps out of
   // the way, so a side view isn't looking down a row of men)
-  slots.forEach(s => { s.g.visible = frame !== 'close' || i < 0 || s.i === i; });
+  active().forEach((s, j) => { s.g.visible = frame !== 'close' || i < 0 || j === i; });
   const to = framing(frame, i);
   tween = { t0: performance.now(), from: { target: view.target.clone(), dist: view.dist, yaw: view.yaw, pitch: view.pitch }, to };
   ui.syncFrame();
@@ -476,7 +546,7 @@ const ray = new THREE.Raycaster();
 function tapAt(x, y) {
   const r = canvas.getBoundingClientRect();
   ray.setFromCamera(new THREE.Vector2((x - r.left) / r.width * 2 - 1, -((y - r.top) / r.height) * 2 + 1), camera);
-  const hits = ray.intersectObjects(slots.map(s => s.man), true);
+  const hits = ray.intersectObjects(active().map(s => s.man), true);
   for (const h of hits) { let o = h.object; while (o && o.userData.slot == null) o = o.parent; if (o) { goTo(state.frame === 'close' ? 'close' : 'full', o.userData.slot); return; } }
 }
 
@@ -484,7 +554,7 @@ function tapAt(x, y) {
 const $ = sel => document.querySelector(sel);
 const ui = {
   syncFrame() {
-    $('#who').textContent = state.focus < 0 ? 'All' : MEN[state.focus].name;
+    $('#who').textContent = state.focus < 0 ? (state.compare ? 'A · B' : 'All') : nameOf(active()[state.focus]);
     document.querySelectorAll('[data-frame]').forEach(b => b.classList.toggle('on', b.dataset.frame === (state.focus < 0 ? 'all' : state.frame)));
   },
   tools() {
@@ -509,24 +579,99 @@ document.querySelectorAll('[data-look]').forEach(b => b.addEventListener('click'
 }));
 document.querySelectorAll('[data-pose]').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('[data-pose]').forEach(x => x.classList.toggle('on', x === b));
-  state.pose = b.dataset.pose; slots.forEach(s => s.man && setFaceOf(s.man)); pose(0, true); ui.tools();
+  state.pose = b.dataset.pose; active().forEach(s => s.man && setFaceOf(s.man)); pose(0, true); ui.tools();
   if (state.focus >= 0) goTo(state.frame, state.focus);   // (the man's moved: the view follows, once)
 }));
 document.querySelectorAll('[data-outfit]').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('[data-outfit]').forEach(x => x.classList.toggle('on', x === b));
-  state.outfit = b.dataset.outfit; buildAll();
+  state.outfit = b.dataset.outfit; $('#paintRow').classList.toggle('hidden', !bare()); buildAll();
 }));
 document.querySelectorAll('[data-face]').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('[data-face]').forEach(x => x.classList.toggle('on', x === b));
   const was = state.face; state.face = b.dataset.face;
-  if (was === 'valley' || state.face === 'valley') buildAll(); else { slots.forEach(s => s.man && setFaceOf(s.man)); dirty = true; }
+  if (was === 'valley' || state.face === 'valley') buildAll(); else { active().forEach(s => s.man && setFaceOf(s.man)); dirty = true; }
 }));
 document.querySelectorAll('[data-frame]').forEach(b => b.addEventListener('click', () => {
   const f = b.dataset.frame;
   if (f === 'all') goTo('all', -1); else goTo(f, state.focus < 0 ? 0 : state.focus);
 }));
-$('#prev').addEventListener('click', () => goTo(state.frame === 'all' ? 'full' : state.frame, state.focus <= 0 ? MEN.length - 1 : state.focus - 1));
-$('#next').addEventListener('click', () => goTo(state.frame === 'all' ? 'full' : state.frame, state.focus < 0 || state.focus >= MEN.length - 1 ? 0 : state.focus + 1));
+$('#prev').addEventListener('click', () => goTo(state.frame === 'all' ? 'full' : state.frame, state.focus <= 0 ? active().length - 1 : state.focus - 1));
+$('#next').addEventListener('click', () => goTo(state.frame === 'all' ? 'full' : state.frame, state.focus < 0 || state.focus >= active().length - 1 ? 0 : state.focus + 1));
+
+// None's paint
+document.querySelectorAll('[data-paint]').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('[data-paint]').forEach(x => x.classList.toggle('on', x === b)); setPaint(b.dataset.paint);
+}));
+// the line's face variants: each his own, or one for all
+{
+  const row = $('#shapeRow');
+  VARS.forEach(v => { const b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.dataset.shape = v; b.textContent = FACE_VARIANTS[v].name; row.appendChild(b); });
+  row.querySelectorAll('[data-shape]').forEach(b => b.addEventListener('click', () => {
+    row.querySelectorAll('[data-shape]').forEach(x => x.classList.toggle('on', x === b));
+    state.shape = b.dataset.shape; if (!state.compare) buildAll();
+  }));
+}
+// the comparison: two models, each its own build, face and values
+function setCompare(on) {
+  state.compare = on;
+  $('#cmp').classList.toggle('on', on); $('#cmpPicks').classList.toggle('hidden', !on); $('#shapeRow').classList.toggle('hidden', on);
+  buildAll(); layoutPanels();
+  goTo('all', -1);
+}
+{
+  const fill = sel => { sel.innerHTML = MEN.map((m, i) => `<option value="${i}">${m.name}</option>`).join(''); };
+  ['cmpA', 'cmpB'].forEach((id, k) => {
+    const sel = $('#' + id); fill(sel); sel.value = String(state.models[k].man);
+    sel.addEventListener('change', () => { state.models[k].man = +sel.value; const s = makeCmp(k); rebuildOne(s); if (state.focus >= 0) goTo(state.frame, state.focus); });
+  });
+  $('#cmp').addEventListener('click', () => setCompare(!state.compare));
+  // (the same values on both: A's copied to B)
+  $('#cmpCopy').addEventListener('click', () => { state.models[1].params = Object.assign({}, state.models[0].params); rebuildOne(cmpSlots[1]); layoutPanels(); });
+}
+// (a model's face, picked in its own panel)
+function faceExtra(k) {
+  const box = document.createElement('label');
+  box.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:6px;border-top:1px solid #333;padding-top:6px;';
+  box.innerHTML = `<span style="color:#d9b45a;text-transform:uppercase;letter-spacing:.06em;font-weight:bold">Face</span>`;
+  const sel = document.createElement('select');
+  sel.setAttribute('aria-label', `Model ${'AB'[k]}: face`);
+  sel.style.cssText = 'flex:1;padding:4px;background:#111;color:#ddd;border:1px solid #555;border-radius:4px;font:11px monospace;';
+  sel.innerHTML = VARS.map(v => `<option value="${v}">${FACE_VARIANTS[v].name}</option>`).join(''); sel.value = state.models[k].face;
+  sel.addEventListener('change', () => { state.models[k].face = sel.value; rebuildOne(cmpSlots[k]); });
+  box.appendChild(sel);
+  return box;
+}
+// the settings fold away, all but their own toggle, for a clear view
+$('#dockFold').addEventListener('click', () => {
+  const folded = $('#dock').classList.toggle('folded');
+  $('#dockFold').textContent = folded ? '▸ Settings' : '▾ Settings';
+  layoutPanels();
+});
+
+// ---------- the sliders' panels: docked at the sides, or under the view ----------
+let overlay = null;
+const wide = () => window.innerWidth >= 900;
+function layoutPanels() {
+  const bar = $('#bar'), dock = $('#dock');
+  const topPx = Math.round(bar.getBoundingClientRect().bottom + 8) + 'px';
+  document.documentElement.style.setProperty('--dev-top', topPx);
+  document.documentElement.style.setProperty('--dev-bottom', Math.round(window.innerHeight - dock.getBoundingClientRect().top + 8) + 'px');
+  if (!overlay) return;
+  overlay.clear();
+  const pm = $('#panels'); pm.innerHTML = '';
+  const W = wide();
+  if (!state.compare) {
+    overlay.make({ key: 'line', label: 'Anatomy · all', figures, params: null }, { dock: W ? 'right' : 'top', top: topPx });
+    pm.classList.add('hidden');
+  } else {
+    state.models.forEach((M, k) => overlay.make({ key: 'model' + 'AB'[k], label: `Model ${'AB'[k]}`, figures: cmpFigs[k], params: M.params },
+      { dock: W ? (k ? 'right' : 'left') : 'below', mount: W ? null : pm, top: topPx, accent: k ? '#ff6a4a' : '#4aa8ff', folded: !W, extra: () => faceExtra(k) }));
+    pm.classList.toggle('hidden', W);
+  }
+  aimIntoBand(); if (state.focus < 0) Object.assign(view, framing('all', -1)); dirty = true;
+}
+let wasWide = wide();
+window.addEventListener('resize', () => { if (wide() !== wasWide) { wasWide = wide(); layoutPanels(); } });
 
 // ---------- the loop ----------
 let dirty = true, last = performance.now();
@@ -573,16 +718,18 @@ function open() {
   Object.assign(view, framing('all', -1));
   ui.tools(); ui.syncFrame();
   // (the panel folding or the tools row changing moves the strip: redraw)
-  if (window.ResizeObserver) { const ro = new ResizeObserver(() => { dirty = true; }); [document.getElementById('dev-anatomy-overlay'), $('#dock')].forEach(el => el && ro.observe(el)); }
+  if (window.ResizeObserver) { const ro = new ResizeObserver(() => { aimIntoBand(); dirty = true; }); ro.observe($('#dock')); }
   requestAnimationFrame(loop);
 }
 initDevOverlay(figures, {
   top: 'calc(max(10px, env(safe-area-inset-top)) + 46px)',
   compact: true,
-  onAuthed: open,
+  // (fold or unfold a panel or a tab: the view's strip may have moved)
+  onFold() { aimIntoBand(); if (state.focus < 0) Object.assign(view, framing('all', -1)); dirty = true; },
+  onAuthed(api) { overlay = api; open(); layoutPanels(); },
   // (a slider moved: the overlay rebuilt each man's anatomy in place - give
   // the new pieces the room's look and put them back in the pose)
-  onChange() { slots.forEach(s => { if (bare()) proxy(s.man); applyLook(s.man); }); awake = 1; pose(0); }
+  onChange() { active().forEach(s => { if (bare()) proxy(s.man); applyLook(s.man); }); awake = 1; pose(0); }
 });
 // the lab's own hook for the visual checks (scripts in a headless browser)
-window.__lab = { state, setLook, pose: (f) => pose(0, f), step: dt => pose(dt), redraw: () => { dirty = true; }, goTo, buildAll, slots, ui, view, camera, framing };
+window.__lab = { state, setLook, pose: (f) => pose(0, f), step: dt => pose(dt), redraw: () => { dirty = true; }, goTo, buildAll, slots, cmpSlots, active, setCompare, setPaint, layoutPanels, ui, view, camera, framing };

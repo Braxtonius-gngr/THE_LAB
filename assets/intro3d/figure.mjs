@@ -283,10 +283,23 @@ export const FACES = {
   effort: { lid: 0.42, low: 0.30, brow: -0.3, tilt: 0.16,  press: 1,   open: 0,    teeth: 0, corner: -0.25 },
   pain:   { lid: 0.58, low: 0.40, brow: 0.25, tilt: -0.24, press: 0.3, open: 0.55, teeth: 1, corner: -0.45 }
 };
+// a face's own cut, laid over what the build gives it (the lab's face
+// variants, so two men of one build are two men): jaw width, cheek fullness,
+// brow ridge, the nose's length and width, the mouth's width - each a share
+// added to the build's own
+export const FACE_VARIANTS = {
+  plain:  { name: 'Plain' },
+  square: { name: 'Square', jaw: 0.14, brow: 0.3, noseW: 0.1, cheek: -0.1 },
+  narrow: { name: 'Narrow', jaw: -0.1, cheek: -0.3, nose: 0.22, noseW: -0.15, mouth: -0.25 },
+  round:  { name: 'Round', jaw: 0.06, cheek: 0.6, nose: -0.12, noseW: 0.12, mouth: 0.35 },
+  hawk:   { name: 'Hawk', nose: 0.4, noseW: 0.04, brow: 0.4, cheek: 0.2, jaw: -0.04 },
+  soft:   { name: 'Soft', brow: -0.25, jaw: -0.06, nose: -0.18, noseW: -0.05, mouth: -0.15, cheek: 0.15 }
+};
 function buildFace(kit, o, B) {
   const skin = kit.face, head = new THREE.Group();
+  const FV = Object.assign({ jaw: 0, cheek: 0, brow: 0, nose: 0, noseW: 0, mouth: 0 }, (o.faceVar && FACE_VARIANTS[o.faceVar]) || {});
   const fat = Math.max(0, B.mass), lean = Math.max(0, -B.mass), mus = Math.max(0, B.muscle), old = Math.max(0, B.age);
-  const jaw = 1 + 0.10 * mus - 0.06 * lean;
+  const jaw = (1 + 0.10 * mus - 0.06 * lean) * (1 + FV.jaw);
   // the hull: [y, rx, rz, z, front, lobes]
   const S = [
     { y: -6.5, rx: 1.4, rz: 1.6, z: -3.5 },
@@ -294,10 +307,10 @@ function buildFace(kit, o, B) {
     { y: -4.6, rx: (4.6 + 1.5 * fat + 0.6 * old) * jaw, rz: 5.5 + 0.9 * fat, z: -1.7, front: 0.5, lobes: [{ x: 0, w: 1.7, d: 0.45 + 0.2 * mus }] },
     { y: -2.9, rx: (6.0 + 1.3 * fat + 0.5 * old) * jaw, rz: 7.2 + 0.5 * fat, z: -0.8, front: 0.6 },
     { y: -1.3, rx: 6.6 + 1.0 * fat + 0.3 * old, rz: 8.0, z: -0.3, front: 0.7, lobes: [{ x: 0, w: 2.3, d: 0.5 }] },
-    { y: 0.7, rx: 7.2 + 0.7 * fat, rz: 8.6, z: 0.1, front: 0.6, lobes: [{ x: -4.2, w: 1.7, d: 0.4 + 0.5 * fat }, { x: 4.2, w: 1.7, d: 0.4 + 0.5 * fat }] },
+    { y: 0.7, rx: 7.2 + 0.7 * fat, rz: 8.6, z: 0.1, front: 0.6, lobes: [{ x: -4.2, w: 1.7, d: 0.4 + 0.5 * fat + FV.cheek }, { x: 4.2, w: 1.7, d: 0.4 + 0.5 * fat + FV.cheek }] },
     { y: 2.5, rx: 7.6 + 0.3 * fat, rz: 9.0, z: 0.4, front: 0.5, lobes: [{ x: -4.6, w: 1.3, d: 0.7 + 0.3 * lean }, { x: 4.6, w: 1.3, d: 0.7 + 0.3 * lean }] },
     { y: 3.9, rx: 7.8, rz: 9.2, z: 0.5, front: 0.4, lobes: [{ x: -3.1, w: 1.35, d: -0.95 - 0.25 * old }, { x: 3.1, w: 1.35, d: -0.95 - 0.25 * old }] },
-    { y: 5.3, rx: 7.9, rz: 9.5, z: 0.7, front: 0.9, lobes: [{ x: -3.0, w: 1.9, d: 0.3 + 0.15 * mus }, { x: 3.0, w: 1.9, d: 0.3 + 0.15 * mus }] },
+    { y: 5.3, rx: 7.9, rz: 9.5, z: 0.7, front: 0.9, lobes: [{ x: -3.0, w: 1.9, d: 0.3 + 0.15 * mus + FV.brow }, { x: 3.0, w: 1.9, d: 0.3 + 0.15 * mus + FV.brow }] },
     { y: 8.0, rx: 7.7, rz: 9.6, z: 1.0, front: 0.6 },
     { y: 10.8, rx: 7.1, rz: 9.1, z: 1.3 },
     { y: 13.0, rx: 5.4, rz: 7.0, z: 1.7 },
@@ -339,7 +352,7 @@ function buildFace(kit, o, B) {
   });
   // the nose: a loft down from the bridge to the tip, (center, width, depth,
   // how far its front stands off the face), the wings at its foot, the nostrils
-  const nl = 1 + 0.12 * old, nw = 1 + 0.15 * fat + 0.05 * mus;
+  const nl = (1 + 0.12 * old) * (1 + FV.nose), nw = (1 + 0.15 * fat + 0.05 * mus) * (1 + FV.noseW);
   const ns = (y, rx, rz, p) => ({ y, rx: rx * nw, rz, z: F(y) - p + rz });
   facet(loft([ns(5.0, 0.55, 0.5, 0.2), ns(3.6, 0.7, 0.7, 0.5), ns(2.0, 0.75, 0.85, 1.0 * nl), ns(0.6, 0.9, 0.9, 1.5 * nl), ns(-0.2, 0.85, 0.8, 1.55 * nl), ns(-0.85, 0.5, 0.5, 1.0), ns(-1.05, 0.2, 0.2, 0.6)], { n: 12 }), skin, head, 0.8, 1);
   [-1, 1].forEach(sx => {
@@ -348,7 +361,7 @@ function buildFace(kit, o, B) {
   });
   // the mouth: two lips laid on the face, the line between, the corners;
   // a dark gap and the teeth behind for the strained face
-  const MY = -2.0, MW = 2.5 + 0.3 * fat;
+  const MY = -2.0, MW = (2.5 + 0.3 * fat) * (1 + FV.mouth);
   const lipPts = (y0, bow, drop) => { const pts = []; for (let k = 0; k <= 10; k++) { const u = k / 10 * 2 - 1, x = u * MW, y = y0 + bow * Math.exp(-u * u * 18) - drop * u * u; pts.push([x, y, F(y, x) - 0.12]); } return pts; };
   parts.upper = G(head); parts.lower = G(head); parts.line = G(head);
   // (the lips sit back into the face: their tubes' fronts just proud of it)
@@ -526,41 +539,65 @@ function buildHead(kit, o = {}) {
 // real time for tuning (each change rebuilds the mesh), but locked behind
 // authentication in the dev overlay — never exposed to the scene or the UI.
 //
-// Parameters (all set before render; rebuild() regenerates the mesh live):
-//   size       overall scale of the whole system (1.5 = generous start)
-//   length     the shaft's length (scale, gorge amplifies toward max)
-//   girth      the shaft's thickness (scale, gorge amplifies toward max)
-//   depth      how far the lobes push the shaft forward and out
-//   fullnessL  left lobe fill 0–100 (0 = empty/slack, 100 = round/high)
-//   fullnessR  right lobe fill 0–100
-//   hangL      left lobe drop 0–100 (0 = tight/close, 100 = as low as sac allows)
-//   hangR      right lobe drop 0–100
-//   gorge      0–100: scales girth, length, size toward their max
-//              (0 = natural soft resting state, NOT absent; 100 = full max)
-//   sway       physics response amplitude (how freely it answers motion)
+// Parameters, per part (all set before render; rebuild() regenerates the mesh
+// live). Each part has its own Size, and its Size sets the ceiling of every
+// other parameter of that part: the 0-100 sliders are a share of what that
+// Size allows, so two men alike in all but Size read differently.
+//   the weight pouch (the shaft):
+//     sizePouch  its scale (0.5-3; 1.5 = the creation value)
+//     length     0-100: how far it reaches from its root, away or down
+//                (0 = half its Size's base length, 100 = twice it)
+//     girth      0-100: its thickness, likewise
+//     depth      0-100: how far the lobes present it forward and out off
+//                the body rather than hanging straight down - on a build's
+//                man the more the lobes are full, big and high, the more of
+//                it shows (high Fullness and Size Lobe, low Hang: the most)
+//     gorge      0-100: as before (scales the sizes, length and girth
+//                toward 1.6x); left as it was
+//     sway       physics response amplitude (how freely it answers motion)
+//   the lobes:
+//     sizeLobe   their scale, and the sac's (0.5-3; 1.5 = the creation value)
+//     fullnessL/R  0-100: each lobe's fill (0 slack, 100 round and high)
+//     hangL/R    0-100: each lobe's drop from the body (0 tight to it, 100
+//                as low as its Size lets the sac fall)
 //
 // Gravity comes from the pose: the `pouch` group's orientation is set by
 // valley.mjs per figure (the sawyer hung head-down turns it end for end).
 // `pouchSway` adds a small lagging pendulum on top — rotation only, never
 // a reshape.
 let ANATOMY = {
-  size: 1.5, length: 1.5, girth: 1.5, depth: 1.2,
+  sizePouch: 1.5, sizeLobe: 1.5, length: 66.7, girth: 66.7, depth: 33.3,
   fullnessL: 65, fullnessR: 60,
   hangL: 45, hangR: 55,
   gorge: 0, sway: 1.0
 };
-export function setAnatomy(o) { ANATOMY = Object.assign({}, ANATOMY, o); }
+// (a set from before the parts were split - one Size, length and girth as
+// scales, depth as a scale - read as the same man)
+function migrateAnatomy(o) {
+  if (!o) return o;
+  const out = Object.assign({}, o);
+  if (out.size != null && out.sizePouch == null) { out.sizePouch = out.size; out.sizeLobe = out.size; }
+  if (out.size != null && out.length != null && out.length <= 4) out.length = (out.length - 0.5) / 1.5 * 100;
+  if (out.size != null && out.girth != null && out.girth <= 4) out.girth = (out.girth - 0.5) / 1.5 * 100;
+  if (out.size != null && out.depth != null && out.depth <= 3) out.depth = (out.depth - 0.3) / 2.7 * 100;
+  delete out.size;
+  return out;
+}
+export function setAnatomy(o) { ANATOMY = Object.assign({}, ANATOMY, migrateAnatomy(o)); }
 export function getAnatomy() { return Object.assign({}, ANATOMY); }
+export { migrateAnatomy };
 
-// (each man his own: the defaults varied per-man by a seeded rng)
+// (each man his own: the defaults varied per-man by a seeded rng - eight
+// draws, in the order the one-size set drew them, so every man downstream
+// of them in the build is drawn as before)
 function anatomyFor(rnd) {
   const v = (base, k) => base * (1 + (rnd() - 0.5) * k);
   const pct = (base, k) => Math.max(0, Math.min(100, base + (rnd() - 0.5) * k));
+  const sz = v(1, 0.16);
+  const kL = v(0.5 + 1.5 * ANATOMY.length / 100, 0.24), kG = v(0.5 + 1.5 * ANATOMY.girth / 100, 0.2), kD = v(0.3 + 2.7 * ANATOMY.depth / 100, 0.3);
   return {
-    size: v(ANATOMY.size, 0.16),
-    length: v(ANATOMY.length, 0.24),
-    girth: v(ANATOMY.girth, 0.2),
-    depth: v(ANATOMY.depth, 0.3),
+    sizePouch: ANATOMY.sizePouch * sz, sizeLobe: ANATOMY.sizeLobe * sz,
+    length: (kL - 0.5) / 1.5 * 100, girth: (kG - 0.5) / 1.5 * 100, depth: (kD - 0.3) / 2.7 * 100,
     fullnessL: pct(ANATOMY.fullnessL, 30),
     fullnessR: pct(ANATOMY.fullnessR, 30),
     hangL: pct(ANATOMY.hangL, 40),
@@ -601,30 +638,24 @@ function sweep(pts, radii, n = 12, metric) {
   return g;
 }
 
-// resolve gorge: at 0% the params are natural (unchanged), at 100% they
-// reach the max the creation params allow — gorge amplifies girth, length,
-// size toward their ceiling, never past it
-function applyGorge(a) {
-  const g = Math.max(0, Math.min(100, a.gorge)) / 100;
-  // the max each param can reach is 1.6× its creation value (the ceiling
-  // is proportional to the man's own build, not a global constant)
-  const amp = (base) => base * (1 + g * 0.6);
-  return Object.assign({}, a, {
-    size: amp(a.size),
-    length: amp(a.length),
-    girth: amp(a.girth)
-  });
-}
+// gorge, as it was: at 0% the params are natural, at 100% each size, the
+// length and the girth reach 1.6x
+const gorgeAmp = a => 1 + Math.max(0, Math.min(100, a.gorge || 0)) / 100 * 0.6;
 
 function buildAnatomy(pouch, m, a) {
+  a = migrateAnatomy(a);
   // clear any previous build (for live rebuild)
   while (pouch.children.length) {
     const c = pouch.children[0];
     if (c.geometry) c.geometry.dispose();
     pouch.remove(c);
   }
-  const resolved = applyGorge(a);
-  const g = new THREE.Group(); pouch.add(g); g.scale.setScalar(resolved.size);
+  // (each part at its own scale: sL the lobes, the sac and the root they
+  // hang from; sP the shaft's length and thickness - so one can change
+  // without the other. Laid out in the pouch's own units, the group unscaled.)
+  const amp = gorgeAmp(a), sL = a.sizeLobe * amp, sP = a.sizePouch * amp;
+  const kL = (0.5 + 1.5 * a.length / 100) * amp, kG = (0.5 + 1.5 * a.girth / 100) * amp;
+  const g = new THREE.Group(); pouch.add(g);
 
   // the two lobes, each with its own fullness and hang
   // fullness 0–100: 0 slack/empty, 100 round/full
@@ -633,8 +664,8 @@ function buildAnatomy(pouch, m, a) {
   const hL = a.hangL / 100, hR = a.hangR / 100;
   // lobe radius grows with fullness; drop grows with hang and inversely
   // with fullness (a full lobe sits higher, an empty one sags)
-  const lobeR = f => 2.7 + f * 0.7;
-  const lobeDrop = (f, h) => 6.4 + (1 - f) * 2.6 + h * 3.2;
+  const lobeR = f => (2.7 + f * 0.7) * sL;
+  const lobeDrop = (f, h) => (6.4 + (1 - f) * 2.6 + h * 3.2) * sL;
   const lobeSquash = f => 1.12 + (1 - f) * 0.2;
   const lrL = lobeR(fL), lrR = lobeR(fR);
   const dropL = lobeDrop(fL, hL), dropR = lobeDrop(fR, hR);
@@ -643,66 +674,76 @@ function buildAnatomy(pouch, m, a) {
     { sx:  1, lr: lrR, drop: dropR, full: fR, squash: lobeSquash(fR) }
   ].map(({ sx, lr, drop, full, squash }) => {
     const lobe = facet(knob(lr, 1.0, squash, 1.0, 2), m, g, 0);
-    lobe.position.set(sx * (lr * 0.62), -drop, -0.6);
+    lobe.position.set(sx * (lr * 0.62), -drop, -0.6 * sL);
     lobe.rotation.z = sx * 0.12;
-    lobe.userData.pouch = true;
+    lobe.userData.pouch = true; lobe.userData.side = sx < 0 ? 'L' : 'R';
     return lobe;
   });
 
   // the sac loft wrapping both lobes: its profile follows whichever lobe
   // hangs lower (fruit in a mesh bag — the bag stretches to hold them)
   const avgLR = (lrL + lrR) / 2;
-  const sacLow = -Math.max(dropL, dropR) - 0.45;
+  const sacLow = -Math.max(dropL, dropR) - 0.45 * sL;
   // (a build's man - pouch.userData.live: the sac is skin stretched over
   // the lobes where they are now, joined up into the body at its root, and
   // reshaped each frame the lobes move: loose enough that each moves on its
   // own, never parted from the rest)
-  let updateSac = null;
+  let updateSac = null, sac = null;
   if (pouch.userData.live) {
     const spread0 = Math.abs(lobes[1].position.x - lobes[0].position.x) / 2 || 1;
     const secs = () => {
-      const L = lobes[0].position, R = lobes[1].position, cx = (L.x + R.x) / 2, zc = (L.z + R.z) / 2 + 0.4, spread = Math.abs(R.x - L.x) / 2;
-      const low = Math.min(L.y, R.y) - 0.45, wide = avgLR * 1.55 * Math.max(0.85, spread / spread0);
+      const L = lobes[0].position, R = lobes[1].position, cx = (L.x + R.x) / 2, zc = (L.z + R.z) / 2 + 0.4 * sL, spread = Math.abs(R.x - L.x) / 2;
+      const low = Math.min(L.y, R.y) - 0.45 * sL, wide = avgLR * 1.55 * Math.max(0.85, spread / spread0);
       return [
-        { y: 3.0, rx: 2.4, rz: 2.0 },
-        { y: 1.0, rx: 2.0, rz: 1.6 },
-        { y: -2.0, rx: avgLR * 1.15, rz: avgLR * 0.9, x: cx * 0.3, z: zc * 0.3 },
+        { y: 3.0 * sL, rx: 2.4 * sL, rz: 2.0 * sL },
+        { y: 1.0 * sL, rx: 2.0 * sL, rz: 1.6 * sL },
+        { y: -2.0 * sL, rx: avgLR * 1.15, rz: avgLR * 0.9, x: cx * 0.3, z: zc * 0.3 },
         { y: low + avgLR * 0.3, rx: wide, rz: avgLR * 0.95, x: cx, z: zc },
         { y: low - avgLR * 0.55, rx: avgLR * 1.25, rz: avgLR * 0.8, x: cx, z: zc },
-        { y: low - avgLR * 0.95, rx: 0.3, rz: 0.3, x: cx, z: zc }
+        { y: low - avgLR * 0.95, rx: 0.3 * sL, rz: 0.3 * sL, x: cx, z: zc }
       ];
     };
     const geo = loft(secs(), { n: 14, metric: UVM.linen }); geo.computeVertexNormals();
-    const sac = new THREE.Mesh(geo, m); sac.position.z = -0.4; sac.frustumCulled = false; g.add(sac);
+    sac = new THREE.Mesh(geo, m); sac.position.z = -0.4 * sL; sac.frustumCulled = false; g.add(sac);
     updateSac = () => { const ng = loft(secs(), { n: 14, metric: UVM.linen }); geo.attributes.position.array.set(ng.attributes.position.array); geo.attributes.position.needsUpdate = true; geo.computeVertexNormals(); ng.dispose(); };
-  } else facet(loft([
-    { y: 1.0, rx: 2.0, rz: 1.6 },
-    { y: -2.0, rx: avgLR * 1.15, rz: avgLR * 0.9 },
-    { y: sacLow + avgLR * 0.3, rx: avgLR * 1.55, rz: avgLR * 0.95 },
-    { y: sacLow - avgLR * 0.55, rx: avgLR * 1.25, rz: avgLR * 0.8 },
-    { y: sacLow - avgLR * 0.95, rx: 0.3, rz: 0.3 }
-  ], { n: 14, metric: UVM.linen }), m, g, 0).position.z = -0.4;
+  } else {
+    sac = facet(loft([
+      { y: 1.0 * sL, rx: 2.0 * sL, rz: 1.6 * sL },
+      { y: -2.0 * sL, rx: avgLR * 1.15, rz: avgLR * 0.9 },
+      { y: sacLow + avgLR * 0.3, rx: avgLR * 1.55, rz: avgLR * 0.95 },
+      { y: sacLow - avgLR * 0.55, rx: avgLR * 1.25, rz: avgLR * 0.8 },
+      { y: sacLow - avgLR * 0.95, rx: 0.3 * sL, rz: 0.3 * sL }
+    ], { n: 14, metric: UVM.linen }), m, g, 0);
+    sac.position.z = -0.4 * sL;
+  }
+  sac.userData.sac = true;
 
   // the shaft: attached at the root above the lobes, it falls forward
-  // over their top and lies down the front of them, pushed out by their
-  // depth; gorge amplifies its girth and length toward the max
-  const L = 9.6 * resolved.length;
-  const r = 1.75 * resolved.girth;
+  // over their top and lies down the front of them, pushed out by them
+  const L = 9.6 * kL * sP;
+  const r = 1.75 * kG * sP;
   const avgDrop = (dropL + dropR) / 2;
-  const front = -0.6 - avgLR - r * 0.75 - (a.depth - 1) * 1.2;
+  // (depth: on a build's man, how far forward the lobes present it - the
+  // fuller, bigger and higher they sit, the more; the valley's men keep the
+  // one fixed push they were made with)
+  const dk = pouch.userData.live
+    ? (a.depth / 100) * 3.2 * (0.35 + 0.65 * (fL + fR) / 2) * (1 - 0.6 * (hL + hR) / 2) - 0.25
+    : (0.3 + 2.7 * a.depth / 100 - 1) * 1.2;
+  const front = -0.6 * sL - avgLR - r * 0.75 - dk * sL;
   const pts = [
-    [0, 0.6, -1.4],
-    [0, -1.6, front * 0.62],
+    [0, 0.6 * sL, -1.4 * sL],
+    [0, -1.6 * sL, front * 0.62],
     [0, -avgDrop + avgLR * 0.55, front],
-    [0, -avgDrop - avgLR * 0.2, front - 0.15],
-    [0, -2.0 - L, front + 0.5]
+    [0, -avgDrop - avgLR * 0.2, front - 0.15 * sL],
+    [0, -2.0 * sL - L, front + 0.5 * sL]
   ];
   const sh = facet(sweep(pts, [r * 1.08, r, r * 0.98, r * 1.02, r * 0.55], 14, UVM.linen), m, g, 0);
-  sh.userData.pouch = true;
+  sh.userData.pouch = true; sh.userData.shaft = true;
   // (for a physics pass - the lab's: where the mass sits, where the shaft
-  // roots and ends, their radii; all in this group's own units)
+  // roots and ends, their radii; all in this group's own units; kl, the
+  // lobes' scale, for their jiggle)
   lobes.forEach(l => { l.userData.p0 = l.position.clone(); });
-  g.userData = { lobes, shaft: sh, sway: a.sway, params: a, mass: [0, -avgDrop, -0.6], shaftRoot: pts[0], shaftTip: pts[pts.length - 1], lobeR: avgLR, shaftR: r, updateSac };
+  g.userData = { lobes, sac, shaft: sh, sway: a.sway, params: a, mass: [0, -avgDrop, -0.6 * sL], shaftRoot: pts[0], shaftTip: pts[pts.length - 1], lobeR: avgLR, shaftR: r, kl: sL, updateSac };
   return g;
 }
 
@@ -711,7 +752,7 @@ function buildAnatomy(pouch, m, a) {
 export function rebuildAnatomy(fig, newParams) {
   const p = fig.userData.pouch; if (!p) return;
   const old = p.children[0] && p.children[0].userData.params;
-  const a = Object.assign({}, old || anatomyFor(() => 0.5), newParams);
+  const a = Object.assign({}, old || anatomyFor(() => 0.5), migrateAnatomy(newParams));
   // find the material from any existing mesh child
   let m = null;
   p.traverse(c => { if (!m && c.isMesh && c.material) m = c.material; });
@@ -1211,7 +1252,7 @@ export function buildFigure(kit, rnd, o = {}) {
     // (a build's man in a cloth he can slip out of: the anatomy painted brown)
     const m = B ? (FABRIC[fabricOf(o)].slip ? (kit.breech || kit.linen) : skinUV) : o.hose || covered ? kit.linen : (kit.breech || kit.linen);
     if (B) pouch.userData.live = true;
-    const anat = Object.assign(anatomyFor(rnd), o.anatomy || {});
+    const anat = Object.assign(anatomyFor(rnd), migrateAnatomy(o.anatomy) || {});
     buildAnatomy(pouch, m, anat);
   }
   const legs = {};

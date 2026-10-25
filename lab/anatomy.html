@@ -31,6 +31,12 @@
     .tools input[type=range] { flex: 1; accent-color: var(--gold); }
     .tools output { color: var(--ink); min-width: 38px; text-align: right; font-variant-numeric: tabular-nums; }
     .hidden { display: none !important; }
+    .row select { font: inherit; font-size: 12px; background: #1a1412; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px; }
+    .row .pick { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 12px; flex: none; }
+    .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .panels > .dev-anatomy-panel { position: relative !important; width: auto !important; max-height: 38vh; }
+    /* (the settings folded: only their own toggle row stays) */
+    .dock.folded > .row:not(#topRow), .dock.folded > .panels { display: none !important; }
   </style>
 </head>
 <body>
@@ -47,6 +53,16 @@
   </div>
 
   <div class="dock hidden" id="dock">
+    <div class="row" id="topRow">
+      <button type="button" class="chip" id="dockFold" aria-label="Fold the settings away">▾ Settings</button>
+      <button type="button" class="chip" id="cmp">Compare</button>
+      <span class="pick hidden" id="cmpPicks">
+        <label class="pick">A <select id="cmpA" aria-label="Model A: build"></select></label>
+        <label class="pick">B <select id="cmpB" aria-label="Model B: build"></select></label>
+        <button type="button" class="chip" id="cmpCopy" title="Give B the same slider values as A">A → B</button>
+      </span>
+    </div>
+    <div class="panels hidden" id="panels"></div>
     <div class="row tools hidden" id="tools"></div>
     <div class="row" role="group" aria-label="Pose">
       <span class="lbl">Pose</span>
@@ -72,6 +88,12 @@
       <button type="button" class="chip" data-outfit="shirt">Shirt only</button>
       <button type="button" class="chip" data-outfit="none">None</button>
     </div>
+    <div class="row hidden" role="group" aria-label="None's paint" id="paintRow">
+      <span class="lbl">Paint</span>
+      <button type="button" class="chip on" data-paint="orange">Orange (see-through)</button>
+      <button type="button" class="chip" data-paint="split">Lobes blue / red</button>
+      <button type="button" class="chip" data-paint="brown">Brown (opaque)</button>
+    </div>
     <div class="row" role="group" aria-label="Face">
       <span class="lbl">Face</span>
       <button type="button" class="chip on" data-face="auto">Auto</button>
@@ -79,6 +101,10 @@
       <button type="button" class="chip" data-face="effort">Effort</button>
       <button type="button" class="chip" data-face="pain">Pain</button>
       <button type="button" class="chip" data-face="valley">Valley scream</button>
+    </div>
+    <div class="row" role="group" aria-label="Face shape" id="shapeRow">
+      <span class="lbl">Shape</span>
+      <button type="button" class="chip on" data-shape="auto">Each his own</button>
     </div>
     <div class="row nav" role="group" aria-label="Camera">
       <button type="button" id="prev" aria-label="Previous man">‹</button>

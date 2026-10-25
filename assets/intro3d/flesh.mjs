@@ -105,7 +105,7 @@ export class FleshSim {
     const P = this.pouch, g = this.inner; if (!P || !g) return false;
     const u = g.userData, s = g.scale.x, sc = this.fig.getWorldScale(_w).x * P.scale.x * s;
     const loose = Math.max(0.2, u.sway || 1), k = K / loose, c = C / Math.sqrt(loose);
-    const lobeMax = LOBE.max, lobeK = LOBE.k;
+    const lobeMax = LOBE.max * (u.kl || 1), lobeK = LOBE.k;
     const T0 = new THREE.Vector3(), T1 = new THREE.Vector3(), root = new THREE.Vector3();
     this.targets(T0, T1, root);
     const L0 = T0.distanceTo(this.anchor), L1 = T1.distanceTo(this.anchor);
