@@ -241,7 +241,7 @@ function applyLook(root) {
     if (o.userData.wire === true) { o.visible = true; return; }
     if (o.userData.outline) { o.visible = !studio; return; }
     // (the GPU cloth: its ink plate and a studio clay on the same uniforms)
-    if (o.userData.ucm && !o.userData.ink) { o.userData.ink = o.material; o.userData.studio = o.userData.ucm.twin(STUDIO.linen).material; }
+    if (o.userData.ucm && !o.userData.ink) { o.userData.ink = o.material; o.userData.studio = o.userData.ucm.twin(STUDIO[o.userData.studioKey] || STUDIO.linen).material; }
     if (o.userData.ink) { o.material = studio ? o.userData.studio : o.userData.ink; o.castShadow = o.receiveShadow = studio; return; }
     // (a mesh built since the last switch carries whichever plate it was
     // made with: find its ink plate either way)
@@ -458,6 +458,8 @@ function pose(dt, fresh) {
   });
   // the cloth over each man, fitted to where his body and anatomy are now
   active().forEach(s => { const c = s.man && s.man.userData.cloth; if (c) c.update(fresh ? 0 : dt); });
+  // (and the soft tissue of each skin, from the body's motion)
+  active().forEach(s => { const f = s.man && s.man.userData.soft; if (f) { if (fresh) f.reset(); f.update(fresh ? 0 : dt); } });
   dirty = true;
 }
 

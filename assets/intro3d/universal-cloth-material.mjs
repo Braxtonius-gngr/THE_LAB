@@ -37,6 +37,15 @@
 // axis (round at the crown - a linear falloff put a crease down the middle)
 // and its length as a half sine (0 at the base - sealed - and at the tip).
 //
+// Soft sites: up to UC_SITES soft spots laid on the same uv (`sites`:
+// { u, v, radius, amp } each - a belly, a pectoral, a buttock on a man's
+// skin), each a Gaussian bell of its own, pulsed in and out by `pulse` (a
+// signed share of amp per site, -1..1: driven from the body's own motion by
+// whoever owns the mesh). They add to the single shape above, bypass the
+// drape gap (a pulse is signed), and are masked by the `mask` attribute
+// where the material is made with { mask: '<attribute>' } (0 off, 1 on: so
+// one skin's arms and legs take no belly).
+//
 // The uv the shape is read off is the mesh's `uv` unless the material is
 // made with { uv: '<attribute>' } (a garment whose uv is laid for its hatch
 // carries a second, isotropic one for the cloth); `wrap(material)` patches
@@ -52,6 +61,7 @@ import * as THREE from '../vendor/three/three.module.js';
 export const TISSUE_TYPE = { RIGID: 0, SOFT: 1, HYDROSTATIC: 2 };
 
 // the uniforms and their defaults (uv units for every length but the depths, which are the mesh's)
+const SITES = 8;
 const DEFAULTS = {
   u_tissueType: TISSUE_TYPE.SOFT,
   u_baseUV: [0.5, 0.5], u_direction: [0, -1], u_length: 0.2, u_width: 0.05,
@@ -74,6 +84,10 @@ uniform float u_clinginess; // 0 hangs off it, 1 lies on it
 uniform float u_drapeDistance;
 uniform vec2 u_swingVector; // The cloth's trail behind what moves under it (uv)
 uniform float u_uvEps;      // The step the normal is differenced over (uv)
+#define UC_SITES 8
+uniform float u_siteCount;  // Soft sites in use
+uniform vec4 u_site[UC_SITES];      // u, v, radius, amp (each a Gaussian bell)
+uniform float u_sitePulse[UC_SITES]; // each site's pulse, -1..1 of its amp
 attribute vec3 clothDu;     // d position / d u (prepareClothGeometry)
 attribute vec3 clothDv;     // d position / d v
 #ifdef UC_CUSTOM_UV
@@ -81,6 +95,21 @@ attribute vec2 UC_UV;       // the uv the shape is read off, when not the mesh's
 #else
 #define UC_UV uv
 #endif
+#ifdef UC_CUSTOM_MASK
+attribute float UC_MASK;    // 0 off, 1 on: where the cloth may move at all
+#endif
+
+// the soft sites' pulses at p, summed
+float ucSites(vec2 p) {
+  float h = 0.0;
+  for (int i = 0; i < UC_SITES; i++) {
+    if (float(i) >= u_siteCount) break;
+    vec4 site = u_site[i];
+    float d = length(p - site.xy), sg = max(site.z * 0.5, 1e-5);
+    h += site.w * u_sitePulse[i] * exp(-(d * d) / (2.0 * sg * sg));
+  }
+  return h;
+}
 
 // Rigid / piercing: crisp and unyielding - flat to its edge, then a smoothstep
 float ucRigid(vec2 p) {
@@ -138,7 +167,7 @@ float ucRaw(vec2 p) {
 float ucHeight(vec2 p) {
   float rawProtrusion = ucRaw(p + u_swingVector);
   float clothRestGap = (1.0 - u_clinginess) * u_drapeDistance;
-  return max(0.0, rawProtrusion - clothRestGap);
+  return max(0.0, rawProtrusion - clothRestGap) + ucSites(p);
 }
 `;
 
@@ -155,9 +184,13 @@ const MAIN = /* glsl */`
   #endif
   ucN = normalize(ucN);
 
-  // carried out along it
+  // carried out along it (where its mask lets it)
   vec2 ucUv = UC_UV;
-  float ucH = ucHeight(ucUv);
+  float ucM = 1.0;
+  #ifdef UC_CUSTOM_MASK
+    ucM = UC_MASK;
+  #endif
+  float ucH = ucHeight(ucUv) * ucM;
   transformed += ucN * ucH;
 
   #if defined( UC_OBJECT_NORMAL ) || defined( UC_VNORMAL )
@@ -166,8 +199,8 @@ const MAIN = /* glsl */`
     float ucSide = dot(ucBase, ucN);
     if (abs(ucSide) > 1e-12) {
       float ucE = max(u_uvEps, 1e-6);
-      float ucHu = (ucHeight(ucUv + vec2(ucE, 0.0)) - ucHeight(ucUv - vec2(ucE, 0.0))) / (2.0 * ucE);
-      float ucHv = (ucHeight(ucUv + vec2(0.0, ucE)) - ucHeight(ucUv - vec2(0.0, ucE))) / (2.0 * ucE);
+      float ucHu = ucM * (ucHeight(ucUv + vec2(ucE, 0.0)) - ucHeight(ucUv - vec2(ucE, 0.0))) / (2.0 * ucE);
+      float ucHv = ucM * (ucHeight(ucUv + vec2(0.0, ucE)) - ucHeight(ucUv - vec2(0.0, ucE))) / (2.0 * ucE);
       vec3 ucC = cross(ucDu + ucHu * ucN, ucDv + ucHv * ucN);
       float ucL = length(ucC);
       if (ucL > 1e-12) {
@@ -192,7 +225,7 @@ const MAIN = /* glsl */`
 
 // patch one material's shader; normals: whether it shades (a shadow material
 // does not); uvName: the attribute the shape is read off (null: the mesh's uv)
-function patch(mat, uniforms, normals, uvName) {
+function patch(mat, uniforms, normals, uvName, maskName) {
   const prev = mat.onBeforeCompile;
   mat.onBeforeCompile = (shader, renderer) => {
     if (prev) prev.call(mat, shader, renderer);
@@ -201,6 +234,7 @@ function patch(mat, uniforms, normals, uvName) {
     Object.assign(shader.uniforms, uniforms);
     const defs = [];
     if (uvName) defs.push('#define UC_CUSTOM_UV', '#define UC_UV ' + uvName);
+    if (maskName) defs.push('#define UC_CUSTOM_MASK', '#define UC_MASK ' + maskName);
     // (a material that reads objectNormal after skinning - burin's ink - takes
     // the new one there; three's lit built-ins have set vNormal already, so
     // it is set again)
@@ -211,7 +245,7 @@ function patch(mat, uniforms, normals, uvName) {
     shader.vertexShader = shader.vertexShader.replace('#include <skinning_vertex>', MAIN);
   };
   const key = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-  mat.customProgramCacheKey = () => key() + '|uc-cloth-2' + (normals ? 'n' : '') + (uvName || '');
+  mat.customProgramCacheKey = () => key() + '|uc-cloth-3' + (normals ? 'n' : '') + (uvName || '') + '|' + (maskName || '');
   return mat;
 }
 
@@ -247,24 +281,38 @@ export function prepareClothGeometry(geo, uvName = 'uv') {
 // Parameters are the uniforms without their u_ (tissueType, baseUV, direction,
 // length, width, state, maxDepth, radius, jiggle, clinginess, drapeDistance,
 // swingVector, uvEps), read with ?? so a 0 - rigid tissue, a slack state -
-// is a value and never falls back to a default; `uv` names the attribute the
-// shape is read off (the mesh's own by default).
+// is a value and never falls back to a default; `sites` the soft sites
+// ([{ u, v, radius, amp }], up to 8) and `pulse` their pulses ([-1..1]);
+// `uv` names the attribute the shape is read off (the mesh's own by
+// default), `mask` the attribute that gates it (none by default).
 export class UniversalClothMaterial {
   constructor(base, params = {}, shared = null) {
     this.uvName = params.uv && params.uv !== 'uv' ? params.uv : null;
+    this.maskName = params.mask || null;
     this.uniforms = shared || {};
-    if (!shared) for (const [k, v] of Object.entries(DEFAULTS)) this.uniforms[k] = { value: Array.isArray(v) ? new THREE.Vector2(...v) : v };
+    if (!shared) {
+      for (const [k, v] of Object.entries(DEFAULTS)) this.uniforms[k] = { value: Array.isArray(v) ? new THREE.Vector2(...v) : v };
+      this.uniforms.u_siteCount = { value: 0 };
+      this.uniforms.u_site = { value: Array.from({ length: SITES }, () => new THREE.Vector4(0, 0, 1, 0)) };
+      this.uniforms.u_sitePulse = { value: new Float32Array(SITES) };
+    }
     this.set(params);
-    this.material = patch(base.clone(), this.uniforms, true, this.uvName);
-    this.depthMaterial = patch(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }), this.uniforms, false, this.uvName);
-    this.distanceMaterial = patch(new THREE.MeshDistanceMaterial(), this.uniforms, false, this.uvName);
+    this.material = patch(base.clone(), this.uniforms, true, this.uvName, this.maskName);
+    this.depthMaterial = patch(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }), this.uniforms, false, this.uvName, this.maskName);
+    this.distanceMaterial = patch(new THREE.MeshDistanceMaterial(), this.uniforms, false, this.uvName, this.maskName);
   }
   // another material (a mesh's outline) carried out the same way, on the same uniforms
-  wrap(material) { return patch(material.clone(), this.uniforms, true, this.uvName); }
+  wrap(material) { return patch(material.clone(), this.uniforms, true, this.uvName, this.maskName); }
   // the same cloth on another base, sharing the uniforms (a studio clay for an ink plate)
-  twin(base) { return new UniversalClothMaterial(base, { uv: this.uvName || 'uv' }, this.uniforms); }
+  twin(base) { return new UniversalClothMaterial(base, { uv: this.uvName || 'uv', mask: this.maskName }, this.uniforms); }
   set(params) {
     for (const [k, v] of Object.entries(params)) {
+      if (k === 'sites' && Array.isArray(v)) {
+        const arr = this.uniforms.u_site.value; this.uniforms.u_siteCount.value = Math.min(SITES, v.length);
+        v.slice(0, SITES).forEach((st, i) => arr[i].set(st.u ?? 0, st.v ?? 0, st.radius ?? 1, st.amp ?? 0));
+        continue;
+      }
+      if (k === 'pulse' && v && v.length != null) { const arr = this.uniforms.u_sitePulse.value; for (let i = 0; i < SITES; i++) arr[i] = i < v.length ? Math.max(-1, Math.min(1, v[i] || 0)) : 0; continue; }
       const u = this.uniforms['u_' + k]; if (!u || v === undefined) continue;
       if (u.value && u.value.isVector2) { if (Array.isArray(v)) u.value.set(v[0] ?? u.value.x, v[1] ?? u.value.y); else if (v && v.isVector2) u.value.copy(v); }
       else u.value = v ?? u.value;
