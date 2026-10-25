@@ -420,6 +420,10 @@ export function engravingMaterial(opts = {}) {
 const OUT_VERT = /* glsl */`
   uniform float uPx;
   uniform vec2 uViewport;
+  uniform vec3 uKey;        // the light, for the swell
+  uniform float uLitSwell;  // 0..1: the line swells toward the light and thins in the shade, as an engraver's contour does
+  uniform float uLimbHalo;  // the line (a halo's) stands this much wider round a limb (aLimb 1), where it crosses the trunk
+  attribute float aLimb;
   #include <common>
   #include <skinning_pars_vertex>
   void main() {
@@ -431,8 +435,10 @@ const OUT_VERT = /* glsl */`
     vec4 mv = modelViewMatrix * vec4(transformed, 1.0);
     vec3 nv = normalize(normalMatrix * objectNormal);
     vec4 clip = projectionMatrix * mv;
-    // push along the screen-space normal by uPx pixels, thinning far off
-    vec2 off = normalize(nv.xy + vec2(1e-5)) * uPx * clip.w / uViewport * 2.0;
+    vec3 nw = normalize(mat3(modelMatrix) * objectNormal);
+    float px = uPx * (1.0 + uLitSwell * clamp(dot(nw, normalize(uKey)), -1.0, 1.0)) * (1.0 + uLimbHalo * aLimb);
+    // push along the screen-space normal by px pixels, thinning far off
+    vec2 off = normalize(nv.xy + vec2(1e-5)) * px * clip.w / uViewport * 2.0;
     float far = clamp(1.45 - (-mv.z) / 520.0, 0.4, 1.35);
     clip.xy += off * far;
     gl_Position = clip;
@@ -454,7 +460,9 @@ const OUT_FRAG = /* glsl */`
 `;
 const NEG_BONE = new THREE.Color(0.91, 0.863, 0.753);
 export function outlineMaterial(px = 2.2, ink = INK, neg = NEG_BONE) {
-  return new THREE.ShaderMaterial({ vertexShader: OUT_VERT, fragmentShader: OUT_FRAG, uniforms: { uPx: { value: px }, uViewport: { value: new THREE.Vector2(1, 1) }, uInk: { value: ink.clone() }, uNeg: { value: neg.clone() }, uFlip: { value: 0 }, uGhost: { value: 0 } }, side: THREE.BackSide, depthWrite: true });
+  const m = new THREE.ShaderMaterial({ vertexShader: OUT_VERT, fragmentShader: OUT_FRAG, uniforms: { uPx: { value: px }, uViewport: { value: new THREE.Vector2(1, 1) }, uInk: { value: ink.clone() }, uNeg: { value: neg.clone() }, uFlip: { value: 0 }, uGhost: { value: 0 }, uKey: { value: KEY.clone() }, uLitSwell: { value: 0 }, uLimbHalo: { value: 0 } }, side: THREE.BackSide, depthWrite: true });
+  m.defaultAttributeValues.aLimb = [0];
+  return m;
 }
 // a halo: the paper knocked out round a figure where it stands against a
 // dark passage, as an engraver leaves a hair of white along a contour - an
@@ -487,7 +495,7 @@ export function burinTick(root, camera, renderer, t, key = null) {
     const mats = obj.material ? [].concat(obj.material) : [];
     for (const m of mats) {
       if (m.userData && m.userData.burin) { m.uniforms.uTime.value = t; m.uniforms.uCamPos.value.copy(camera.position); if (key) m.uniforms.uKey.value.copy(key); }
-      else if (m.uniforms && m.uniforms.uViewport) m.uniforms.uViewport.value.copy(_v2);
+      else if (m.uniforms && m.uniforms.uViewport) { m.uniforms.uViewport.value.copy(_v2); if (key && m.uniforms.uKey) m.uniforms.uKey.value.copy(key); }
     }
   });
 }

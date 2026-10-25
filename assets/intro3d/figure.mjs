@@ -1643,6 +1643,10 @@ export function buildFigure(kit, rnd, o = {}) {
       const pa = merged.attributes.position, ow = merged.attributes.owner, uv = new Float32Array(pa.count * 2), mask = new Float32Array(pa.count);
       for (let i = 0; i < pa.count; i++) { uv[2 * i] = Math.atan2(pa.getX(i), -(pa.getZ(i) - 1.0)) * 14; uv[2 * i + 1] = pa.getY(i); mask[i] = ow.getX(i) === bi.hips ? 1 : 0; }
       merged.setAttribute('clothUv', new THREE.BufferAttribute(uv, 2)); merged.setAttribute('clothMask', new THREE.BufferAttribute(mask, 1));
+      // (and which points are a limb's: the halo breathes wider round a limb,
+      // where it crosses the trunk - see outlineMaterial's uLimbHalo)
+      const limb = new Float32Array(pa.count); for (let i = 0; i < pa.count; i++) limb[i] = 1 - mask[i];
+      merged.setAttribute('aLimb', new THREE.BufferAttribute(limb, 1));
     }
     const skinMesh = facetSkinned(merged, skinUV, hips, 2, rig.skeleton, skinWeights);
     skinMesh.userData.skin = true;
@@ -1660,6 +1664,9 @@ export function buildFigure(kit, rnd, o = {}) {
     const skinCloth = new UniversalClothMaterial(skinUV, { uv: 'clothUv', mask: 'clothMask', tissueType: TISSUE_TYPE.SOFT, maxDepth: 0, jiggle: 0, uvEps: 0.2, sites });
     skinCloth.apply(skinMesh);
     skinMesh.children.forEach(c => { if (c.userData.outline) c.material = skinCloth.wrap(c.material); });
+    // the skin's contour swells toward the light and thins in the shade, and
+    // its halo stands wider round the limbs (burin.mjs outlineMaterial)
+    skinMesh.children.forEach(c => { const u = c.userData.outline && c.material.uniforms; if (!u) return; u.uLitSwell.value = c.userData.halo ? 0.25 : 0.5; if (c.userData.halo) u.uLimbHalo.value = 0.45; });
     skinMesh.userData.ucm = skinCloth; skinMesh.userData.studioKey = 'fleshUV';
     soft = softDrive(hips, skinCloth, gains);
   }
