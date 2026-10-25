@@ -5,7 +5,7 @@
 // Usage: import and call `initDevOverlay(scene)` from the valley module
 // when `?lab` is in the URL.  The overlay floats over the WebGL canvas.
 
-import { getAnatomy, setAnatomy, rebuildAnatomy } from './figure.mjs';
+import { getAnatomy, setAnatomy, rebuildAnatomy, migrateAnatomy } from './figure.mjs';
 
 // the creation values, kept for "Reset defaults" (the sliders move the live
 // base with setAnatomy, so men built after a change - the lab rebuilds a
@@ -157,18 +157,26 @@ async function webauthnAuthenticate() {
 }
 
 // ── slider parameter definitions ─────────────────────────────────────
-const PARAMS = [
-  { key: 'size',      label: 'Size',        min: 0.5,  max: 4,   step: 0.05 },
-  { key: 'length',    label: 'Length',       min: 0.5,  max: 4,   step: 0.05 },
-  { key: 'girth',     label: 'Girth',       min: 0.5,  max: 4,   step: 0.05 },
-  { key: 'depth',     label: 'Depth',       min: 0.3,  max: 3,   step: 0.05 },
-  { key: 'fullnessL', label: 'Fullness L',  min: 0,    max: 100, step: 1 },
-  { key: 'fullnessR', label: 'Fullness R',  min: 0,    max: 100, step: 1 },
-  { key: 'hangL',     label: 'Hang L',      min: 0,    max: 100, step: 1 },
-  { key: 'hangR',     label: 'Hang R',      min: 0,    max: 100, step: 1 },
-  { key: 'gorge',     label: 'Gorge',       min: 0,    max: 100, step: 1 },
-  { key: 'sway',      label: 'Sway',        min: 0,    max: 3,   step: 0.1 },
+// grouped by part, each part its own tab: a part's Size sets the ceiling
+// of the rest of that part's sliders (see the anatomy notes in figure.mjs)
+const PARTS = [
+  { id: 'pouch', label: 'Weight pouch', params: [
+    { key: 'sizePouch', label: 'Size pouch', min: 0.5, max: 3,   step: 0.05 },
+    { key: 'length',    label: 'Length',     min: 0,   max: 100, step: 1 },
+    { key: 'girth',     label: 'Girth',      min: 0,   max: 100, step: 1 },
+    { key: 'depth',     label: 'Depth',      min: 0,   max: 100, step: 1 },
+    { key: 'gorge',     label: 'Gorge',      min: 0,   max: 100, step: 1 },
+    { key: 'sway',      label: 'Sway',       min: 0,   max: 3,   step: 0.1 },
+  ] },
+  { id: 'lobes', label: 'Lobes', params: [
+    { key: 'sizeLobe',  label: 'Size lobe',  min: 0.5, max: 3,   step: 0.05 },
+    { key: 'fullnessL', label: 'Fullness L', min: 0,   max: 100, step: 1 },
+    { key: 'fullnessR', label: 'Fullness R', min: 0,   max: 100, step: 1 },
+    { key: 'hangL',     label: 'Hang L',     min: 0,   max: 100, step: 1 },
+    { key: 'hangR',     label: 'Hang R',     min: 0,   max: 100, step: 1 },
+  ] },
 ];
+const PARAMS = PARTS.flatMap(p => p.params);
 
 // saved slider states (this browser only; nothing loads on its own, so a
 // bad set can never stick - a reload is always the baseline)
@@ -177,83 +185,98 @@ function readPresets() { try { return JSON.parse(localStorage.getItem(PRESETS_KE
 function writePresets(all) { try { localStorage.setItem(PRESETS_KEY, JSON.stringify(all)); } catch (_) { /* storage blocked */ } }
 
 // ── overlay DOM ──────────────────────────────────────────────────────
+// One panel per target. A target is a set of men tuned together: the
+// valley's men, the lab's whole line, or one model of a comparison - each
+// with its own values (a target with `params` keeps its own; one without
+// moves the shared base with setAnatomy, so men built later take them).
+// opts.dock: 'right' | 'left' | 'below' | 'top' (where the panel sits);
+// every panel folds away from its title, and every part's tab from its own.
+const FOLD_KEY = 'dev_overlay_folds_v1';
+function readFolds() { try { return JSON.parse(localStorage.getItem(FOLD_KEY) || '{}') || {}; } catch (_) { return {}; } }
+function writeFold(k, v) { try { const f = readFolds(); f[k] = v; localStorage.setItem(FOLD_KEY, JSON.stringify(f)); } catch (_) { /* storage blocked */ } }
+const DOCK_CSS = {
+  right: ['top:var(--dev-top,8px)', 'right:8px', 'width:270px', 'max-height:calc(100vh - var(--dev-top,8px) - var(--dev-bottom,8px))'],
+  left: ['top:var(--dev-top,8px)', 'left:8px', 'width:270px', 'max-height:calc(100vh - var(--dev-top,8px) - var(--dev-bottom,8px))'],
+  top: ['top:var(--dev-top,8px)', 'left:12px', 'right:12px', 'max-width:520px', 'margin:0 auto', 'max-height:45vh'],
+  below: ['position:relative', 'max-height:40vh'],
+};
 function buildOverlayUI(figures, opts = {}) {
+  const T = opts.target || { key: 'all', label: 'Anatomy', figures, params: null };
+  const own = !!T.params;
   const root = document.createElement('div');
-  root.id = 'dev-anatomy-overlay';
+  root.className = 'dev-anatomy-panel';
+  root.dataset.target = T.key;
+  if (!document.getElementById('dev-anatomy-overlay')) root.id = 'dev-anatomy-overlay';
+  const dock = opts.dock || (opts.compact ? 'top' : 'right');
+  root.dataset.dock = dock;
   root.style.cssText = [
-    'position:fixed', 'top:8px', 'right:8px', 'z-index:99999',
-    'width:260px', 'max-height:90vh', 'overflow-y:auto',
-    'background:rgba(0,0,0,0.88)', 'color:#e0e0e0',
+    'position:fixed', 'z-index:99999', 'overflow-y:auto', 'box-sizing:border-box',
+    'background:rgba(0,0,0,0.82)', 'color:#e0e0e0',
     'font:11px/1.4 monospace', 'border-radius:8px',
-    'padding:10px', 'pointer-events:auto', 'user-select:none',
-  ].join(';');
+    'padding:8px 10px', 'pointer-events:auto', 'user-select:none',
+  ].concat(DOCK_CSS[dock] || DOCK_CSS.right).join(';');
+  if (opts.top && dock !== 'below') root.style.setProperty('--dev-top', opts.top);
+  if (opts.accent) root.style.borderLeft = `3px solid ${opts.accent}`;
 
-  if (opts.top) root.style.top = opts.top;
-  // (compact: a strip across the top of a phone, the sliders two to a row,
-  // so the figures stay in view below it)
-  if (opts.compact) Object.assign(root.style, { left: '12px', right: '12px', width: 'auto', maxWidth: '520px', margin: '0 auto', padding: '8px 10px', fontSize: '10px', background: 'rgba(0,0,0,0.78)' });
-  // (the title folds the panel away, so a phone can see the figures)
-  const title = document.createElement('div');
-  title.textContent = '🔧 Anatomy Dev ▾';
-  title.style.cssText = 'font-size:13px;font-weight:bold;margin-bottom:8px;color:#fff;cursor:pointer;';
+  const folds = readFolds(), foldKey = k => `${T.key}:${k}`;
+  // (the title folds the whole panel away, so the figures can be seen)
+  const title = document.createElement('button');
+  title.type = 'button';
+  title.style.cssText = 'display:block;width:100%;text-align:left;background:none;border:0;padding:2px 0;font:bold 13px monospace;color:#fff;cursor:pointer;';
   root.appendChild(title);
   const body = document.createElement('div');
-  if (opts.compact) body.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;column-gap:12px;';
   root.appendChild(body);
-  title.addEventListener('click', () => {
-    const open = body.style.display === 'none';
-    body.style.display = open ? '' : 'none';
-    title.textContent = '🔧 Anatomy Dev ' + (open ? '▾' : '▸');
-    title.style.marginBottom = open ? '8px' : '0';
-  });
+  const setPanel = open => { body.style.display = open ? '' : 'none'; title.textContent = `🔧 ${T.label} ${open ? '▾' : '▸'}`; };
+  setPanel(folds[foldKey('panel')] !== false && !(opts.folded && folds[foldKey('panel')] == null));
+  title.addEventListener('click', () => { const open = body.style.display === 'none'; setPanel(open); writeFold(foldKey('panel'), open); if (opts.onFold) opts.onFold(); });
 
-  const live = getAnatomy();
+  const live = Object.assign({}, getAnatomy(), own ? migrateAnatomy(T.params) : {});
+  const fmt = (p, v) => (p.step >= 1 ? String(Math.round(v)) : Number(v).toFixed(2));
+  const apply = patch => {
+    if (own) Object.assign(T.params, patch); else setAnatomy(patch);
+    (T.figures || figures).forEach(fig => rebuildAnatomy(fig, patch));
+    if (opts.onChange) opts.onChange(patch, T);
+  };
 
-  PARAMS.forEach(p => {
-    const row = document.createElement('div');
-    row.style.cssText = opts.compact ? 'margin-bottom:2px;' : 'margin-bottom:6px;';
-
-    const lbl = document.createElement('label');
-    lbl.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;';
-    const span = document.createElement('span');
-    span.textContent = p.label;
-    const val = document.createElement('span');
-    val.textContent = String(live[p.key]);
-    val.style.color = '#8cf';
-    lbl.appendChild(span);
-    lbl.appendChild(val);
-
-    const slider = document.createElement('input');
-    slider.type = 'range';
-    slider.dataset.key = p.key;
-    slider._val = val;
-    slider.min = p.min;
-    slider.max = p.max;
-    slider.step = p.step;
-    slider.value = live[p.key];
-    slider.style.cssText = 'width:100%;accent-color:#4af;' + (opts.compact ? 'margin:0;height:18px;' : '');
-
-    slider.addEventListener('input', () => {
-      const v = parseFloat(slider.value);
-      val.textContent = p.step >= 1 ? String(v) : v.toFixed(2);
-      const patch = {};
-      patch[p.key] = v;
-      setAnatomy(patch);
-      // rebuild every figure in the scene
-      figures.forEach(fig => rebuildAnatomy(fig, patch));
-      if (opts.onChange) opts.onChange(patch);
+  // each part its own tab, folded from its header
+  PARTS.forEach(part => {
+    const sec = document.createElement('div');
+    sec.style.cssText = 'margin-top:6px;border-top:1px solid #333;padding-top:4px;';
+    const head = document.createElement('button');
+    head.type = 'button';
+    head.style.cssText = 'display:block;width:100%;text-align:left;background:none;border:0;padding:3px 0;font:bold 11px monospace;color:#d9b45a;cursor:pointer;letter-spacing:0.06em;text-transform:uppercase;';
+    const box = document.createElement('div');
+    box.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;column-gap:10px;';
+    const setOpen = open => { box.style.display = open ? 'grid' : 'none'; head.textContent = `${open ? '▾' : '▸'} ${part.label}`; };
+    setOpen(folds[foldKey(part.id)] !== false);
+    head.addEventListener('click', () => { const open = box.style.display === 'none'; setOpen(open); writeFold(foldKey(part.id), open); if (opts.onFold) opts.onFold(); });
+    sec.append(head, box);
+    part.params.forEach(p => {
+      const row = document.createElement('div');
+      row.style.cssText = 'margin-bottom:3px;' + (p.key.startsWith('size') ? 'grid-column:1/-1;' : '');
+      const lbl = document.createElement('label');
+      lbl.style.cssText = 'display:flex;justify-content:space-between;align-items:center;';
+      const span = document.createElement('span'); span.textContent = p.label;
+      const val = document.createElement('span'); val.style.color = '#8cf';
+      lbl.append(span, val);
+      const slider = document.createElement('input');
+      slider.type = 'range'; slider.dataset.key = p.key; slider._val = val;
+      slider.min = p.min; slider.max = p.max; slider.step = p.step;
+      slider.value = live[p.key]; val.textContent = fmt(p, live[p.key]);
+      slider.setAttribute('aria-label', `${T.label}: ${p.label}`);
+      slider.style.cssText = 'width:100%;margin:0;height:18px;accent-color:#4af;';
+      slider.addEventListener('input', () => { const v = parseFloat(slider.value); val.textContent = fmt(p, v); apply({ [p.key]: v }); });
+      row.append(lbl, slider);
+      box.appendChild(row);
     });
-
-    row.appendChild(lbl);
-    row.appendChild(slider);
-    body.appendChild(row);
+    body.appendChild(sec);
   });
 
   // ── whole-panel moves: baseline, the floor, the ceiling, saved states ──
   const sliders = () => [...body.querySelectorAll('input[type=range][data-key]')];
-  const fmt = (p, v) => (p.step >= 1 ? String(v) : Number(v).toFixed(2));
   // set every slider at once and rebuild the men a single time
   function setAll(vals) {
+    vals = migrateAnatomy(vals) || {};
     const patch = {};
     sliders().forEach(sl => {
       const p = PARAMS.find(q => q.key === sl.dataset.key);
@@ -261,13 +284,14 @@ function buildOverlayUI(figures, opts = {}) {
       const v = Math.min(p.max, Math.max(p.min, +vals[p.key]));
       sl.value = v; sl._val.textContent = fmt(p, v); patch[p.key] = v;
     });
-    setAnatomy(patch);
-    figures.forEach(fig => rebuildAnatomy(fig, patch));
-    if (opts.onChange) opts.onChange(patch);
+    apply(patch);
   }
   const current = () => { const o = {}; sliders().forEach(sl => { o[sl.dataset.key] = parseFloat(sl.value); }); return o; };
   const extreme = side => { const o = {}; PARAMS.forEach(p => { o[p.key] = p[side]; }); return o; };
 
+  const tools = document.createElement('div');
+  tools.style.cssText = 'margin-top:6px;border-top:1px solid #333;padding-top:4px;';
+  body.appendChild(tools);
   const btnCss = [
     'margin-top:6px', 'width:100%', 'padding:6px', 'border:1px solid #555',
     'background:#222', 'color:#ccc', 'border-radius:4px', 'cursor:pointer',
@@ -277,18 +301,19 @@ function buildOverlayUI(figures, opts = {}) {
 
   // three across: back to the creation values, everything to its minimum, to its maximum
   const trio = document.createElement('div');
-  trio.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;grid-column:1/-1;';
+  trio.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;';
   trio.append(
     mkBtn('Baseline', () => setAll(Object.assign({}, DEFAULTS))),
     mkBtn('All min', () => setAll(extreme('min'))),
     mkBtn('All max', () => setAll(extreme('max'))),
   );
-  body.appendChild(trio);
+  tools.appendChild(trio);
 
   // saved states: named sets of slider values, kept in this browser only
   const saves = document.createElement('div');
-  saves.style.cssText = 'display:grid;grid-template-columns:1fr auto auto auto;gap:6px;align-items:center;margin-top:6px;grid-column:1/-1;';
+  saves.style.cssText = 'display:grid;grid-template-columns:1fr auto auto auto;gap:6px;align-items:center;margin-top:6px;';
   const pick = document.createElement('select');
+  pick.setAttribute('aria-label', `${T.label}: saved states`);
   pick.style.cssText = 'min-width:0;padding:5px;background:#111;color:#ddd;border:1px solid #555;border-radius:4px;font:11px monospace;';
   const small = b => { b.style.marginTop = '0'; b.style.width = 'auto'; b.style.padding = '5px 8px'; return b; };
   function refresh(sel) {
@@ -311,21 +336,18 @@ function buildOverlayUI(figures, opts = {}) {
   }));
   pick.addEventListener('change', () => { const all = readPresets(); if (all[pick.value]) setAll(all[pick.value]); });
   saves.append(pick, save, load, del);
-  body.appendChild(saves);
+  tools.appendChild(saves);
   refresh();
 
   // copy-params button
-  const copy = document.createElement('button');
-  copy.textContent = 'Copy params';
-  copy.style.cssText = btnCss + ';grid-column:1/-1;';
-  copy.addEventListener('click', () => {
-    const vals = {};
-    Object.assign(vals, current());
-    navigator.clipboard.writeText(JSON.stringify(vals, null, 2))
+  const copy = mkBtn('Copy params', () => {
+    navigator.clipboard.writeText(JSON.stringify(current(), null, 2))
       .then(() => { copy.textContent = 'Copied ✓'; setTimeout(() => copy.textContent = 'Copy params', 1200); });
   });
-  body.appendChild(copy);
-
+  tools.appendChild(copy);
+  // (the host's own extras for this panel - the lab's face pick, say)
+  if (opts.extra) body.appendChild(opts.extra(T));
+  root.setAll = setAll; root.current = current;
   return root;
 }
 
@@ -435,10 +457,22 @@ function buildAuthGate(onAuthed) {
 // opts.onChange(patch): told of every slider move; opts.onAuthed(): told
 // once the gate is passed (or was already). `figures` may be refilled in
 // place - the sliders act on whatever it holds at the time.
+// opts.targets: several panels at once (the lab's comparison) - each
+// { key, label, figures, params, dock, accent, mount }; `mount` is an element
+// to put the panel in (docked under the views) instead of the page.
+// Returns { panels } through opts.onAuthed(panels).
 export function initDevOverlay(figures, opts = {}) {
   const open = () => {
-    document.body.appendChild(buildOverlayUI(figures, opts));
-    if (opts.onAuthed) opts.onAuthed();
+    const panels = [];
+    const make = (T, o) => {
+      const el = buildOverlayUI(figures, Object.assign({}, opts, o, { target: T }));
+      (o.mount || document.body).appendChild(el); panels.push(el); return el;
+    };
+    if (opts.targets) opts.targets.forEach(T => make(T, { dock: T.dock, accent: T.accent, mount: T.mount, folded: T.folded }));
+    else make(null, {});
+    // (the host can lay new panels out later - the lab switching to a comparison)
+    const api = { panels, make: (T, o = {}) => make(T, o), clear() { panels.splice(0).forEach(el => el.remove()); } };
+    if (opts.onAuthed) opts.onAuthed(api);
   };
   // already have a valid session?
   if (hasSession()) { open(); return; }
