@@ -1,5 +1,7 @@
 // The lab: an empty room with a line of men of every build, for tuning the
-// valley's figures against a body that isn't the valley's one man. Opened
+// app's figures (figure.mjs with `build`) - general-purpose people, meant
+// for every scene once they are polished, not for any one of them (the
+// valley is one scene that may take them up; it does not yet). Opened
 // from the authenticator (?lab sends the owner here); nothing in it moves
 // unless you move it - the camera goes only where you send it, and the
 // walk is the only pose that animates (and it pauses).
@@ -270,10 +272,12 @@ function rest(u) {
 function stillFlesh(u) {
   const g = u.pouch && u.pouch.children[0]; if (!g) return;
   const d = g.userData;
-  if (d.shaft) { d.shaft.quaternion.identity(); d.shaft.position.set(0, 0, 0); }
+  if (d.bendShaft) d.bendShaft(null);
+  else if (d.shaft) { d.shaft.quaternion.identity(); d.shaft.position.set(0, 0, 0); }
   (d.lobes || []).forEach(l => { if (l.userData.p0) l.position.copy(l.userData.p0); });
   if (d.updateSac) d.updateSac();
-  if (u.cup) u.cup.quaternion.identity();
+  // (no swing: the cloth hangs at its rest)
+  u.swing = null;
 }
 // (age carries the head forward and eases the knees; the face is lifted
 // back to look ahead)
@@ -448,7 +452,7 @@ function pose(dt, fresh) {
     if (s.sim.step(fresh ? 0 : dt)) awake = 0.6;
   });
   // the cloth over each man, fitted to where his body and anatomy are now
-  active().forEach(s => { const c = s.man && s.man.userData.cloth; if (c) c.update(); });
+  active().forEach(s => { const c = s.man && s.man.userData.cloth; if (c) c.update(fresh ? 0 : dt); });
   dirty = true;
 }
 

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="robots" content="noindex" />
+  <title>The Lab · Cloth bench</title>
+  <style>
+    :root { --ink: #f1e9d8; --muted: #a99d88; --glass: rgba(14, 11, 10, 0.86); --line: rgba(232, 220, 192, 0.22); --gold: #d9b45a; --on: #e8dcc0; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: #0e0b0a; color: var(--ink); font: 14px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; -webkit-tap-highlight-color: transparent; }
+    #benchCanvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+    .bar { position: fixed; top: max(10px, env(safe-area-inset-top)); left: 12px; right: 12px; display: flex; align-items: center; gap: 10px; pointer-events: none; }
+    .bar > * { pointer-events: auto; }
+    .title { font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; font-size: 12px; color: var(--gold); background: var(--glass); border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; white-space: nowrap; }
+    .title b { color: var(--ink); font-weight: 600; letter-spacing: 0.02em; text-transform: none; }
+    .spacer { flex: 1; }
+    .seg { display: inline-flex; background: var(--glass); border: 1px solid var(--line); border-radius: 999px; padding: 3px; gap: 2px; }
+    .seg button, .chip { font: inherit; font-size: 13px; color: var(--muted); background: transparent; border: 0; border-radius: 999px; padding: 6px 11px; cursor: pointer; white-space: nowrap; }
+    .seg button.on, .chip.on { background: var(--on); color: #1a0f0c; }
+    a.out { font-size: 12px; color: var(--muted); text-decoration: none; background: var(--glass); border: 1px solid var(--line); border-radius: 999px; padding: 7px 11px; }
+    .dock { position: fixed; left: 10px; right: 10px; bottom: max(10px, env(safe-area-inset-bottom)); max-width: 640px; margin: 0 auto; display: grid; gap: 6px; }
+    .row { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; background: var(--glass); border: 1px solid var(--line); border-radius: 14px; padding: 5px; align-items: center; }
+    .row::-webkit-scrollbar { display: none; }
+    .row .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; padding: 0 4px 0 6px; flex: none; }
+    .tools { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; max-height: 42vh; overflow-y: auto; }
+    .tools label { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); padding: 2px 6px; }
+    .tools label span { min-width: 64px; }
+    .tools input[type=range] { flex: 1; accent-color: var(--gold); min-width: 0; }
+    .tools output { color: var(--ink); min-width: 38px; text-align: right; font-variant-numeric: tabular-nums; }
+    .tools label.off { opacity: 0.35; }
+    .readout { font: 11px/1.4 ui-monospace, monospace; color: var(--muted); padding: 2px 8px; white-space: nowrap; }
+    .hidden { display: none !important; }
+    /* (the settings folded: only their own toggle row stays) */
+    .dock.folded > .row:not(#topRow) { display: none !important; }
+    @media (max-width: 520px) { .tools { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <canvas id="benchCanvas" aria-label="The cloth bench: a skinned garment over a limb, for tuning the cloth material"></canvas>
+
+  <div class="bar hidden" id="bar">
+    <div class="title">Cloth bench · <b id="who">Hydrostatic</b></div>
+    <span class="spacer"></span>
+    <div class="seg" role="group" aria-label="Look">
+      <button type="button" data-look="ink" class="on">Ink</button>
+      <button type="button" data-look="studio">Studio</button>
+    </div>
+    <a class="out" href="./anatomy.html" title="Back to the lineup">The Lab</a>
+  </div>
+
+  <div class="dock hidden" id="dock">
+    <div class="row" id="topRow">
+      <button type="button" class="chip" id="dockFold" aria-label="Fold the settings away">▾ Settings</button>
+      <span class="readout" id="readout"></span>
+    </div>
+    <div class="row" role="group" aria-label="Tissue">
+      <span class="lbl">Tissue</span>
+      <button type="button" class="chip" data-tissue="0">Rigid</button>
+      <button type="button" class="chip" data-tissue="1">Soft</button>
+      <button type="button" class="chip on" data-tissue="2">Hydrostatic</button>
+    </div>
+    <div class="row" role="group" aria-label="Motion">
+      <span class="lbl">Motion</span>
+      <button type="button" class="chip on" data-motion="still">Still</button>
+      <button type="button" class="chip" data-motion="walk">Walk</button>
+      <button type="button" class="chip" data-motion="jog">Jog</button>
+      <button type="button" class="chip" id="wire">Wire</button>
+    </div>
+    <div class="row tools" id="tools"></div>
+  </div>
+
+  <script type="module" src="./cloth.mjs"></script>
+</body>
+</html>
