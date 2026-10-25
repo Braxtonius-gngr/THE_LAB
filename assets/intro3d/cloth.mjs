@@ -111,14 +111,15 @@ export function liveMesh(geo, mat, parent, { outline = 1.2, soft = 0.8 } = {}) {
   return mesh;
 }
 
-// A garment's skin weights, from a function of its rest points: `weightAt`
-// (x, y, z) gives each bone's share (any length, any scale); the four
-// largest are kept, normalised, written as skinIndex / skinWeight. A point
-// no bone claims goes to bone 0.
+// A mesh's skin weights, from a function of its rest points: `weightAt`
+// (x, y, z, i, geo) gives each bone's share (any length, any scale; i the
+// point's index in geo, for a per-point attribute such as which hull it
+// came from); the four largest are kept, normalised, written as skinIndex /
+// skinWeight. A point no bone claims goes to bone 0.
 export function skinTo(geo, weightAt) {
   const p = geo.attributes.position, n = p.count, si = new Uint16Array(n * 4), sw = new Float32Array(n * 4);
   for (let i = 0; i < n; i++) {
-    const w = weightAt(p.getX(i), p.getY(i), p.getZ(i)), order = w.map((v, k) => [v, k]).sort((a, b) => b[0] - a[0]).slice(0, 4);
+    const w = weightAt(p.getX(i), p.getY(i), p.getZ(i), i, geo), order = w.map((v, k) => [v, k]).sort((a, b) => b[0] - a[0]).slice(0, 4);
     let sum = 0; order.forEach(([v]) => { sum += Math.max(0, v); });
     for (let k = 0; k < 4; k++) { const o = order[k]; si[4 * i + k] = o ? o[1] : 0; sw[4 * i + k] = o && sum > 0 ? Math.max(0, o[0]) / sum : (k === 0 ? 1 : 0); }
   }

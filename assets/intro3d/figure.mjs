@@ -82,6 +82,32 @@ function facetSkinned(geo, m, parent, outline, skeleton, weightAt, soft = SOFT) 
 function bindSkinned(list) {
   list.forEach(m => { m.bind(m.skeleton); m.children.forEach(c => { if (c.isSkinnedMesh) c.bind(m.skeleton, m.bindMatrix); }); });
 }
+// the body's hulls as one geometry: each part's indexed hull taken into one
+// frame by its matrix, its points marked with the bone that owns them (the
+// `owner` attribute - the weights read it), the indices run on
+function mergeHulls(parts) {
+  let nv = 0, ni = 0;
+  parts.forEach(p => { nv += p.geo.attributes.position.count; ni += p.geo.index.count; });
+  const pos = new Float32Array(nv * 3), uv = new Float32Array(nv * 2), owner = new Float32Array(nv), idx = new Uint32Array(ni), v = new THREE.Vector3();
+  let vo = 0, io = 0;
+  parts.forEach(p => {
+    const pa = p.geo.attributes.position, ua = p.geo.attributes.uv, ia = p.geo.index;
+    for (let i = 0; i < pa.count; i++) {
+      v.fromBufferAttribute(pa, i).applyMatrix4(p.matrix);
+      pos[3 * (vo + i)] = v.x; pos[3 * (vo + i) + 1] = v.y; pos[3 * (vo + i) + 2] = v.z;
+      uv[2 * (vo + i)] = ua ? ua.getX(i) : 0; uv[2 * (vo + i) + 1] = ua ? ua.getY(i) : 0;
+      owner[vo + i] = p.bone;
+    }
+    for (let k = 0; k < ia.count; k++) idx[io + k] = ia.getX(k) + vo;
+    vo += pa.count; io += ia.count;
+  });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  g.setAttribute('owner', new THREE.BufferAttribute(owner, 1));
+  g.setIndex(new THREE.BufferAttribute(idx, 1));
+  return g;
+}
 
 // points that coincide made one (an icosahedron comes with every face its
 // own three points; welded, its hull is smooth)
@@ -1328,6 +1354,9 @@ export function buildFigure(kit, rnd, o = {}) {
   // (how far the build has moved the front of the trunk at y: features laid
   // on it move with it)
   const dF = y => B ? frontAt(T, y) - frontAt(T0, y) : 0;
+  // (a build's man is one skin: his trunk and limbs' hulls are collected here
+  // and merged into one skinned mesh once his joints stand - see below)
+  const skinParts = [];
   let torso;
   if (o.split) {
     torso = G(hips);
@@ -1345,7 +1374,9 @@ export function buildFigure(kit, rnd, o = {}) {
     // (no spine or rib-ends drawn in the kerf: white blocks down it read as
     // a corset's lacing - the cut is the raw of the two faces)
   } else {
-    torso = facet(loft(T, { n: 16, metric: UVS }), skinUV, hips, 2);
+    // (a build's man: the trunk is a part of his one skin - see the skin below)
+    if (B && !flayed) { skinParts.push({ geo: loft(T, { n: 16, metric: UVS }), group: hips, bone: 'hips' }); torso = null; }
+    else torso = facet(loft(T, { n: 16, metric: UVS }), skinUV, hips, 2);
     // the chest's two plates, the navel
     // (a build: the plates fuller with mass and muscle, falling with age)
     const pk = B ? 1 + 0.22 * B.mass + 0.18 * B.muscle - 0.1 * B.age : 1, py = B ? -2.4 * B.age - 1.2 * Math.max(0, B.mass) : 0, px = B ? 1 + 0.08 * (B.mass + B.muscle) : 1;
@@ -1424,7 +1455,8 @@ export function buildFigure(kit, rnd, o = {}) {
     // the elbow, and ending in the elbow's ball - the forearm starts in the
     // same ball, so the joint bends with no seam (knobs laid over a joint
     // read as a ring, a mannequin's)
-    facet(tube(thick([[0.2, 0.3], [-0.2, 3.4], [-1.4, 5.4], [-3.2, 6.4], [-7, 6.3, 6.0, 0.7], [-12, 5.6, 5.3, 0.6], [-19, 4.8, 4.6, 0.3], [-25, 4.2], ...ball(-30, 4.0, -1)], kA), 12, { metric: UVS }), skinUV, sh, 1.8);
+    const upperArm = tube(thick([[0.2, 0.3], [-0.2, 3.4], [-1.4, 5.4], [-3.2, 6.4], [-7, 6.3, 6.0, 0.7], [-12, 5.6, 5.3, 0.6], [-19, 4.8, 4.6, 0.3], [-25, 4.2], ...ball(-30, 4.0, -1)], kA), 12, { metric: UVS });
+    if (B && !flayed) skinParts.push({ geo: upperArm, group: sh, bone: 'sh' + key.toUpperCase() }); else facet(upperArm, skinUV, sh, 1.8);
     if (flayed) { seam([[s * 5.4, -4, -1.5], [s * 5.4, -14, -2.4], [s * 4.6, -26, -1.6]], sh, kit.ink, 0.4); seam([[0, -5, -5.9], [s * 1.5, -15, -5.6], [0, -25, -4.9]], sh, kit.ink, 0.35); }
     // (the sleeve domed over the shoulder, the cuff turned in)
     // (a build's: the deltoid capping the shoulder, rounder with muscle)
@@ -1433,7 +1465,8 @@ export function buildFigure(kit, rnd, o = {}) {
     const el = G(sh, 0, -30, 0);
     // the forearm: out of the elbow's ball, its belly under the elbow,
     // narrowing to the wrist, closed inside the hand
-    facet(tube(thick([...ball(0, 4.0, 1), [-5, 5.0, 4.5, 0, 0.7], [-12, 4.5, 4.0], [-20, 3.3, 2.7], [-25.5, 2.4, 1.9], [-27.2, 2.2, 1.7], [-28.0, 1.6, 1.3], [-28.4, 0.3]], kF), 12, { metric: UVS }), skinUV, el, 1.7);   // (the forearm's belly high under the elbow, narrowing hard to a slim wrist: one width end to end read as a mannequin's tube)
+    const forearm = tube(thick([...ball(0, 4.0, 1), [-5, 5.0, 4.5, 0, 0.7], [-12, 4.5, 4.0], [-20, 3.3, 2.7], [-25.5, 2.4, 1.9], [-27.2, 2.2, 1.7], [-28.0, 1.6, 1.3], [-28.4, 0.3]], kF), 12, { metric: UVS });
+    if (B && !flayed) skinParts.push({ geo: forearm, group: el, bone: 'el' + key.toUpperCase() }); else facet(forearm, skinUV, el, 1.7);   // (the forearm's belly high under the elbow, narrowing hard to a slim wrist: one width end to end read as a mannequin's tube)
     if (flayed) seam([[s * 4.4, -3, -0.5], [s * 4.2, -12, -2.2], [s * 2.8, -24, -1.8]], el, kit.ink, 0.35);
     const hand = G(el, 0, -29, 0);
     const hh = buildHand(kit, s, skin, { curl: o.curl, nails: !!B }); hand.add(hh); hand.userData.grip = hh.userData.grip;
@@ -1473,11 +1506,14 @@ export function buildFigure(kit, rnd, o = {}) {
     const hip = G(hips, s * (8.5 + (B ? (secAt(T, 0.0).rx - 16.0) * 0.5 : 0)), -4, 0);
     // the thigh: full under the hip, the quadriceps' swell, the knee's taper
     // (one hull from a dome inside the trunk to the knee's ball)
-    const thigh = facet(tube(thick([...THIGH_SKIN, ...ball(-44, 5.2, -1)], kT), 12, { metric: legUV }), legM, hip, 2);
+    const thighGeo = tube(thick([...THIGH_SKIN, ...ball(-44, 5.2, -1)], kT), 12, { metric: legUV });
+    let thigh = null;
+    if (B && !flayed) skinParts.push({ geo: thighGeo, group: hip, bone: 'leg' + key.toUpperCase() }); else thigh = facet(thighGeo, legM, hip, 2);
     if (flayed) { seam([[s * 6.5, -2, -6.2], [s * 2.5, -16, -8.4], [-s * 3, -32, -6.4], [-s * 3.8, -40, -4.6]], hip, kit.ink, 0.45); seam([[-s * 7.8, -4, -2.6], [-s * 7.2, -20, -3.0], [-s * 5.8, -36, -2.4]], hip, kit.ink, 0.4); }
     const kn = G(hip, 0, -44, 0);
     // the shin: out of the knee's ball, the calf's swell behind, the ankle
-    facet(tube(thick([...ball(0, 5.2, 1), [-7, 5.4, 6.2, 0, 2.6], [-14, 5.0, 5.6, 0, 1.8], [-24, 3.8, 4.0, 0, 0.4], [-33, 2.9, 3.0], [-37, 2.6, 2.8], [-39, 2.3], [-40.4, 0.3]], kS), 12, { metric: legUV }), legM, kn, 1.8);   // (the calf swelling high behind and falling away to a slim ankle)
+    const shinGeo = tube(thick([...ball(0, 5.2, 1), [-7, 5.4, 6.2, 0, 2.6], [-14, 5.0, 5.6, 0, 1.8], [-24, 3.8, 4.0, 0, 0.4], [-33, 2.9, 3.0], [-37, 2.6, 2.8], [-39, 2.3], [-40.4, 0.3]], kS), 12, { metric: legUV });
+    if (B && !flayed) skinParts.push({ geo: shinGeo, group: kn, bone: 'knee' + key.toUpperCase() }); else facet(shinGeo, legM, kn, 1.8);   // (the calf swelling high behind and falling away to a slim ankle)
     // the kneecap: a flat plate at the front of the knee's ball, riding on the shin
     const cap = facet(knob(2.6, 1.05, 1.2, 0.55, 1), legS, kn, 0); cap.position.set(0, 1.0, -5.0 * kS); cap.userData.tissue = TISSUE.RIGID;   // (bone: cloth lies crisp over it)
     if (flayed) { seam([[s * 2.2, -3, -5.8], [s * 1.2, -16, -4.8], [s * 0.6, -34, -3.6]], kn, kit.ink, 0.4); seam([[0, -4, 8.2], [0, -14, 7.2], [0, -26, 5.0]], kn, kit.ink, 0.4); }
@@ -1488,35 +1524,62 @@ export function buildFigure(kit, rnd, o = {}) {
     for (let t = 0; t < 5; t++) { const toe = facet(tube([[0, 0.8], [-2.2 + t * 0.2, 0.7]], 5), skin, foot, 0.6); toe.position.set((t - 2) * 1.5 * s - s * 0.4, -2.9, -12.4 + Math.abs(t - 0.5) * 0.5); toe.rotation.x = HALF; }
     legs[key] = { hip, kn, foot, cap, thigh };
   });
-  // the joints' sleeves (a build's men): shoulder, elbow, hip, knee
+  // (a hose's knee sleeves are added by dress; the body's own joints have none)
   const sleeves = [];
+  // the skeleton: a bone in each joint's group, driven by the pose as the
+  // groups are - the skin and a garment that spans joints are skinned to it
+  let rig = null;
+  const skinned = [];
   if (B && !flayed) {
-    const armM = skinUV, shM = skinUV, shUV = UVS;
-    [-1, 1].forEach(s => {
-      const k = s < 0 ? 'r' : 'l', A = arms[k], L = legs[k], hx = L.hip.position.x;
-      addSleeve(root, sleeves, shM, shUV, { pa: hips, a: [s * (A.sh.position.x * s - 4.2), 42.5, A.sh.position.z], pb: A.sh, b: [0, -10, 0], ra: [6.4 * kA, 6.0 * kA], rb: [6.2 * kA, 5.9 * kA], bulge: 0.6, len: 14 });
-      addSleeve(root, sleeves, armM, UVS, { pa: A.sh, a: [0, -22, 0], pb: A.el, b: [0, -8, 0], ra: [4.65 * kA, 4.45 * kA], rb: [4.9 * kF, 4.4 * kF], bulge: 0.15, len: 16 });
-      addSleeve(root, sleeves, legM, legUV, { pa: hips, a: [hx * 0.72, -1.0, 0.4], pb: L.hip, b: [0, -15, 0], ra: [7.4 * kT, 7.8 * kT], rb: [8.6 * kT, 9.0 * kT], bulge: 0.2, len: 18, outline: 1.8 });
-      addSleeve(root, sleeves, legM, legUV, { pa: L.hip, a: [0, -33, 0], pb: L.kn, b: [0, -9, 0], ra: [6.1 * kT, 6.6 * kT], rb: [5.45 * kS, 6.1 * kS], bulge: 0.25, len: 18 });
+    const bone = g => { const b = new THREE.Bone(); g.add(b); return b; };
+    const bones = { hips: bone(hips), legL: bone(legs.l.hip), legR: bone(legs.r.hip), kneeL: bone(legs.l.kn), kneeR: bone(legs.r.kn), shL: bone(arms.l.sh), shR: bone(arms.r.sh), elL: bone(arms.l.el), elR: bone(arms.r.el), neck: bone(neck) };
+    const keys = Object.keys(bones), bi = Object.fromEntries(keys.map((k, i) => [k, i]));
+    rig = { bones, skeleton: new THREE.Skeleton(keys.map(k => bones[k])), index: bi };
+    // the one skin: the trunk and the limbs' hulls merged in the hips' frame
+    // (each at its joint, as it was built), on the bones. A point is its own
+    // hull's bone's; near a joint it is shared with the bone across it - half
+    // and half within the joint's ball (R0: the elbow's and the knee's, where
+    // the two hulls end and start in one sphere, so it turns as one sphere
+    // and never parts), eased off to the hull's own bone by R - so the skin
+    // bends there as one surface (the sleeves that bridged each joint are
+    // gone). The hulls still run on into each other inside the joint (the
+    // thigh's dome in the trunk), and the blend carries both alike.
+    root.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(hips.matrixWorld).invert();
+    const merged = mergeHulls(skinParts.map(p => ({ geo: p.geo, matrix: new THREE.Matrix4().multiplyMatrices(inv, p.group.matrixWorld), bone: bi[p.bone] })));
+    const J = [];
+    ['l', 'r'].forEach(k => {
+      const K = k.toUpperCase(), A = arms[k], L = legs[k], sh = A.sh.position, hp = L.hip.position;
+      J.push({ a: bi.hips, b: bi['sh' + K], P: sh.clone(), R0: 0, R: 8.5 * kA });
+      J.push({ a: bi['sh' + K], b: bi['el' + K], P: sh.clone().add(A.el.position), R0: 4.4 * kA, R: 8 * kA });
+      J.push({ a: bi.hips, b: bi['leg' + K], P: hp.clone(), R0: 0, R: 10.5 * kT });
+      J.push({ a: bi['leg' + K], b: bi['knee' + K], P: hp.clone().add(L.kn.position), R0: 5.7 * kS, R: 10 * kT });
     });
+    const smooth01 = t => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
+    const skinWeights = (x, y, z, i, geo) => {
+      const own = geo.attributes.owner.getX(i), w = new Array(keys.length).fill(0); w[own] = 1;
+      for (const j of J) {
+        if (j.a !== own && j.b !== own) continue;
+        const other = j.a === own ? j.b : j.a, d = Math.hypot(x - j.P.x, y - j.P.y, z - j.P.z), share = 0.5 * smooth01((j.R - d) / (j.R - j.R0));
+        w[own] -= share; w[other] += share;
+      }
+      return w;
+    };
+    const skinMesh = facetSkinned(merged, skinUV, hips, 2, rig.skeleton, skinWeights);
+    skinMesh.userData.skin = true;
+    skinned.push(skinMesh);
+    torso = skinMesh;
   }
   // a build's clothes, over the skin
   let worn = null;
   // (o.nude, the lab's None: no fabric at all - nothing holds the anatomy,
   // so its physics runs unrestrained: support 180 is no cone, no lift)
   if (B && !flayed && o.nude) worn = { cup: null, support: 180, lift: 0, fabric: 'none', hold: FABRIC.none };
-  // (the skeleton: a bone in each joint's group, driven by the pose as the
-  // groups are - a garment that spans joints is skinned to it)
-  let rig = null;
-  if (B && !flayed) {
-    const bone = g => { const b = new THREE.Bone(); g.add(b); return b; };
-    const bones = { hips: bone(hips), legL: bone(legs.l.hip), legR: bone(legs.r.hip), kneeL: bone(legs.l.kn), kneeR: bone(legs.r.kn), shL: bone(arms.l.sh), shR: bone(arms.r.sh), elL: bone(arms.l.el), elR: bone(arms.r.el), neck: bone(neck) };
-    rig = { bones, skeleton: new THREE.Skeleton(Object.values(bones)) };
-  }
   if (B && !flayed && !o.nude) { root.updateMatrixWorld(true); worn = dress(kit, o, T, hips, arms, legs, pouch, { gb, kA, kT, kS, fx, glutes, rig }, sleeves); }
+  if (worn && worn.skinned) skinned.push(...worn.skinned);
   if (B && B.height !== 1) root.scale.setScalar(B.height);
   // (bound at the man's height: a bind reads the bones' world matrices)
-  if (worn && worn.skinned && worn.skinned.length) { root.updateMatrixWorld(true); bindSkinned(worn.skinned); }
+  if (skinned.length) { root.updateMatrixWorld(true); bindSkinned(skinned); }
   // (under a fitted brief the anatomy is not drawn: the brief is its shape,
   // fitted to it each frame - it still moves, and the brief reads it)
   if (worn && worn.cloth && worn.cloth.covers && pouch) pouch.visible = false;
