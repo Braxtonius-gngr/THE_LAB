@@ -270,10 +270,12 @@ function rest(u) {
 function stillFlesh(u) {
   const g = u.pouch && u.pouch.children[0]; if (!g) return;
   const d = g.userData;
-  if (d.shaft) { d.shaft.quaternion.identity(); d.shaft.position.set(0, 0, 0); }
+  if (d.bendShaft) d.bendShaft(null);
+  else if (d.shaft) { d.shaft.quaternion.identity(); d.shaft.position.set(0, 0, 0); }
   (d.lobes || []).forEach(l => { if (l.userData.p0) l.position.copy(l.userData.p0); });
   if (d.updateSac) d.updateSac();
-  if (u.cup) u.cup.quaternion.identity();
+  // (no swing: the cloth hangs at its rest)
+  u.swing = null;
 }
 // (age carries the head forward and eases the knees; the face is lifted
 // back to look ahead)
@@ -448,7 +450,7 @@ function pose(dt, fresh) {
     if (s.sim.step(fresh ? 0 : dt)) awake = 0.6;
   });
   // the cloth over each man, fitted to where his body and anatomy are now
-  active().forEach(s => { const c = s.man && s.man.userData.cloth; if (c) c.update(); });
+  active().forEach(s => { const c = s.man && s.man.userData.cloth; if (c) c.update(fresh ? 0 : dt); });
   dirty = true;
 }
 

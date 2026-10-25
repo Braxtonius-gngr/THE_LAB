@@ -14,6 +14,11 @@
 // Looseness: the anatomy's own `sway` (the dev overlay's Sway slider) -
 // higher is looser. Rest bias: an angle forward off the body's down that
 // the tissue prefers (the lab's Rest angle).
+// Each step it publishes the swing vector (`fig.userData.swing`, the hips'
+// own frame and units): how far the mass and the tip are off their rest, and
+// the mass's velocity against the body. The cloth reads it (cloth.mjs: the
+// fitted brief trails it, the loose pieces are pushed by what passes their
+// drape gap); nothing here reads the cloth.
 import * as THREE from '../vendor/three/three.module.js';
 
 const GRAV = 980;                  // cm/s^2, down
@@ -168,9 +173,20 @@ export class FleshSim {
         if (L.o.length() > lobeMax) { L.o.setLength(lobeMax); L.v.multiplyScalar(0.5); }
       });
     }
+    this.publish(T0, T1);
     this.pose(T0, root);
     const moving = this.v[0].distanceTo(this.anchorV) + this.v[1].distanceTo(this.anchorV);
     return moving > 0.5 || this.lobe.some(l => l.v.lengthSq() > 0.01);
+  }
+
+  // the swing vector, for the cloth: in the hips' frame and units
+  publish(T0, T1) {
+    const u = this.fig.userData, hips = u.hips; if (!hips) return;
+    const S = u.swing || (u.swing = { d: new THREE.Vector3(), tip: new THREE.Vector3(), v: new THREE.Vector3() });
+    hips.getWorldQuaternion(_q).invert(); const k = 1 / hips.getWorldScale(_w).x;
+    S.d.subVectors(this.p[0], T0).applyQuaternion(_q).multiplyScalar(k);
+    S.tip.subVectors(this.p[1], T1).applyQuaternion(_q).multiplyScalar(k);
+    S.v.subVectors(this.v[0], this.anchorV).applyQuaternion(_q).multiplyScalar(k);
   }
 
   // turn the anatomy so its mass lies where the particle is; then the shaft
@@ -183,12 +199,6 @@ export class FleshSim {
     _q.setFromUnitVectors(_a, _b);
     // (how far it is swung off its rest, for the lab's readout)
     this.swing = 2 * Math.acos(Math.min(1, Math.abs(_q.w)));
-    // (the cup of the cloth over it gives, turning part of the way with it)
-    const cup = this.fig.userData.cup;
-    if (cup) cup.quaternion.identity().slerp(_q, 0.6);
-    // (a loincloth's front flap swings out with it from the belt, most of the way)
-    const flap = this.fig.userData.flap;
-    if (flap) flap.quaternion.identity().slerp(_q, 0.8);
     P.quaternion.copy(_q).multiply(_restQ.setFromAxisAngle(_x, this.restAll()));
     P.updateMatrixWorld(true);
     // the shaft: in the inner group's frame, from its root toward the tip particle
@@ -201,8 +211,9 @@ export class FleshSim {
       // (never folded back on itself)
       const ang = 2 * Math.acos(Math.min(1, Math.abs(_q.w)));
       if (ang > 2.3) _q.slerp(new THREE.Quaternion(), 1 - 2.3 / ang);
-      sh.quaternion.copy(_q);
-      sh.position.copy(r0).sub(r0.clone().applyQuaternion(_q));
+      // (a build's: bent out of its sealed root; else turned whole on it)
+      if (u.bendShaft) u.bendShaft(_q);
+      else { sh.quaternion.copy(_q); sh.position.copy(r0).sub(r0.clone().applyQuaternion(_q)); }
     }
     u.lobes.forEach((lb, i) => { if (lb.userData.p0) lb.position.copy(lb.userData.p0).add(this.lobe[i].o); });
     // (the skin over them follows where they went)
