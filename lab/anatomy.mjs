@@ -1,5 +1,7 @@
 // The lab: an empty room with a line of men of every build, for tuning the
-// valley's figures against a body that isn't the valley's one man. Opened
+// app's figures (figure.mjs with `build`) - general-purpose people, meant
+// for every scene once they are polished, not for any one of them (the
+// valley is one scene that may take them up; it does not yet). Opened
 // from the authenticator (?lab sends the owner here); nothing in it moves
 // unless you move it - the camera goes only where you send it, and the
 // walk is the only pose that animates (and it pauses).

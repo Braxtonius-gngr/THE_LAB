@@ -9,6 +9,11 @@
 // Every piece is faceted for the shade and smooth for its outline (the
 // outline is an inverted hull pushed along the normal: flat normals would
 // tear it at every edge).
+// Two kinds of man come out of buildFigure: the valley's (no `build`), and a
+// build's (o.build - tuned in the lab). A build's men are the app's own
+// figures, for any scene that wants people once they are polished - skin all
+// over, dressed, posed and simulated - not the valley's; the valley keeps
+// its own until it is moved over to them.
 import * as THREE from '../vendor/three/three.module.js';
 import { outlineOf, haloOf } from './burin.mjs';
 import { makeFit, makeDrape, liveMesh, TISSUE } from './cloth.mjs';
@@ -1189,7 +1194,7 @@ function dress(kit, o, T, hips, arms, legs, pouch, x, sleeves) {
 }
 
 // ------------------------------------------------------------ a build
-// o.build reshapes a man - the lab's lineup of bodies. The valley's men
+// o.build reshapes a man - the app's figures, tuned in the lab's lineup of bodies. The valley's men
 // never pass it, so they come out exactly as they always have.
 //   height  a scale on the whole man (1 = the valley's, about 165 tall)
 //   mass    -0.5 lean .. 0 the valley's man .. 1 heavy: the belly first,
