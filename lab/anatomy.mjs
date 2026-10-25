@@ -447,6 +447,8 @@ function pose(dt, fresh) {
     if (state.pose === 'seat') { s.seat.updateMatrixWorld(true); s.sim.boxes.push(new THREE.Box3().setFromObject(s.seat)); }
     if (s.sim.step(fresh ? 0 : dt)) awake = 0.6;
   });
+  // the cloth over each man, fitted to where his body and anatomy are now
+  active().forEach(s => { const c = s.man && s.man.userData.cloth; if (c) c.update(); });
   dirty = true;
 }
 
