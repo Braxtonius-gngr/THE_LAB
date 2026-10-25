@@ -104,9 +104,8 @@ export class FleshSim {
   step(dt) {
     const P = this.pouch, g = this.inner; if (!P || !g) return false;
     const u = g.userData, s = g.scale.x, sc = this.fig.getWorldScale(_w).x * P.scale.x * s;
-    // (what he wears stiffens and damps it: see FABRIC in figure.mjs)
-    const H = this.fig.userData.hold || {}, loose = Math.max(0.2, u.sway || 1), k = K / loose * (H.k || 1), c = C / Math.sqrt(loose) * (H.c || 1);
-    const lobeMax = LOBE.max * (H.lobe == null ? 1 : H.lobe), lobeK = LOBE.k / Math.max(0.3, H.lobe == null ? 1 : H.lobe);
+    const loose = Math.max(0.2, u.sway || 1), k = K / loose, c = C / Math.sqrt(loose);
+    const lobeMax = LOBE.max, lobeK = LOBE.k;
     const T0 = new THREE.Vector3(), T1 = new THREE.Vector3(), root = new THREE.Vector3();
     this.targets(T0, T1, root);
     const L0 = T0.distanceTo(this.anchor), L1 = T1.distanceTo(this.anchor);
@@ -184,10 +183,9 @@ export class FleshSim {
     _q.setFromUnitVectors(_a, _b);
     // (how far it is swung off its rest, for the lab's readout)
     this.swing = 2 * Math.acos(Math.min(1, Math.abs(_q.w)));
-    // (the cup of the cloth over it gives, turning with it - a lab man's all
-    // the way, so it is never swung out of what he wears; the valley's part way)
-    const cup = this.fig.userData.cup, H = this.fig.userData.hold;
-    if (cup) cup.quaternion.identity().slerp(_q, H ? (H.follow == null ? 1 : H.follow) : 0.6);
+    // (the cup of the cloth over it gives, turning part of the way with it)
+    const cup = this.fig.userData.cup;
+    if (cup) cup.quaternion.identity().slerp(_q, 0.6);
     // (a loincloth's front flap swings out with it from the belt, most of the way)
     const flap = this.fig.userData.flap;
     if (flap) flap.quaternion.identity().slerp(_q, 0.8);
@@ -201,9 +199,8 @@ export class FleshSim {
       _a.subVectors(t0, r0).normalize(); _b.subVectors(tip, r0).normalize();
       _q.setFromUnitVectors(_a, _b);
       // (never folded back on itself)
-      // (and inside cloth only as far as the cloth lets it)
-      const ang = 2 * Math.acos(Math.min(1, Math.abs(_q.w))), lim = H && H.bend != null ? H.bend : 2.3;
-      if (ang > lim) _q.slerp(new THREE.Quaternion(), 1 - lim / ang);
+      const ang = 2 * Math.acos(Math.min(1, Math.abs(_q.w)));
+      if (ang > 2.3) _q.slerp(new THREE.Quaternion(), 1 - 2.3 / ang);
       sh.quaternion.copy(_q);
       sh.position.copy(r0).sub(r0.clone().applyQuaternion(_q));
     }
