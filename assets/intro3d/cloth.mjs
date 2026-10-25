@@ -42,7 +42,7 @@ export const TISSUE = { RIGID: 0, SOFT: 1 };
 export const tissueOf = m => (m.userData.tissue ?? TISSUE.SOFT);
 
 const NONE = -1e9;
-const CELL = 0.8;        // cm a cell
+const CELL = 0.6;        // cm a cell
 const ITER = 36;         // membrane passes a frame (warm-started)
 const LAYER_GAP = 0.12;  // over the brief it lies on
 const TUCK = 0.45;       // under the brief's front where only the brief is there
@@ -53,7 +53,7 @@ const _m = new THREE.Matrix4(), _inv = new THREE.Matrix4(), _v = new THREE.Vecto
 //   bodies: () => [mesh], layers: () => [mesh], outline }
 export function makePanel(spec) {
   const P = { spec, mesh: null, nx: 0, ny: 0 };
-  let F = null, h = null, lower = null, target = null, anat = null, body = null, layer = null, soft = null, tmp = null;
+  let F = null, h = null, lower = null, target = null, anat = null, body = null, layer = null, soft = null, tmp = null, covered = null;
 
   function alloc() {
     F = spec.frame();
@@ -66,11 +66,14 @@ export function makePanel(spec) {
     const pos = new Float32Array(n * 3), uv = [], idx = [];
     const [mu, mv] = spec.metric;
     for (let j = 0; j <= P.ny; j++) for (let i = 0; i <= P.nx; i++) uv.push((F.x0 + i * CELL) * mu, (F.y0 + j * CELL) * mv);
-    for (let j = 0; j < P.ny; j++) for (let i = 0; i < P.nx; i++) { const a = j * (P.nx + 1) + i, b = a + 1, c = a + P.nx + 1, d = c + 1; idx.push(a, b, c, b, d, c); }   // (wound to face out along ez)
+    // (the index is rebuilt each update with only the cells that show - see
+    // below - into a buffer sized for all of them)
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-    geo.setIndex(idx);
+    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(P.nx * P.ny * 6), 1));
+    geo.setDrawRange(0, 0);
+    covered = new Uint8Array(n);
     if (P.mesh) { P.mesh.geometry.dispose(); P.mesh.geometry = geo; P.mesh.children.forEach(c => { if (c.userData.outline) c.geometry = geo; }); }
     else {
       P.mesh = new THREE.Mesh(geo, spec.mat); P.mesh.frustumCulled = false; P.mesh.userData.clothPanel = true;
@@ -157,6 +160,7 @@ export function makePanel(spec) {
       if (a > NONE / 2) lo = Math.max(lo, a + thick);
       if (b > NONE / 2) lo = Math.max(lo, b + thick);
       if (l > NONE / 2) lo = Math.max(lo, l + LAYER_GAP);
+      covered[q] = a > NONE / 2 ? 1 : 0;
       if (a > NONE / 2) { lower[q] = lo; target[q] = lo; }                   // over the anatomy: never inside it, or the thigh, or the brief
       else if (l > NONE / 2) { lower[q] = NONE; target[q] = l - TUCK; }     // only the brief: tuck under it
       else if (b > NONE / 2) { lower[q] = NONE; target[q] = b - TUCK * 2; } // only a thigh: in under its skin (the leg opening)
@@ -184,6 +188,17 @@ export function makePanel(spec) {
       pos.setXYZ(q, O.x + X * ex.x + Y * ey.x + Z * ez.x, O.y + X * ex.y + Y * ey.y + Z * ez.y, O.z + X * ex.z + Y * ey.z + Z * ez.z);
     }
     pos.needsUpdate = true;
+    // only the cells that show: a cell is drawn when a corner of it is over
+    // the anatomy - the rest is tucked under the brief or into the thigh, or
+    // fallen back, and drawing it would show a sheet's edge where none is
+    const ia = P.mesh.geometry.index, ix = ia.array; let k = 0;
+    for (let j = 0; j < P.ny; j++) for (let i = 0; i < P.nx; i++) {
+      const a = j * W + i, b = a + 1, c = a + W, d = c + 1;
+      if (!(covered[a] | covered[b] | covered[c] | covered[d])) continue;
+      ix[k++] = a; ix[k++] = b; ix[k++] = c; ix[k++] = b; ix[k++] = d; ix[k++] = c;   // (wound to face out along ez)
+    }
+    ix.fill(0, k);   // (the rest degenerate, so the normals read only what is drawn)
+    ia.needsUpdate = true; P.mesh.geometry.setDrawRange(0, k);
     P.mesh.geometry.computeVertexNormals();
     P.mesh.geometry.computeBoundingSphere();
   };
