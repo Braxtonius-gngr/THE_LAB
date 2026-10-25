@@ -1364,7 +1364,9 @@ export function valleyKit() {
     // (flesh: the paper, hatched along the limb; the face in its rings;
     // hair a dark passage; the raw of a wound or a flayed man is blood)
     flesh: mat({ freq: 1.2, angle: -0.55, tone: -0.06, keyI: 1.0, sky: 0.44, wobble: 0.5, bare: 0.16 }),
-    fleshUV: mat({ uv: [12, 5], angle: HALF - 0.28, tone: -0.06, keyI: 1.0, sky: 0.44, wobble: 0.4, bare: 0.16 }),
+    // (the hull that carries its direction - a build's skin - is hatched
+    // round the form, finer than the linen, stippled in the light)
+    fleshUV: mat({ uv: [12, 5], angle: HALF - 0.28, tone: -0.06, keyI: 1.0, sky: 0.44, wobble: 0.4, bare: 0.16, form: 0.68, stipple: 1 }),
     face: mat({ freq: 1.25, angle: 1.1, tone: -0.08, keyI: 1.15, sky: 0.44, wobble: 0.45 }),
     hair: mat({ uv: [24, 8], angle: 0.3, tone: 0.58, freq: 1.6, wobble: 1.2 }),
     raw: mat({ paper: BLOOD, tone: 0.34, freq: 1.4, angle: -0.4, keyI: 1.2 }),

@@ -90,15 +90,20 @@ function mergeHulls(parts) {
   parts = parts.map(p => (p.geo.index ? p : Object.assign({}, p, { geo: weld(p.geo) })));
   let nv = 0, ni = 0;
   parts.forEach(p => { nv += p.geo.attributes.position.count; ni += p.geo.index.count; });
-  const pos = new Float32Array(nv * 3), uv = new Float32Array(nv * 2), owner = new Float32Array(nv), idx = new Uint32Array(ni), v = new THREE.Vector3();
+  const pos = new Float32Array(nv * 3), uv = new Float32Array(nv * 2), owner = new Float32Array(nv), along = new Float32Array(nv * 3), idx = new Uint32Array(ni), v = new THREE.Vector3();
   let vo = 0, io = 0;
   parts.forEach(p => {
-    const pa = p.geo.attributes.position, ua = p.geo.attributes.uv, ia = p.geo.index;
+    const pa = p.geo.attributes.position, ua = p.geo.attributes.uv, al = p.geo.attributes.aAlong, ia = p.geo.index;
     for (let i = 0; i < pa.count; i++) {
       v.fromBufferAttribute(pa, i).applyMatrix4(p.matrix);
       pos[3 * (vo + i)] = v.x; pos[3 * (vo + i) + 1] = v.y; pos[3 * (vo + i) + 2] = v.z;
       uv[2 * (vo + i)] = ua ? ua.getX(i) : 0; uv[2 * (vo + i) + 1] = ua ? ua.getY(i) : 0;
       owner[vo + i] = p.bone;
+      // (the hull's direction carried round with it; a knob - a buttock -
+      // takes its own up, so its lines lie level round it)
+      if (al) v.fromBufferAttribute(al, i); else v.set(0, 1, 0);
+      v.transformDirection(p.matrix);
+      along[3 * (vo + i)] = v.x; along[3 * (vo + i) + 1] = v.y; along[3 * (vo + i) + 2] = v.z;
     }
     for (let k = 0; k < ia.count; k++) idx[io + k] = ia.getX(k) + vo;
     vo += pa.count; io += ia.count;
@@ -107,6 +112,7 @@ function mergeHulls(parts) {
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   g.setAttribute('owner', new THREE.BufferAttribute(owner, 1));
+  g.setAttribute('aAlong', new THREE.BufferAttribute(along, 3));
   g.setIndex(new THREE.BufferAttribute(idx, 1));
   return g;
 }
@@ -145,14 +151,14 @@ function softDrive(hips, ucm, gains) {
 // points that coincide made one (an icosahedron comes with every face its
 // own three points; welded, its hull is smooth)
 function weld(geo) {
-  const p = geo.attributes.position, t = geo.attributes.uv, map = new Map(), pos = [], uv = [], idx = [];
+  const p = geo.attributes.position, t = geo.attributes.uv, al = geo.attributes.aAlong, map = new Map(), pos = [], uv = [], along = [], idx = [];
   for (let i = 0; i < p.count; i++) {
     const k = p.getX(i).toFixed(3) + ',' + p.getY(i).toFixed(3) + ',' + p.getZ(i).toFixed(3);
     let j = map.get(k);
-    if (j == null) { j = pos.length / 3; map.set(k, j); pos.push(p.getX(i), p.getY(i), p.getZ(i)); if (t) uv.push(t.getX(i), t.getY(i)); }
+    if (j == null) { j = pos.length / 3; map.set(k, j); pos.push(p.getX(i), p.getY(i), p.getZ(i)); if (t) uv.push(t.getX(i), t.getY(i)); if (al) along.push(al.getX(i), al.getY(i), al.getZ(i)); }
     idx.push(j);
   }
-  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); if (t) g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); return g;
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); if (t) g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); if (al) g.setAttribute('aAlong', new THREE.Float32BufferAttribute(along, 3)); g.setIndex(idx); return g;
 }
 // facet()'s mesh, reshaped in place each frame (a garment fitted to the body,
 // the shaft bending out of its root): cloth.mjs's liveMesh, with the halo
@@ -202,7 +208,7 @@ function loft(secs, o = {}) {
     }
     return r;
   };
-  const rings = secs.map(ringOf), uv = [];
+  const rings = secs.map(ringOf), uv = [], along = [];
   // (uv: u round the section, v along the hull - the UV plates hatch along the limb)
   let run = 0; const vAt = [0];
   for (let j = 1; j < secs.length; j++) { run += Math.hypot((secs[j].x || 0) - (secs[j - 1].x || 0), secs[j].y - secs[j - 1].y, (secs[j].z || 0) - (secs[j - 1].z || 0)); vAt.push(run); }
@@ -212,6 +218,16 @@ function loft(secs, o = {}) {
   const fq = o.metric ? 1.3 / (o.metric[2] || 1.3) : 1;
   const mu = o.metric ? DENS * fq / o.metric[0] : 1, mv = o.metric ? DENS * fq / o.metric[1] : 1;
   rings.forEach((r, j) => { const per = o.metric ? PI * (secs[j].rx + secs[j].rz) * (open ? (a1 - a0) / (PI * 2) : 1) : 1; r.forEach((p, i) => { pos.push(...p); uv.push(frac(i) * per * mu, (o.metric ? vAt[j] : (run ? vAt[j] / run : 0)) * mv); }); });
+  // (aAlong: the hull's own direction at each ring - from its centre to the
+  // next's, the last ring from the one before (the centres', not each
+  // point's: a lobe or a fold pulls a point off the line, and a plate's
+  // rings would kink round it) - so a plate can lay its lines round the
+  // form, square to it, wherever the hull turns; see burin.mjs)
+  const cAt = j => [secs[j].x || 0, secs[j].y, secs[j].z || 0];
+  rings.forEach((r, j) => {
+    const k = j < rings.length - 1 ? j + 1 : j - 1, d = k >= 0 ? [cAt(k)[0] - cAt(j)[0], cAt(k)[1] - cAt(j)[1], cAt(k)[2] - cAt(j)[2]] : [0, 1, 0], L = Math.hypot(d[0], d[1], d[2]) || 1;
+    r.forEach(() => along.push(d[0] / L, d[1] / L, d[2] / L));
+  });
   // (a hull built downward would be inside out: its faces are turned)
   const down = secs[secs.length - 1].y < secs[0].y;
   for (let j = 0; j < secs.length - 1; j++) {
@@ -225,7 +241,7 @@ function loft(secs, o = {}) {
     [0, secs.length - 1].forEach((j, k) => {
       const s = secs[j]; if (s.rx < 0.3 && s.rz < 0.3) return;
       const cx = (s.x || 0), cz = (s.z || 0);
-      const ci = pos.length / 3; pos.push(cx, s.y, cz); uv.push(0.5, k);
+      const ci = pos.length / 3; pos.push(cx, s.y, cz); uv.push(0.5, k); along.push(...along.slice(j * cols * 3, j * cols * 3 + 3));
       for (let i = 0; i < (open ? n : n); i++) {
         const i2 = open ? i + 1 : (i + 1) % n;
         const a = j * cols + i, b = j * cols + i2;
@@ -236,6 +252,7 @@ function loft(secs, o = {}) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('aAlong', new THREE.Float32BufferAttribute(along, 3));
   g.setIndex(idx);
   return g;
 }
@@ -719,7 +736,7 @@ function anatomyFor(rnd) {
 // both ends, with UVs laid in world units so the hatch matches the body
 function sweep(pts, radii, n = 12, metric, shape = null) {
   const c = new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(...p)));
-  const S = Math.max(8, pts.length * 4), pos = [], uv = [], idx = [];
+  const S = Math.max(8, pts.length * 4), pos = [], uv = [], idx = [], dirs = [];
   const frames = c.computeFrenetFrames(S, false);
   const rAt = t => { const f = t * (radii.length - 1), i = Math.min(radii.length - 2, Math.floor(f)), k = f - i; return radii[i] * (1 - k) + radii[i + 1] * k; };
   const fq = metric ? 1.3 / (metric[2] || 1.3) : 1;
@@ -729,19 +746,21 @@ function sweep(pts, radii, n = 12, metric, shape = null) {
   const vAt = [0]; let runLen = 0;
   for (let j = 1; j <= S; j++) { runLen += c.getPointAt(j / S).distanceTo(c.getPointAt((j - 1) / S)); vAt.push(runLen); }
   for (let j = 0; j <= S; j++) {
-    const t = j / S, p = c.getPointAt(t), r = rAt(t) * (shape ? shape(t) : 1), N = frames.normals[j], B = frames.binormals[j];
+    const t = j / S, p = c.getPointAt(t), r = rAt(t) * (shape ? shape(t) : 1), N = frames.normals[j], B = frames.binormals[j], Tg = frames.tangents[j];
     const circ = 2 * PI * r;
     for (let i = 0; i < n; i++) {
       const a = i / n * PI * 2;
       pos.push(p.x + r * (Math.cos(a) * N.x + Math.sin(a) * B.x), p.y + r * (Math.cos(a) * N.y + Math.sin(a) * B.y), p.z + r * (Math.cos(a) * N.z + Math.sin(a) * B.z));
       uv.push(metric ? (i / n) * circ * mu : i / n, metric ? vAt[j] * mv : j / S);
+      dirs.push(Tg.x, Tg.y, Tg.z);   // (the curve's own direction: see loft's aAlong)
     }
   }
   for (let j = 0; j < S; j++) for (let i = 0; i < n; i++) { const a = j * n + i, b = j * n + (i + 1) % n, c2 = a + n, d = b + n; idx.push(a, b, c2, b, d, c2); }
-  [0, S].forEach((j, k) => { const p = c.getPointAt(k), ci = pos.length / 3; pos.push(p.x, p.y, p.z); uv.push(0.5, k ? vAt[S] * mv : 0); for (let i = 0; i < n; i++) { const a = j * n + i, b = j * n + (i + 1) % n; if (k) idx.push(ci, a, b); else idx.push(ci, b, a); } });
+  [0, S].forEach((j, k) => { const p = c.getPointAt(k), ci = pos.length / 3, Tg = frames.tangents[j]; pos.push(p.x, p.y, p.z); uv.push(0.5, k ? vAt[S] * mv : 0); dirs.push(Tg.x, Tg.y, Tg.z); for (let i = 0; i < n; i++) { const a = j * n + i, b = j * n + (i + 1) % n; if (k) idx.push(ci, a, b); else idx.push(ci, b, a); } });
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('aAlong', new THREE.Float32BufferAttribute(dirs, 3));
   g.setIndex(idx);
   // (each point's share of the way along, 0 at the start, 1 at the end - the
   // rings are laid at even arc lengths - for a bend that grows along it)
