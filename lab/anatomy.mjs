@@ -64,6 +64,8 @@ const VARS = Object.keys(FACE_VARIANTS);
 const state = {
   look: 'ink', pose: 'stand', outfit: 'loin', face: 'auto', focus: -1, frame: 'all', physics: true,
   rest: Object.assign({}, REST), restFixed: Object.assign({}, REST_FIXED), hungMode: 'physics', paused: false,
+  // the GPU cloth's hydrostatic state over the fork, 0 slack to 1 firm (the Firm slider)
+  firm: 0.4,
   // (None's paint: 'orange' see-through, 'split' lobes blue/red and the
   // pouch orange, 'brown' opaque - nothing bare in a physics test)
   paint: 'orange',
@@ -179,6 +181,7 @@ function build(s) {
   // the ropes round his ankles, for the gallows
   u.ropes = ['l', 'r'].map(k => { const r = new THREE.Mesh(new THREE.TorusGeometry(6.4, 0.9, 6, 12), kit.rope); r.position.y = 2; r.rotation.x = PI / 2; r.visible = false; u.legs[k].foot.add(r); return r; });
   s.g.add(man); s.man = man;
+  if (u.cloth && u.cloth.setState) u.cloth.setState(state.firm);
   s.sim = u.pouch ? new FleshSim(man) : null;
   if (bare()) proxy(man);
   setFaceOf(man);
@@ -237,7 +240,9 @@ function applyLook(root) {
     if (o.userData.proxyHidden) { o.visible = false; return; }
     if (o.userData.wire === true) { o.visible = true; return; }
     if (o.userData.outline) { o.visible = !studio; return; }
-    if (o.userData.ink) { o.material = studio ? o.userData.studio : o.userData.ink; return; }
+    // (the GPU cloth: its ink plate and a studio clay on the same uniforms)
+    if (o.userData.ucm && !o.userData.ink) { o.userData.ink = o.material; o.userData.studio = o.userData.ucm.twin(STUDIO.linen).material; }
+    if (o.userData.ink) { o.material = studio ? o.userData.studio : o.userData.ink; o.castShadow = o.receiveShadow = studio; return; }
     // (a mesh built since the last switch carries whichever plate it was
     // made with: find its ink plate either way)
     if (!o.userData.inkMat) o.userData.inkMat = toInk.get(o.material) || o.material;
@@ -572,12 +577,15 @@ const ui = {
     if (p === 'hung') add(`<span class="seg"><button type="button" data-hm="physics" class="${state.hungMode === 'physics' ? 'on' : ''}">Falls</button><button type="button" data-hm="valley" class="${state.hungMode === 'valley' ? 'on' : ''}">Valley flip</button></span>`);
     const live = !(p === 'hung' && state.hungMode === 'valley'), R = restOf();
     if (live) add(`<label>${state.physics ? 'Rest bias' : 'Rest angle'} <input type="range" id="restA" min="0" max="180" step="1" value="${R[p]}"><output id="restO">${R[p]}°</output></label>`);
+    // (a snug fabric: the cloth's hydrostatic state over the fork)
+    if (active().some(s => s.man && s.man.userData.cloth && s.man.userData.cloth.covers)) add(`<label>Firm <input type="range" id="firmA" min="0" max="1" step="0.01" value="${state.firm}"><output id="firmO">${state.firm.toFixed(2)}</output></label>`);
     add(`<span class="lbl" id="hold" style="text-transform:none;letter-spacing:0;flex:1 1 100%"></span>`);
     box.classList.toggle('hidden', !box.children.length);
     const pz = $('#pause'); if (pz) pz.onclick = () => { state.paused = !state.paused; ui.tools(); };
     const ph = $('#phys'); if (ph) ph.onclick = () => { state.physics = !state.physics; ui.tools(); pose(0, true); };
     box.querySelectorAll('[data-hm]').forEach(b => { b.onclick = () => { state.hungMode = b.dataset.hm; ui.tools(); pose(0, true); }; });
     const ra = $('#restA'); if (ra) ra.oninput = () => { restOf()[p] = +ra.value; $('#restO').textContent = ra.value + '°'; awake = 1; pose(0); };
+    const fa = $('#firmA'); if (fa) fa.oninput = () => { state.firm = +fa.value; $('#firmO').textContent = state.firm.toFixed(2); active().forEach(s => { const c = s.man && s.man.userData.cloth; if (c && c.setState) c.setState(state.firm); }); dirty = true; };
   }
 };
 document.querySelectorAll('[data-look]').forEach(b => b.addEventListener('click', () => {

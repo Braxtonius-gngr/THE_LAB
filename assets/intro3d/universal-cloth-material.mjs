@@ -33,9 +33,16 @@
 // so a lit surface shades as the shape it has become, not the flat one it
 // was. Without those tangents it is still carried out, its normal unchanged.
 //
-// The hydrostatic profile is written exactly as specified: its width falls
-// off linearly across the axis (a ridge down the middle) and its length as
-// a half sine (0 at the base - sealed - and at the tip).
+// The hydrostatic profile: its width falls off as a half ellipse across the
+// axis (round at the crown - a linear falloff put a crease down the middle)
+// and its length as a half sine (0 at the base - sealed - and at the tip).
+//
+// The uv the shape is read off is the mesh's `uv` unless the material is
+// made with { uv: '<attribute>' } (a garment whose uv is laid for its hatch
+// carries a second, isotropic one for the cloth); `wrap(material)` patches
+// another material onto the same uniforms (a mesh's outline, so it follows
+// the shape); `twin(base)` is the same cloth on another base (a studio clay
+// beside an ink plate), sharing the uniforms.
 //
 // Not handled: instanced and morphed meshes (their normals are taken as the
 // attribute gives them), and a uv seam crossing the shape (its tangents jump).
@@ -69,6 +76,11 @@ uniform vec2 u_swingVector; // The cloth's trail behind what moves under it (uv)
 uniform float u_uvEps;      // The step the normal is differenced over (uv)
 attribute vec3 clothDu;     // d position / d u (prepareClothGeometry)
 attribute vec3 clothDv;     // d position / d v
+#ifdef UC_CUSTOM_UV
+attribute vec2 UC_UV;       // the uv the shape is read off, when not the mesh's own
+#else
+#define UC_UV uv
+#endif
 
 // Rigid / piercing: crisp and unyielding - flat to its edge, then a smoothstep
 float ucRigid(vec2 p) {
@@ -97,7 +109,10 @@ float ucHydrostatic(vec2 p) {
   float hydrostaticPeak = 0.0;
   if (longitudinalDist >= 0.0 && longitudinalDist <= len) {
     // Elliptical width falloff (narrows on sides, prominent down the center)
-    float widthFactor = 1.0 - (transverseDist / (u_width * mix(1.5, 0.8, u_state)));
+    // - a half ellipse across the axis: round at the crown, so no crease
+    // down the middle (a straight 1 - t/w is a tent, its apex a ridge)
+    float widthT = transverseDist / (u_width * mix(1.5, 0.8, u_state));
+    float widthFactor = widthT < 1.0 ? sqrt(1.0 - widthT * widthT) : 0.0;
 
     if (widthFactor > 0.0) {
       // Longitudinal profile (tapers at base, rounds at tip)
@@ -141,7 +156,8 @@ const MAIN = /* glsl */`
   ucN = normalize(ucN);
 
   // carried out along it
-  float ucH = ucHeight(uv);
+  vec2 ucUv = UC_UV;
+  float ucH = ucHeight(ucUv);
   transformed += ucN * ucH;
 
   #if defined( UC_OBJECT_NORMAL ) || defined( UC_VNORMAL )
@@ -150,8 +166,8 @@ const MAIN = /* glsl */`
     float ucSide = dot(ucBase, ucN);
     if (abs(ucSide) > 1e-12) {
       float ucE = max(u_uvEps, 1e-6);
-      float ucHu = (ucHeight(uv + vec2(ucE, 0.0)) - ucHeight(uv - vec2(ucE, 0.0))) / (2.0 * ucE);
-      float ucHv = (ucHeight(uv + vec2(0.0, ucE)) - ucHeight(uv - vec2(0.0, ucE))) / (2.0 * ucE);
+      float ucHu = (ucHeight(ucUv + vec2(ucE, 0.0)) - ucHeight(ucUv - vec2(ucE, 0.0))) / (2.0 * ucE);
+      float ucHv = (ucHeight(ucUv + vec2(0.0, ucE)) - ucHeight(ucUv - vec2(0.0, ucE))) / (2.0 * ucE);
       vec3 ucC = cross(ucDu + ucHu * ucN, ucDv + ucHv * ucN);
       float ucL = length(ucC);
       if (ucL > 1e-12) {
@@ -174,8 +190,9 @@ const MAIN = /* glsl */`
 }
 `;
 
-// patch one material's shader; normals: whether it shades (a shadow material does not)
-function patch(mat, uniforms, normals) {
+// patch one material's shader; normals: whether it shades (a shadow material
+// does not); uvName: the attribute the shape is read off (null: the mesh's uv)
+function patch(mat, uniforms, normals, uvName) {
   const prev = mat.onBeforeCompile;
   mat.onBeforeCompile = (shader, renderer) => {
     if (prev) prev.call(mat, shader, renderer);
@@ -183,6 +200,7 @@ function patch(mat, uniforms, normals) {
     if (!vs.includes('#include <skinning_vertex>')) throw new Error('UniversalClothMaterial: the vertex shader has no <skinning_vertex> to follow');
     Object.assign(shader.uniforms, uniforms);
     const defs = [];
+    if (uvName) defs.push('#define UC_CUSTOM_UV', '#define UC_UV ' + uvName);
     // (a material that reads objectNormal after skinning - burin's ink - takes
     // the new one there; three's lit built-ins have set vNormal already, so
     // it is set again)
@@ -193,15 +211,15 @@ function patch(mat, uniforms, normals) {
     shader.vertexShader = shader.vertexShader.replace('#include <skinning_vertex>', MAIN);
   };
   const key = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-  mat.customProgramCacheKey = () => key() + '|uc-cloth-1' + (normals ? 'n' : '');
+  mat.customProgramCacheKey = () => key() + '|uc-cloth-2' + (normals ? 'n' : '') + (uvName || '');
   return mat;
 }
 
 // d position / d u and d v at each point (the uv's own tangents, unnormalised
 // - their length is how far a unit of uv goes on the mesh), averaged over the
 // faces round it: clothDu and clothDv, for the re-derived normal
-export function prepareClothGeometry(geo) {
-  const p = geo.attributes.position, t = geo.attributes.uv; if (!p || !t) return geo;
+export function prepareClothGeometry(geo, uvName = 'uv') {
+  const p = geo.attributes.position, t = geo.attributes[uvName]; if (!p || !t) return geo;
   const n = p.count, du = new Float32Array(n * 3), dv = new Float32Array(n * 3), cnt = new Uint16Array(n);
   const ix = geo.index ? geo.index.array : null, tris = ix ? ix.length : n;
   const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), U = new THREE.Vector3(), V = new THREE.Vector3();
@@ -229,16 +247,22 @@ export function prepareClothGeometry(geo) {
 // Parameters are the uniforms without their u_ (tissueType, baseUV, direction,
 // length, width, state, maxDepth, radius, jiggle, clinginess, drapeDistance,
 // swingVector, uvEps), read with ?? so a 0 - rigid tissue, a slack state -
-// is a value and never falls back to a default.
+// is a value and never falls back to a default; `uv` names the attribute the
+// shape is read off (the mesh's own by default).
 export class UniversalClothMaterial {
-  constructor(base, params = {}) {
-    this.uniforms = {};
-    for (const [k, v] of Object.entries(DEFAULTS)) this.uniforms[k] = { value: Array.isArray(v) ? new THREE.Vector2(...v) : v };
+  constructor(base, params = {}, shared = null) {
+    this.uvName = params.uv && params.uv !== 'uv' ? params.uv : null;
+    this.uniforms = shared || {};
+    if (!shared) for (const [k, v] of Object.entries(DEFAULTS)) this.uniforms[k] = { value: Array.isArray(v) ? new THREE.Vector2(...v) : v };
     this.set(params);
-    this.material = patch(base.clone(), this.uniforms, true);
-    this.depthMaterial = patch(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }), this.uniforms, false);
-    this.distanceMaterial = patch(new THREE.MeshDistanceMaterial(), this.uniforms, false);
+    this.material = patch(base.clone(), this.uniforms, true, this.uvName);
+    this.depthMaterial = patch(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }), this.uniforms, false, this.uvName);
+    this.distanceMaterial = patch(new THREE.MeshDistanceMaterial(), this.uniforms, false, this.uvName);
   }
+  // another material (a mesh's outline) carried out the same way, on the same uniforms
+  wrap(material) { return patch(material.clone(), this.uniforms, true, this.uvName); }
+  // the same cloth on another base, sharing the uniforms (a studio clay for an ink plate)
+  twin(base) { return new UniversalClothMaterial(base, { uv: this.uvName || 'uv' }, this.uniforms); }
   set(params) {
     for (const [k, v] of Object.entries(params)) {
       const u = this.uniforms['u_' + k]; if (!u || v === undefined) continue;
@@ -249,7 +273,7 @@ export class UniversalClothMaterial {
   }
   tick(t) { this.uniforms.u_time.value = t; return this; }
   apply(mesh) {
-    if (!mesh.geometry.attributes.clothDu) prepareClothGeometry(mesh.geometry);
+    if (!mesh.geometry.attributes.clothDu) prepareClothGeometry(mesh.geometry, this.uvName || 'uv');
     mesh.material = this.material;
     mesh.customDepthMaterial = this.depthMaterial;
     mesh.customDistanceMaterial = this.distanceMaterial;
