@@ -70,6 +70,7 @@ const VERT = /* glsl */`
   varying vec3 vNormalO;  // the normal in the same space
   varying vec3 vLocal;    // the point as it stands now (posed, the soft tissue out), object space: the lines are laid in it, so they bend with it
   varying vec3 vBind;     // the point at rest: the hand's wobble and the stipple are fixed to the skin by it
+  varying float vTaut;    // 0..1: cloth drawn taut over what is under it (UniversalClothMaterial's ucTaut)
   varying float vScale;   // the object's scale in the world, so a pitch in its units prints the same on every man
   attribute vec2 aTone;
   attribute vec3 aAlong;
@@ -94,6 +95,11 @@ const VERT = /* glsl */`
     vLocal = transformed;
     vBind = position;
     vScale = length(modelMatrix[1].xyz);
+    #ifdef UC_TAUT
+      vTaut = ucTaut;
+    #else
+      vTaut = 0.0;
+    #endif
     vec4 w = modelMatrix * vec4(transformed, 1.0);
     vWorld = w.xyz;
     vNormalW = normalize(mat3(modelMatrix) * objectNormal);
@@ -118,6 +124,7 @@ const FRAG = /* glsl */`
   varying vec3 vNormalO;
   varying vec3 vLocal;
   varying vec3 vBind;
+  varying float vTaut;
   varying float vScale;
   uniform float uForm;     // >0: the lines wrap the form - laid round each hull square to its aAlong, the shade crossed at 60 degrees (the value: the pitch, as a factor on uFreq)
   uniform float uStip;     // 0..1: a stipple in the lit flat of a wrapped form - dots in the hatch's gaps, fixed to the skin
@@ -208,20 +215,22 @@ const FRAG = /* glsl */`
     if (uSwell > 0.0) { float sw = 1.0 + uSwell * (vnoise(vec2(dot(p, along) * 0.035, floor(dot(p, d1) * uFreq + wob) * 1.37)) - 0.5) * 2.0; w1 *= sw; w1b *= sw; }
     float w2 = mix(0.0, 0.42, smoothstep(0.62, 0.95, t));
     float w3 = mix(0.0, 0.3, smoothstep(0.8, 1.0, t));
+    // (cloth drawn taut over a form under it: the lines close up over it)
+    float fq = uFreq * (1.0 + 0.55 * vTaut);
     float ink;
     if (uPitchPx > 0.0) {
       // the pitch held on screen: where uFreq would put more than one
       // line per uPitchPx pixels, drop an octave (half the lines), and
       // blend the two octaves so nothing pops as it recedes
-      float lpp = fwidth(dot(p, d1)) * uFreq;             // lines per pixel at uFreq
+      float lpp = fwidth(dot(p, d1)) * fq;                // lines per pixel at fq
       float k = max(0.0, log2(max(lpp * uPitchPx, 1e-5)));
       float k0 = floor(k), fr = k - k0;
-      float f0 = uFreq * exp2(-k0), f1 = f0 * 0.5;
+      float f0 = fq * exp2(-k0), f1 = f0 * 0.5;
       ink = mix(sets(p, d1, f0, w1, w1b, w2, w3, wob), sets(p, d1, f1, w1, w1b, w2, w3, wob), smoothstep(0.0, 1.0, fr));
     } else {
-      ink = sets(p, d1, uFreq, w1, w1b, w2, w3, wob);
+      ink = sets(p, d1, fq, w1, w1b, w2, w3, wob);
       // where the lines fall under a pixel they dissolve into their mean
-      float px = fwidth(dot(p, d1) * uFreq);
+      float px = fwidth(dot(p, d1) * fq);
       float mean = clamp(w1 + w1b + w2 * 0.6 + w3 * 0.4, 0.0, 1.0);
       ink = mix(ink, mean, smoothstep(0.45, 1.0, px));
     }
@@ -258,7 +267,7 @@ const FRAG = /* glsl */`
     // drawn round a limb, not a lathe's ring); the others 60 degrees off it
     vec3 d1 = 0.96 * a - 0.28 * r;
     vec3 d2 = 0.5 * d1 + 0.866 * cross(n, d1), d3 = 0.5 * d1 - 0.866 * cross(n, d1);
-    float f = uFreq * uForm * vScale;
+    float f = uFreq * uForm * vScale * (1.0 + 0.55 * vTaut);
     // the chart the wobble and the stipple are seeded on: the point at rest
     vec2 q = vec2(vBind.x + 0.6 * vBind.z, vBind.y - 0.3 * vBind.z);
     float wob = (vnoise(q * uWobF) - 0.5) * wobble;

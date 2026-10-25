@@ -173,6 +173,10 @@ float ucHeight(vec2 p) {
 
 const MAIN = /* glsl */`
 #include <skinning_vertex>
+// how taut the cloth is drawn here, 0..1 (hydrostatic tissue only: how far
+// it stands out, against the depth it can), left for the plate that wears
+// it - burin's ink closes its lines up over it (UC_TAUT)
+float ucTaut = 0.0;
 {
   // the point's normal and uv tangents, carried by its bones as the point was
   vec3 ucN = normal, ucDu = clothDu, ucDv = clothDv;
@@ -192,6 +196,7 @@ const MAIN = /* glsl */`
   #endif
   float ucH = ucHeight(ucUv) * ucM;
   transformed += ucN * ucH;
+  ucTaut = u_tissueType > 1.5 ? clamp(ucH / max(u_maxDepth * 0.45, 1e-3), 0.0, 1.0) : 0.0;
 
   #if defined( UC_OBJECT_NORMAL ) || defined( UC_VNORMAL )
     // the shape's normal: the surface's tangents tilted by the height's slope
@@ -232,7 +237,7 @@ function patch(mat, uniforms, normals, uvName, maskName) {
     const vs = shader.vertexShader;
     if (!vs.includes('#include <skinning_vertex>')) throw new Error('UniversalClothMaterial: the vertex shader has no <skinning_vertex> to follow');
     Object.assign(shader.uniforms, uniforms);
-    const defs = [];
+    const defs = ['#define UC_TAUT'];
     if (uvName) defs.push('#define UC_CUSTOM_UV', '#define UC_UV ' + uvName);
     if (maskName) defs.push('#define UC_CUSTOM_MASK', '#define UC_MASK ' + maskName);
     // (a material that reads objectNormal after skinning - burin's ink - takes
@@ -245,7 +250,7 @@ function patch(mat, uniforms, normals, uvName, maskName) {
     shader.vertexShader = shader.vertexShader.replace('#include <skinning_vertex>', MAIN);
   };
   const key = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-  mat.customProgramCacheKey = () => key() + '|uc-cloth-3' + (normals ? 'n' : '') + (uvName || '') + '|' + (maskName || '');
+  mat.customProgramCacheKey = () => key() + '|uc-cloth-4' + (normals ? 'n' : '') + (uvName || '') + '|' + (maskName || '');
   // (a clone keeps the patch, on the same uniforms: a scene that gives each
   // figure its own copy of a plate - the valley's ownMats - keeps the cloth)
   mat.clone = function () { return patch(new this.constructor().copy(this), uniforms, normals, uvName, maskName); };
