@@ -2058,6 +2058,45 @@ export async function prepareTable(opts) {
       if (!arrived && tt >= FLY) { arrived = true; hideHouse(true); lastTouch = tt; if (fo.onArrive) fo.onArrive(css.domElement); if (sound) sound.set(!fo.reduced && (!hooks.musicOn || hooks.musicOn())); }
     };
     const draw = () => { world.paint(); css.render(cssScene, camera); };
+    // ?perf: the seat's own readout - the frame times, what a frame draws
+    // (calls, triangles, at what resolution) and which plates the triangles
+    // are in, so a slow phone's report says what to trim (the page's own
+    // readout, the shot to the seat, sits below it)
+    let PERF = false; try { PERF = new URLSearchParams(window.location.search).has('perf'); } catch (e) { /* fine */ }
+    const perfWin = []; let perfEl = null, perfN = 0, perfPlates = '', perfScanAt = 0;
+    const perfScan = () => {
+      const by = new Map();
+      const walk = o => {
+        if (!o.visible) return;
+        if (o.isMesh && o.geometry) {
+          const g = o.geometry, tris = (g.index ? g.index.count : (g.attributes.position ? g.attributes.position.count : 0)) / 3;
+          const m = Array.isArray(o.material) ? o.material[0] : o.material;
+          const n = o.userData.outline ? 'outline' : (m && m.userData && m.userData.plate) || (m && m.type === 'ShaderMaterial' ? (m.name || (m.uniforms && m.uniforms.ucTaut ? 'cloth' : 'shader')) : (m ? m.type.replace('Material', '').toLowerCase() : '?'));
+          const e = by.get(n) || { m: 0, t: 0 }; e.m++; e.t += tris; by.set(n, e);
+        }
+        for (let i = 0; i < o.children.length; i++) walk(o.children[i]);
+      };
+      walk(scene);
+      const all = [...by.values()].reduce((a, e) => ({ m: a.m + e.m, t: a.t + e.t }), { m: 0, t: 0 });
+      return `in scene: ${all.m} meshes, ${Math.round(all.t / 1000)}k tris (visible, before culling)\n` +
+        [...by].sort((a, b) => b[1].t - a[1].t).slice(0, 10).map(([n, e]) => `  ${n.padEnd(9)} ${String(e.m).padStart(4)}  ${String(Math.round(e.t / 1000)).padStart(5)}k`).join('\n');
+    };
+    const perfTick = (raw, now) => {
+      perfWin.push(raw); if (perfWin.length > 60) perfWin.shift();
+      if (++perfN % 10 !== 0 || perfWin.length < 10) return;
+      if (!perfEl) {
+        perfEl = document.createElement('pre'); perfEl.id = 'r3PerfSeat'; perfEl.className = 'r3-perf';
+        perfEl.style.cssText = 'top:max(8px, env(safe-area-inset-top));bottom:auto;max-height:52vh;';
+        document.body.appendChild(perfEl);
+      }
+      if (now - perfScanAt > 3000) { perfScanAt = now; perfPlates = perfScan(); }
+      const s = perfWin.slice().sort((x, y) => x - y), med = s[s.length >> 1] * 1000, avg = perfWin.reduce((a, b) => a + b, 0) / perfWin.length;
+      const r = world.renderer, inf = r.info.render, dpr = r.getPixelRatio(), el = r.domElement;
+      perfEl.textContent = `valley seat  t${tNow.toFixed(0)}s\n` +
+        `median ${med.toFixed(1)}ms  ${(1 / avg).toFixed(0)}fps  worst ${(s[s.length - 1] * 1000).toFixed(0)}ms  >50ms: ${perfWin.filter(x => x > 0.05).length}/${perfWin.length}\n` +
+        `frame: ${inf.calls} calls  ${Math.round(inf.triangles / 1000)}k tris  programs ${r.info.programs.length}\n` +
+        `buffer ${el.width}x${el.height} @${dpr.toFixed(2)}x\n` + perfPlates;
+    };
     const show = () => { if (running) draw(); else world.rest(draw); };
 
     // ---- The loop: the valley is never still unless motion is reduced.
@@ -2069,10 +2108,15 @@ export async function prepareTable(opts) {
       if (pacer && !pacer.due(now)) { raf = requestAnimationFrame(loop); return; }
       const dt = last ? Math.min(0.1, (now - last) / 1000) : 1 / 60;
       if (last && ++woke > 6 && !document.hidden && now - last < 250) world.pace((now - last) / 1000);
+      const raw = last ? (now - last) / 1000 : 0;
       last = now;
       update(tNow + dt);
       if (!busy()) { running = false; world.rest(draw); return; }
+      // (the counters cover the whole frame - the scene and the post's
+      // passes - not the last pass alone, which is what they reset to)
+      if (PERF) { world.renderer.info.autoReset = false; world.renderer.info.reset(); }
       draw();
+      if (PERF && raw) perfTick(raw, now);
       raf = requestAnimationFrame(loop);
     };
     const wake = () => {
