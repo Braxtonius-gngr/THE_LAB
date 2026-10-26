@@ -318,7 +318,8 @@ function stave(pts, w, t, axis) {
   idx.push(0, 1, 2, 0, 2, 3); const L = n * 4; idx.push(L, L + 2, L + 1, L, L + 3, L + 2);
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); return g;
 }
-const knob = (r, sx = 1, sy = 1, sz = 1, detail = 1) => { const g = new THREE.IcosahedronGeometry(r, detail); g.scale(sx, sy, sz); return g; };
+// (a knob's direction is its own up: a wrapped plate lays its lines level round it)
+const knob = (r, sx = 1, sy = 1, sz = 1, detail = 1) => { const g = new THREE.IcosahedronGeometry(r, detail); g.scale(sx, sy, sz); const n = g.attributes.position.count, al = new Float32Array(n * 3); for (let i = 0; i < n; i++) al[3 * i + 1] = 1; g.setAttribute('aAlong', new THREE.BufferAttribute(al, 3)); return g; };
 
 // where a shaft lies in a closed hand (hand space): across the palm, under
 // the fingers' roots, on the palm's side (+z: the fingers curl toward +z)
