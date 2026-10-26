@@ -1370,7 +1370,9 @@ export function valleyKit() {
     // (the hull that carries its direction - a build's skin - is hatched
     // round the form, finer than the linen, stippled in the light)
     fleshUV: mat({ uv: [12, 5], angle: HALF - 0.28, tone: -0.06, keyI: 1.0, sky: 0.44, wobble: 0.4, bare: 0.16, form: 0.68, stipple: 1 }),
-    face: mat({ freq: 1.25, angle: 1.1, tone: -0.08, keyI: 1.15, sky: 0.44, wobble: 0.45 }),
+    // (the skull wraps the face's forward axis - figure.mjs buildFace; the
+    // lids, the ears, the nose's wings take the plate's own lines)
+    face: mat({ freq: 1.25, angle: 1.1, tone: -0.2, keyI: 1.15, sky: 0.44, wobble: 0.45, bare: 0.32, form: 0.8, stipple: 1, cross: [0.62, 0.8], core: [0.82, 0.95] }),   // (its cross sets later than the skin's: a face is left open, its half tones a hairline - crossed at the skin's tone it printed as slabs)
     hair: mat({ uv: [24, 8], angle: 0.3, tone: 0.58, freq: 1.6, wobble: 1.2 }),
     raw: mat({ paper: BLOOD, tone: 0.34, freq: 1.4, angle: -0.4, keyI: 1.2 }),
     rawUV: mat({ paper: BLOOD, uv: [12, 5], angle: 0.1, tone: 0.34, freq: 1.3, keyI: 1.2 }),
@@ -1408,6 +1410,9 @@ export function valleyKit() {
     shadow: mat({ tone: 0.02, keyI: 0, sky: 0, angle: -0.55, freq: 0.7, wobble: 0.5, steps: 0, axis: [1, 0, 0.7] }),
     ink: new THREE.MeshBasicMaterial({ color: INK })
   };
+  // (each plate knows its name, and a copy keeps it: the ink panel finds
+  // every copy of a plate in the scene by it)
+  Object.keys(kit).forEach(k => { if (kit[k].userData) kit[k].userData.plate = k; });
   return kit;
 }
 
@@ -2135,7 +2140,7 @@ export async function prepareTable(opts) {
       const allFigs = [];
       vigs.forEach(v => { if (v.victims) v.victims.forEach(f => { if (f.userData && f.userData.pouch) allFigs.push(f); }); });
       freedFigs.forEach(f => { if (f.userData && f.userData.pouch) allFigs.push(f); });
-      if (allFigs.length) init(allFigs);
+      if (allFigs.length) init(allFigs, { ink: { root: scene, top: '64px' } });   // (under the seat's pill)
     });
 
     return {

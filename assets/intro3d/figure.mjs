@@ -271,6 +271,13 @@ function lieForward(geo) {
   if (al) for (let i = 0; i < al.count; i++) { const y = al.getY(i), z = al.getZ(i); al.setY(i, -z); al.setZ(i, y); }
   return geo;
 }
+// a hull given one direction for the whole of it, (x, y, z) in its own frame
+function alongAll(geo, x, y, z) {
+  const n = geo.attributes.position.count, al = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { al[3 * i] = x; al[3 * i + 1] = y; al[3 * i + 2] = z; }
+  geo.setAttribute('aAlong', new THREE.BufferAttribute(al, 3));
+  return geo;
+}
 // the UV plates' scales in the valley's kit, and the pitch laid on the hulls
 // (the plate's uv scale, and its freq: the hatch is laid at DENS x 1.3 lines a unit whatever the plate's own freq)
 const UVM = { flesh: [12, 5, 1.3], muscle: [12, 5, 2.0], linen: [18, 4, 1.3], hair: [24, 8, 1.6] };
@@ -454,7 +461,10 @@ function buildFace(kit, o, B) {
     { y: 14.6, rx: 2.0, rz: 2.6, z: 1.8 },
     { y: 14.9, rx: 0.3, rz: 0.3, z: 1.8 }
   ];
-  const skull = facet(loft(densify(S, 2), { n: 28 }), skin, head, 2, 1);
+  // (the skull's lines wrap the face's forward axis - over the brow, down
+  // and round the cheeks, under the chin - as an engraver's do; rings round
+  // the head's upright printed as slabs across the cheek)
+  const skull = facet(alongAll(loft(densify(S, 2), { n: 28 }), 0, 0, -1), skin, head, 2, 1);
   const F = (y, x = 0) => frontZAt(S, y, x);
   // (the lips a shade warmer than the face, by their own studio key)
   const lipM = kit._lip || (kit._lip = (() => { const m = kit.face.clone(); m.userData = Object.assign({}, kit.face.userData, { studioKey: 'lip' }); if (m.uniforms && m.uniforms.uTone) m.uniforms.uTone.value += 0.12; return m; })()), parts = {};
@@ -470,12 +480,12 @@ function buildFace(kit, o, B) {
     facet(new THREE.SphereGeometry(ER, 18, 12), kit.bone, eye, 0, 1);
     const iris = new THREE.Mesh(new THREE.CircleGeometry(0.52, 18), kit.ink); iris.position.z = -ER + 0.02; iris.rotation.y = PI; eye.add(iris);
     const up = G(eye), lo = G(eye);
-    facet(cap(true), skin, up, 0, 1); facet(cap(false), skin, lo, 0, 1);
+    facet(cap(true), skin, up, 0, 1); facet(cap(false), skin, lo, 0, 1);   // (a lid: no direction, the plate's lines)
     // (the lash line: the upper lid's edge, across its front)
     const lash = []; for (let k = 0; k <= 8; k++) { const a = PI + 0.25 + (PI - 0.5) * k / 8; lash.push([-LR * Math.cos(a) * 1.01, 0, LR * Math.sin(a) * 1.01]); }
     seam(lash, up, kit.ink, 0.11);
     // (an older man's: a bag under the eye)
-    if (old > 0.3) { const bag = facet(knob(1.0, 1.5, 0.4 + 0.15 * old, 0.45, 1), skin, head, 0, 1); bag.position.set(ex, ey - 1.45, F(ey - 1.45, ex) + 0.3); }
+    if (old > 0.3) { const bag = facet(knob(1.0, 1.5, 0.4 + 0.15 * old, 0.45, 1, false), skin, head, 0, 1); bag.position.set(ex, ey - 1.45, F(ey - 1.45, ex) + 0.3); }
     parts.lids.push({ up, lo });
   });
   // the brows: hair laid along the ridge over each eye, a group each so it
@@ -493,7 +503,7 @@ function buildFace(kit, o, B) {
   const ns = (y, rx, rz, p) => ({ y, rx: rx * nw, rz, z: F(y) - p + rz });
   facet(loft([ns(5.0, 0.55, 0.5, 0.2), ns(3.6, 0.7, 0.7, 0.5), ns(2.0, 0.75, 0.85, 1.0 * nl), ns(0.6, 0.9, 0.9, 1.5 * nl), ns(-0.2, 0.85, 0.8, 1.55 * nl), ns(-0.85, 0.5, 0.5, 1.0), ns(-1.05, 0.2, 0.2, 0.6)], { n: 12 }), skin, head, 0.8, 1);
   [-1, 1].forEach(sx => {
-    const wing = facet(knob(0.7, 1, 0.85, 1.0, 1), skin, head, 0.5, 1); wing.position.set(sx * 1.0 * nw, -0.35, F(-0.35, 1.0) - 0.55);
+    const wing = facet(knob(0.7, 1, 0.85, 1.0, 1, false), skin, head, 0.5, 1); wing.position.set(sx * 1.0 * nw, -0.35, F(-0.35, 1.0) - 0.55);
     const hole = new THREE.Mesh(new THREE.CircleGeometry(0.32, 10), kit.ink); hole.position.set(sx * 0.55, -0.88, F(-0.9) - 1.0); hole.rotation.x = HALF; hole.scale.set(1, 1.5, 1); head.add(hole);
   });
   // the mouth: two lips laid on the face, the line between, the corners;
@@ -515,10 +525,10 @@ function buildFace(kit, o, B) {
   [-1, 1].forEach(sx => {
     const ear = G(head, sx * 7.55, 2.6, 1.8), ek = 1 + 0.12 * old;
     ear.rotation.y = sx * 0.35; ear.scale.setScalar(ek);
-    facet(knob(1.0, 0.32, 2.85, 1.85, 1), skin, ear, 0.7, 1).position.set(sx * 0.15, 0, 0);
+    facet(knob(1.0, 0.32, 2.85, 1.85, 1, false), skin, ear, 0.7, 1).position.set(sx * 0.15, 0, 0);
     const rim = [[0, -2.4, -0.4], [0, -1.0, 1.2], [0, 1.2, 1.9], [0, 2.7, 1.2], [0, 3.0, -0.3], [0, 2.1, -1.2]];
     facet(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rim.map(p => new THREE.Vector3(sx * 0.35, p[1], p[2]))), 20, 0.36, 6, false), skin, ear, 0.6, 1);
-    const bowl = facet(knob(0.7, 0.3, 1.1, 0.8, 1), skin, ear, 0, 1); bowl.position.set(sx * 0.25, 0.1, -0.1);
+    const bowl = facet(knob(0.7, 0.3, 1.1, 0.8, 1, false), skin, ear, 0, 1); bowl.position.set(sx * 0.25, 0.1, -0.1);
   });
   // the hair: as the valley's, a cap of planes cut into locks at the brow
   const recede = o.recede || 0;
@@ -626,7 +636,7 @@ function buildHead(kit, o = {}) {
     { y: 12.8, rx: 4.6, rz: 5.6, z: 1.8 },              // toward the crown
     { y: 14.2, rx: 0.2, rz: 0.2, z: 1.8 }
   ];
-  const skull = facet(loft(H, { n: 10, spin: PI / 10 }), skin, head, 2);
+  const skull = facet(alongAll(loft(H, { n: 10, spin: PI / 10 }), 0, 0, -1), skin, head, 2);   // (the lines wrap the face's forward axis - see buildFace)
   const F = y => frontAt(H, y);   // (the face's plane at a height; the sides fall back from it)
   // the nose: a wedge from the brow down, its tip out
   const nose = facet(loft([{ y: 6.0, rx: 1.0, rz: 0.8, z: F(6) + 0.6 }, { y: 2.6, rx: 1.4, rz: 1.4, z: F(2.6) - 0.6 }, { y: 0.6, rx: 2.0, rz: 1.6, z: F(0.6) - 1.2 }, { y: -0.4, rx: 1.2, rz: 1.0, z: F(-0.4) - 0.2 }], { n: 5, spin: -HALF }), skin, head, 0.9);

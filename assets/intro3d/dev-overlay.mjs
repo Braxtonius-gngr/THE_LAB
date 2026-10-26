@@ -351,6 +351,104 @@ function buildOverlayUI(figures, opts = {}) {
   return root;
 }
 
+// ── the ink panel: the burin's pitch and thresholds, tuned live ──────
+// One plate at a time (every copy of it in the scene, found by the name
+// its kit gave it), sliders on the uniforms the wrapped skin is cut by,
+// and a copy button for the numbers to carry back into the kit.
+const INK = [
+  { key: 'pitch', u: 'uPitchPx', label: 'Pitch px', min: 2, max: 9, step: 0.1 },
+  { key: 'form', u: 'uForm', label: 'Form', min: 0, max: 1, step: 0.02 },
+  { key: 'bare', u: 'uBare', label: 'Bare', min: 0, max: 0.7, step: 0.01 },
+  { key: 'tone', u: 'uTone', label: 'Tone', min: -0.8, max: 0.8, step: 0.01 },
+  { key: 'lean', u: 'uLean', label: 'Lean', min: 0, max: 1, step: 0.02 },
+  { key: 'stipple', u: 'uStip', label: 'Stipple', min: 0, max: 1, step: 1 },
+  { key: 'cross0', u: 'uCross', i: 'x', label: 'Cross in', min: 0, max: 1, step: 0.01 },
+  { key: 'cross1', u: 'uCross', i: 'y', label: 'Cross full', min: 0, max: 1, step: 0.01 },
+  { key: 'core0', u: 'uCore', i: 'x', label: 'Core in', min: 0, max: 1, step: 0.01 },
+  { key: 'core1', u: 'uCore', i: 'y', label: 'Core full', min: 0, max: 1, step: 0.01 },
+];
+// the plates worth the panel, in the order they are met
+const INK_PLATES = ['face', 'flesh', 'fleshUV', 'linen', 'breech', 'skull', 'bone', 'hair'];
+function buildInkPanel(ink, opts = {}) {
+  const root = document.createElement('div');
+  root.className = 'dev-anatomy-panel'; root.dataset.target = 'ink';
+  const dock = ink.dock || 'left';
+  root.dataset.dock = dock;
+  root.style.cssText = [
+    'position:fixed', 'z-index:99999', 'overflow-y:auto', 'box-sizing:border-box',
+    'background:rgba(0,0,0,0.82)', 'color:#e0e0e0', 'font:11px/1.4 monospace', 'border-radius:8px',
+    'padding:8px 10px', 'pointer-events:auto', 'user-select:none', 'border-left:3px solid #d9b45a',
+  ].concat(DOCK_CSS[dock] || DOCK_CSS.left).join(';');
+  const top = ink.top || opts.top;
+  if (top && dock !== 'below') root.style.setProperty('--dev-top', top);
+  const folds = readFolds();
+  const title = document.createElement('button');
+  title.type = 'button';
+  title.style.cssText = 'display:block;width:100%;text-align:left;background:none;border:0;padding:2px 0;font:bold 13px monospace;color:#fff;cursor:pointer;';
+  const body = document.createElement('div');
+  root.append(title, body);
+  const setPanel = open => { body.style.display = open ? '' : 'none'; title.textContent = `✒ Ink ${open ? '▾' : '▸'}`; };
+  // (folded to start on a phone, where it would sit over the anatomy panel)
+  setPanel(folds['ink:panel'] !== false && !(window.innerWidth < 640 && folds['ink:panel'] == null));
+  title.addEventListener('click', () => { const open = body.style.display === 'none'; setPanel(open); writeFold('ink:panel', open); if (opts.onFold) opts.onFold(); });
+
+  // every burin plate in the scene by name (walked when a plate is picked)
+  const byPlate = () => {
+    const m = new Map();
+    const take = mat => { const n = mat && mat.userData && mat.userData.plate; if (n && mat.uniforms && mat.uniforms.uForm) { if (!m.has(n)) m.set(n, new Set()); m.get(n).add(mat); } };
+    const root_ = typeof ink.root === 'function' ? ink.root() : ink.root;
+    if (root_) root_.traverse(o => { if (o.isMesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach(take); });
+    return m;
+  };
+  const pick = document.createElement('select');
+  pick.style.cssText = 'width:100%;margin:4px 0;background:#222;color:#ccc;border:1px solid #555;border-radius:4px;font:11px monospace;';
+  const box = document.createElement('div');
+  box.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;column-gap:10px;';
+  body.append(pick, box);
+  let mats = [], plate = '';
+  const read = p => { const m = mats[0]; if (!m) return 0; const v = m.uniforms[p.u].value; return p.i ? v[p.i] : v; };
+  const write = (p, v) => mats.forEach(m => { if (p.i) m.uniforms[p.u].value[p.i] = v; else m.uniforms[p.u].value = v; });
+  const fmt = (p, v) => (p.step >= 1 ? String(Math.round(v)) : Number(v).toFixed(2));
+  const rows = INK.map(p => {
+    const row = document.createElement('div'); row.style.cssText = 'margin-bottom:3px;';
+    const lbl = document.createElement('label'); lbl.style.cssText = 'display:flex;justify-content:space-between;align-items:center;';
+    const span = document.createElement('span'); span.textContent = p.label;
+    const val = document.createElement('span'); val.style.color = '#8cf';
+    lbl.append(span, val);
+    const slider = document.createElement('input');
+    slider.type = 'range'; slider.min = p.min; slider.max = p.max; slider.step = p.step;
+    slider.setAttribute('aria-label', `Ink: ${p.label}`);
+    slider.style.cssText = 'width:100%;margin:0;height:18px;accent-color:#d9b45a;';
+    slider.addEventListener('input', () => { const v = parseFloat(slider.value); val.textContent = fmt(p, v); write(p, v); if (opts.onChange) opts.onChange({ plate, [p.key]: v }); });
+    row.append(lbl, slider); box.appendChild(row);
+    return { p, slider, val };
+  });
+  const sync = () => rows.forEach(r => { const v = read(r.p); r.slider.value = v; r.val.textContent = fmt(r.p, v); });
+  const choose = name => {
+    const all = byPlate();
+    plate = all.has(name) ? name : (all.keys().next().value || '');
+    mats = [...(all.get(plate) || [])];
+    pick.replaceChildren(...[...all.keys()].sort((a, b) => (INK_PLATES.indexOf(a) + 1 || 99) - (INK_PLATES.indexOf(b) + 1 || 99)).map(n => { const o = document.createElement('option'); o.value = n; o.textContent = `${n} (${all.get(n).size})`; o.selected = n === plate; return o; }));
+    sync();
+  };
+  pick.addEventListener('change', () => choose(pick.value));
+  // (the scene may have filled since - the lab builds its men after the panel opens)
+  pick.addEventListener('focus', () => { if (byPlate().size !== pick.options.length) choose(plate); });
+  const current = () => { const o = {}; INK.forEach(p => { o[p.key] = +fmt(p, read(p)); }); return { plate, ...o }; };
+  const btnCss = 'margin-top:6px;width:100%;padding:6px;border:1px solid #555;background:#222;color:#ccc;border-radius:4px;cursor:pointer;font:11px monospace;';
+  const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = 'Copy ink'; copy.style.cssText = btnCss;
+  copy.addEventListener('click', () => {
+    navigator.clipboard.writeText(JSON.stringify(current(), null, 2))
+      .then(() => { copy.textContent = 'Copied ✓'; setTimeout(() => copy.textContent = 'Copy ink', 1200); });
+  });
+  const again = document.createElement('button'); again.type = 'button'; again.textContent = 'Rescan plates'; again.style.cssText = btnCss;
+  again.addEventListener('click', () => choose(plate));
+  body.append(copy, again);
+  choose(ink.plate || 'face');
+  root.choose = choose; root.current = current;
+  return root;
+}
+
 // ── auth gate UI ─────────────────────────────────────────────────────
 function buildAuthGate(onAuthed) {
   const root = document.createElement('div');
@@ -457,6 +555,9 @@ function buildAuthGate(onAuthed) {
 // opts.onChange(patch): told of every slider move; opts.onAuthed(): told
 // once the gate is passed (or was already). `figures` may be refilled in
 // place - the sliders act on whatever it holds at the time.
+// opts.ink: { root, plate, dock, mount, top } adds the ink panel (the burin's
+// pitch and thresholds on one plate at a time, every copy of it found
+// under `root`); api.ink is its element, with choose(plate) and current().
 // opts.targets: several panels at once (the lab's comparison) - each
 // { key, label, figures, params, dock, accent, mount }; `mount` is an element
 // to put the panel in (docked under the views) instead of the page.
@@ -470,8 +571,11 @@ export function initDevOverlay(figures, opts = {}) {
     };
     if (opts.targets) opts.targets.forEach(T => make(T, { dock: T.dock, accent: T.accent, mount: T.mount, folded: T.folded }));
     else make(null, {});
+    // (the ink panel beside them, when the host hands it the scene)
+    let inkEl = null;
+    if (opts.ink) { inkEl = buildInkPanel(opts.ink, opts); (opts.ink.mount || document.body).appendChild(inkEl); }
     // (the host can lay new panels out later - the lab switching to a comparison)
-    const api = { panels, make: (T, o = {}) => make(T, o), clear() { panels.splice(0).forEach(el => el.remove()); } };
+    const api = { panels, ink: inkEl, make: (T, o = {}) => make(T, o), clear() { panels.splice(0).forEach(el => el.remove()); } };
     if (opts.onAuthed) opts.onAuthed(api);
   };
   // already have a valid session?

@@ -746,6 +746,8 @@ initDevOverlay(figures, {
   // (fold or unfold a panel or a tab: the view's strip may have moved)
   onFold() { aimIntoBand(); if (state.focus < 0) Object.assign(view, framing('all', -1)); dirty = true; },
   onAuthed(api) { overlay = api; open(); layoutPanels(); },
+  // (the ink panel: the burin's pitch and thresholds on the men's plates)
+  ink: { root: scene, dock: 'left' },
   // (a slider moved: the overlay rebuilt each man's anatomy in place - give
   // the new pieces the room's look and put them back in the pose)
   onChange() { active().forEach(s => { if (bare()) proxy(s.man); applyLook(s.man); }); awake = 1; pose(0); }
