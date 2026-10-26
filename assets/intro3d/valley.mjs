@@ -1909,7 +1909,9 @@ export async function prepareTable(opts) {
     const order = pivots.map((p, i) => i).sort((a2, b2) => STATIONS[b2].th - STATIONS[a2].th);   // (left to right as you face them)
     let at = order.indexOf(0), lastTouch = 0, lastTurn = 0, tourDir = 1, pendingFree = null;
     const freeWant = [];
-    const TURN = { w: 4.4, z: 0.72, idle: 14, hold: 9 };
+    // (idle: the tour turns you only once the page has had no input at all -
+    // a touch, a move, a key, a wheel - for half a minute)
+    const TURN = { w: 4.4, z: 0.72, idle: 30, hold: 9 };
     const turnTo = k => {
       k = Math.max(0, Math.min(order.length - 1, k));
       at = k; yawTo = STATIONS[order[at]].th; lastTurn = tNow;
@@ -2071,7 +2073,7 @@ export async function prepareTable(opts) {
     // are in, so a slow phone's report says what to trim (the page's own
     // readout, the shot to the seat, sits below it)
     let PERF = false; try { PERF = new URLSearchParams(window.location.search).has('perf'); } catch (e) { /* fine */ }
-    if (PERF) window.__seat = { scene, seat, draw, get renderer() { return world.renderer; } };   // (the readout's hook for a headless count)
+    if (PERF) window.__seat = { scene, seat, draw, turn, get at() { return at; }, get idle() { return +(tNow - lastTouch).toFixed(1); }, get renderer() { return world.renderer; } };   // (the readout's hook for a headless count)
     const perfWin = []; let perfEl = null, perfN = 0, perfPlates = '', perfScanAt = 0;
     const perfScan = () => {
       const by = new Map();
@@ -2177,6 +2179,26 @@ export async function prepareTable(opts) {
     });
     const onKey = e => { if (e.key !== 'Escape') return; if (phoneHeld) holdPhone(false); else if (cardId && liftTo) putBack(); };
     css.domElement.addEventListener('keydown', onKey);
+    // any input at all holds the tour off (see TURN.idle), and the arrow
+    // keys turn you a station either way, as a swipe across does
+    const typing = e => { const t = e.target; return !!(t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))); };
+    // (a move counts only when the pointer moved: the browser sends one for
+    // a still pointer when what is under it changes, which the sheet does
+    // every frame)
+    let lx = NaN, ly = NaN;
+    const onAnyInput = e => {
+      if (e.type === 'pointermove') { const d = Math.abs(e.clientX - lx) + Math.abs(e.clientY - ly); lx = e.clientX; ly = e.clientY; if (!(d >= 2)) return; }
+      if (arrived) lastTouch = tNow;
+    };
+    const onArrow = e => {
+      if (tNow < FLY || typing(e) || e.altKey || e.ctrlKey || e.metaKey) return;
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      if (phoneHeld || (cardId && liftTo)) return;
+      e.preventDefault(); lastTouch = tNow; turn(e.key === 'ArrowRight' ? 1 : -1);
+    };
+    const ANY = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart'];
+    ANY.forEach(k => window.addEventListener(k, onAnyInput, { capture: true, passive: true }));
+    window.addEventListener('keydown', onArrow, true);
     const onResize = () => { aspect = size(); sv = seatView(); E1 = toWorld(sv.eye); A1 = aimW(0); update(tNow); show(); };
     window.addEventListener('resize', onResize);
     const onVis = () => { if (sound) sound.set(!document.hidden && arrived && !fo.reduced && (!hooks.musicOn || hooks.musicOn())); };
@@ -2232,6 +2254,8 @@ export async function prepareTable(opts) {
         clearInterval(clock);
         if (sound) sound.dispose();
         window.removeEventListener('resize', onResize);
+        ANY.forEach(k => window.removeEventListener(k, onAnyInput, { capture: true }));
+        window.removeEventListener('keydown', onArrow, true);
         window.removeEventListener('pointerdown', onDown, true); window.removeEventListener('pointermove', onMove, true); window.removeEventListener('pointerup', onUp, true); window.removeEventListener('pointercancel', onCancel, true);
         document.removeEventListener('visibilitychange', onVis);
         world.scene.environmentIntensity = env0; world.scene.fog = fog0;
