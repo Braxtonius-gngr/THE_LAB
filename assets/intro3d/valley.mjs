@@ -143,7 +143,7 @@ const SND = { wind: 0.06, bell: 0.22, saw: 0.05, crow: 0.09 };
 // engraver lights a page: the lights of a figure turned to you left open,
 // its far half cut into shade - lit from nearer the front, a figure turned
 // to you printed as blank paper)
-const KEY_SEAT = new THREE.Vector3(0.8, 0.52, -0.22).normalize();
+export const KEY_SEAT = new THREE.Vector3(0.8, 0.52, -0.22).normalize();
 
 // ------------------------------------------------------------ helpers
 // (every surface here is the block's: paper left where the light falls,
@@ -1363,7 +1363,10 @@ export function valleyKit() {
     skull: mat({ freq: 1.25, angle: 1.1, tone: -0.14, keyI: 1.3, sky: 0.24, wobble: 0.5, bare: 0.2 }),
     // (flesh: the paper, hatched along the limb; the face in its rings;
     // hair a dark passage; the raw of a wound or a flayed man is blood)
-    flesh: mat({ freq: 1.2, angle: -0.55, tone: -0.06, keyI: 1.0, sky: 0.44, wobble: 0.5, bare: 0.16 }),
+    // (the hands, feet, neck and the knobs on the skin: wrapped like the
+    // skin, so the line keeps its hand at the wrist and the ankle; a hull
+    // without a direction keeps the plate's own lines)
+    flesh: mat({ freq: 1.2, angle: -0.55, tone: -0.06, keyI: 1.0, sky: 0.44, wobble: 0.5, bare: 0.16, form: 0.74, stipple: 1 }),
     // (the hull that carries its direction - a build's skin - is hatched
     // round the form, finer than the linen, stippled in the light)
     fleshUV: mat({ uv: [12, 5], angle: HALF - 0.28, tone: -0.06, keyI: 1.0, sky: 0.44, wobble: 0.4, bare: 0.16, form: 0.68, stipple: 1 }),
