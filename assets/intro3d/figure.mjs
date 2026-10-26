@@ -197,6 +197,7 @@ function loft(secs, o = {}) {
       // (lobes: a muscle's swell out of the front of the hull - the pectorals -
       // part of the one surface, not a plate laid on it)
       if (s.lobes) for (const L of s.lobes) { const d = (x - L.x) / L.w; z -= L.d * fz * Math.exp(-d * d); }
+      if (s.backLobes) for (const L of s.backLobes) { const d = (x - L.x) / L.w; z += L.d * bz * Math.exp(-d * d); }   // (the buttocks: lobes of the seat, one surface with the trunk)
       if (s.squash) z *= 1 - s.squash * Math.abs(Math.cos(a));
       let y = s.y;
       if (s.locks) y += (i % 2 ? 1 : -1) * s.locks * (0.6 + 0.4 * Math.sin(i * 2.3)) * (0.5 + 0.5 * fz);   // (a hem cut into locks, deepest at the brow)
@@ -1113,13 +1114,18 @@ function dress(kit, o, T, hips, arms, legs, pouch, x, sleeves) {
   const s5 = S(5.0), s0 = S(0.0), s6 = S(-6.0), s9 = S(-9.0), gb = x.gb, gR = x.gR || 8;
   const briefSecs = [
     { y: 4.0, rx: s5.rx + 1.0 + E * 0.4, rz: s5.rz + 1.0 + E * 0.4, front: (s5.front || 0) + 0.8, back: (s5.back || 0) + 0.5 },
-    { y: 0.0, rx: s0.rx + 1.6 + E * 0.7, rz: s0.rz + 1.6 + E * 0.7, front: (s0.front || 0) + 0.9, back: (s0.back || 0) + gb * 0.8 },
-    { y: -6.0, rx: s6.rx + 2.2 + E, rz: s6.rz + 1.8 + E, back: (s6.back || 0) + gb * 0.7 + 0.6 },
-    { y: -10.0, rx: s6.rx + 1.0 + E, rz: s9.rz + 4.0 + E, back: gb * 0.5 + 0.6, z: 1.2, saddle: 4.0, dropBack: 1.8 },
-    { y: -13.0, rx: s6.rx * 0.8 + E, rz: 6.8 + E, back: gb * 0.2, z: 2.4, saddle: 5.0, dropBack: 2.8 },
+    { y: 0.0, rx: s0.rx + 1.6 + E * 0.7, rz: s0.rz + 1.6 + E * 0.7, front: (s0.front || 0) + 0.9, back: (s0.back || 0) + 0.6 },
+    { y: -6.0, rx: s6.rx + 2.2 + E, rz: s6.rz + 1.8 + E, back: (s6.back || 0) + 0.8 },
+    { y: -10.0, rx: s6.rx + 1.0 + E, rz: s9.rz + 4.0 + E, back: 1.2, z: 1.2, saddle: 4.0, dropBack: 1.8 },
+    { y: -13.0, rx: s6.rx * 0.8 + E, rz: 6.8 + E, back: 0.6, z: 2.4, saddle: 5.0, dropBack: 2.8 },
     { y: -14.6, rx: 0.3, rz: 0.3, z: 3.0, dropBack: 2.4 }
   ];
-  const briefGeo = loft(densify(briefSecs, F.fit ? 5 : 4), { n: F.fit ? 64 : 48, front: F.fit ? 0.5 : 0.3, metric: UVM.linen });
+  // (the buttocks under it: the trunk's own back lobes (seatTrunk), the
+  // cloth's thickness out - so the cloth follows the seat as the skin does;
+  // wrapped over an ellipsoid it ballooned where the skin fell away)
+  const St = x.seat, pad = Math.max(0.5, 0.9 + E);
+  const seated = densify(briefSecs, F.fit ? 5 : 4).map(s => { if (!St || s.rx < 0.5) return s; const e = (s.y - St.y) / St.h, d = St.d * Math.exp(-e * e); return d < 0.05 ? s : Object.assign({}, s, { backLobes: [-1, 1].map(sx => ({ x: sx * St.x * x.fx, w: St.w + pad * 0.5, d: d + pad * 0.6 })) }); });
+  const briefGeo = loft(seated, { n: F.fit ? 64 : 48, front: F.fit ? 0.5 : 0.3, metric: UVM.linen });
   // (shrink-wrapped over the buttocks: a point of the cloth that falls
   // inside one is pushed out along its radius to clear it by the cloth's
   // thickness - a ring can't follow two round masses off the middle)
@@ -1143,7 +1149,7 @@ function dress(kit, o, T, hips, arms, legs, pouch, x, sleeves) {
     const wl = legShare(legs.l.hip.position, px, py, pz), wr = legShare(legs.r.hip.position, px, py, pz);
     return [Math.max(0.0001, 1 - wl - wr), wl, wr];
   };
-  if (!shirtOnly) { wrapOver(briefGeo, x.glutes, Math.max(0.5, 0.9 + E)); briefMesh = facetSkinned(briefGeo, cloth, hips, 1.2, rig.skeleton, briefWeights); skinned.push(briefMesh); }
+  if (!shirtOnly) { briefMesh = facetSkinned(briefGeo, cloth, hips, 1.2, rig.skeleton, briefWeights); skinned.push(briefMesh); }
   // the cup: fitted round the anatomy where it rests, a finger's room in it
   let cup = null;
   // (a brief holds the anatomy up and forward against him: it rests turned
@@ -1373,6 +1379,27 @@ function shapeTrunk(T0, b) {
     });
   });
 }
+// the buttocks: where each sits (x off the middle, y its centre, falling a
+// little with age) and how far it swells out of the seat (d, fuller with
+// mass, rounder with muscle)
+const SEAT = b => ({ x: 6.6, y: -5.0 - 2.2 * Math.max(0, b.age), d: 4.6 * (1 + 0.30 * b.mass + 0.15 * b.muscle - 0.12 * b.age), w: 5.6, h: 6.4 });
+// the trunk's seat: rings laid closer through it, and each buttock a lobe
+// of the back (loft's backLobes), its swell a bell in y about SEAT.y - so the
+// seat is one surface with the trunk, with no edge where a mass laid on it
+// would meet it
+function seatTrunk(T, b) {
+  const St = SEAT(b), out = [];
+  const lerpSec = (s, n, t) => { const r = {}; Object.keys(s).forEach(k => { if (typeof s[k] === 'number') r[k] = s[k] + ((n[k] || 0) - s[k]) * t; }); Object.keys(n).forEach(k => { if (typeof n[k] === 'number' && r[k] == null) r[k] = n[k] * t; }); return r; };
+  T.forEach((s, j) => {
+    out.push(s); const n = T[j + 1];
+    if (n && s.y >= -11 && n.y <= 11 && n.y - s.y > 2.6) { const k = Math.ceil((n.y - s.y) / 2.5); for (let i = 1; i < k; i++) out.push(lerpSec(s, n, i / k)); }
+  });
+  return out.map(s => {
+    if (s.rx < 0.5) return s;
+    const e = (s.y - St.y) / St.h, d = St.d * Math.exp(-e * e);
+    return d < 0.05 ? s : Object.assign({}, s, { backLobes: [-1, 1].map(sx => ({ x: sx * St.x, w: St.w, d })) });
+  });
+}
 // a limb's radii thickened (k = 1 hands the points back untouched)
 const thick = (pts, k) => k === 1 ? pts : pts.map(p => [p[0], p[1] * k, p[2] == null ? p[2] : p[2] * k, (p[3] || 0) * k, (p[4] || 0) * k]);
 const secAt = (T, y) => T.find(s => s.y === y);
@@ -1401,9 +1428,9 @@ export function buildFigure(kit, rnd, o = {}) {
   const T0 = [
     { y: -11.6, rx: 0.2, rz: 0.2 },
     { y: -10.8, rx: 5.0, rz: 3.6 },
-    { y: -9.0, rx: 9.0, rz: 6.0, back: 1.6 },                   // the fork
-    { y: -6.0, rx: 15.0, rz: 9.8, back: 3.4 },                  // the seat
-    { y: 0.0, rx: 16.0, rz: 10.4, back: 2.8 },                  // the hips
+    { y: -9.0, rx: 9.0, rz: 6.0, back: 1.0 },                   // the fork
+    { y: -6.0, rx: 15.0, rz: 9.8, back: 2.4 },                  // the seat
+    { y: 0.0, rx: 16.0, rz: 10.4, back: 2.0 },                  // the hips
     { y: 5.0, rx: 15.4, rz: 10.0, front: 0.8 },                 // the pelvis' rim
     { y: 11.0, rx: 13.4, rz: 9.4, front: 1.4 },                 // the belly's swell
     { y: 17.0, rx: 12.6, rz: 9.0, front: 1.4 },                 // the waist
@@ -1416,7 +1443,7 @@ export function buildFigure(kit, rnd, o = {}) {
     { y: 54.0, rx: 10.0, rz: 6.6 },                             // the trapezius' slope
     { y: 56.5, rx: 5.6, rz: 5.2 }                               // the neck's root
   ];
-  const T = B ? shapeTrunk(T0, B) : T0;
+  const T = B ? seatTrunk(shapeTrunk(T0, B), B) : T0;
   // (how far the build has moved the front of the trunk at y: features laid
   // on it move with it)
   const dF = y => B ? frontAt(T, y) - frontAt(T0, y) : 0;
@@ -1491,12 +1518,16 @@ export function buildFigure(kit, rnd, o = {}) {
     // (skin: the brief and whatever is over it are cloth of their own)
     const gm = skin;
     [-1, 1].forEach(sx => {
-      const c = new THREE.Vector3(sx * 6.6 * fx, -5.0 - 2.2 * Math.max(0, B.age), secAt(T, -6.0).rz + (secAt(T, -6.0).back || 0) - 7.0), q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.3, sx * 0.22, sx * 0.06));   // (pitched so the upper mass swells out and the fold tucks under: pitched the other way, the mass hung under the seat as a ball)
-      const gr = [6.6 * gk, 8.6 * gk, 5.2 * gk];
+      // (the buttock is a lobe of the trunk's own loft - seatTrunk - so the
+      // skin is one surface; this ellipsoid stands in for it where the brief
+      // is wrapped over it and the soft site is laid)
+      const St = SEAT(B), yc = St.y, back6 = secAt(T, -6.0).rz + (secAt(T, -6.0).back || 0);
+      // (sized to the lobe: its back face at the lobe's crest, its width and
+      // height the bell's - a fuller ellipsoid ballooned the brief over it)
+      const c = new THREE.Vector3(sx * St.x * fx, yc, back6 - 0.6), q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.3, sx * 0.22, sx * 0.06));
+      const gr = [St.w * 1.25, St.h * 1.1, St.d + 0.6];
       glutes.push({ c, q, r: gr });
-      // (a part of his one skin, laid where it sits - see the skin below)
-      if (!flayed) skinParts.push({ geo: knob(gr[0], 1.0, gr[1] / gr[0], gr[2] / gr[0], 2).applyMatrix4(new THREE.Matrix4().compose(c, q, new THREE.Vector3(1, 1, 1))), group: hips, bone: 'hips' });
-      else { const gl = facet(knob(gr[0], 1.0, gr[1] / gr[0], gr[2] / gr[0], 2), gm, hips, 1.4); gl.position.copy(c); gl.quaternion.copy(q); }
+      if (flayed) { const gl = facet(knob(gr[0], 1.0, gr[1] / gr[0], gr[2] / gr[0], 2), gm, hips, 1.4); gl.position.copy(c); gl.quaternion.copy(q); }
     });
   }
   if (o.shirt && !flayed && !B) { const sh = facet(loft([...(o.hose ? [] : [{ y: -21.0, rx: 15.0 * fx, rz: 11.6 * fz, back: gb * 0.6 }, { y: -15.0, rx: 15.6 * fx, rz: 11.6 * fz, back: gb }, { y: -11.4, rx: 15.8 * fx, rz: 11.6 * fz, back: gb }]), ...T.slice(3, 15).map(s => Object.assign({}, s, { rx: s.rx + 1.4, rz: s.rz + 1.2 })), { y: 56.2, rx: 6.6, rz: 6.0 }], { n: 16, metric: UVM.linen, cap: false }), kit.linen, hips, 1.5); sh.position.z = 0.2; }
@@ -1677,7 +1708,7 @@ export function buildFigure(kit, rnd, o = {}) {
   // (o.nude, the lab's None: no fabric at all - nothing holds the anatomy,
   // so its physics runs unrestrained: support 180 is no cone, no lift)
   if (B && !flayed && o.nude) worn = { cup: null, support: 180, lift: 0, fabric: 'none', hold: FABRIC.none };
-  if (B && !flayed && !o.nude) { root.updateMatrixWorld(true); worn = dress(kit, o, T, hips, arms, legs, pouch, { gb, kA, kT, kS, fx, glutes, rig }, sleeves); }
+  if (B && !flayed && !o.nude) { root.updateMatrixWorld(true); worn = dress(kit, o, T, hips, arms, legs, pouch, { gb, kA, kT, kS, fx, glutes, rig, seat: SEAT(B) }, sleeves); }
   if (worn && worn.skinned) skinned.push(...worn.skinned);
   if (B && B.height !== 1) root.scale.setScalar(B.height);
   // (bound at the man's height: a bind reads the bones' world matrices)
