@@ -128,6 +128,7 @@ const FRAG = /* glsl */`
   varying float vScale;
   uniform float uForm;     // >0: the lines wrap the form - laid round each hull square to its aAlong, the shade crossed at 60 degrees (the value: the pitch, as a factor on uFreq)
   uniform float uStip;     // 0..1: a stipple in the lit flat of a wrapped form - dots in the hatch's gaps, fixed to the skin
+  uniform float uLean;     // how far the wrapped form's rings lean along it (0 a lathe's rings)
   uniform float uBare;     // the tone below which a plane is left as bare paper (a figure's lights held open wider than the land's)
   uniform float uToneMap;  // >0: the tone laid in from aTone (x: the value, y: how much of it) - an engraver's planned passage, the light only modelling it
   uniform vec3 uPaper;
@@ -261,11 +262,16 @@ const FRAG = /* glsl */`
     vec3 n = normalize(vNormalO);
     vec3 a = vAlongO - n * dot(vAlongO, n);
     float la = length(a);
-    a = la > 1e-4 ? a / la : normalize(cross(n, vec3(0.0, 0.0, 1.0)));
+    // (where the face turns square to the hull's direction - the top of
+    // the shoulder, a dome - the direction projects to nothing and the
+    // rings swirled; it eases over to a fixed one there, lines laid across
+    // the form's side-to-side)
+    vec3 af = cross(n, vec3(1.0, 0.0, 0.0)); float lf = length(af); af = lf > 1e-4 ? af / lf : vec3(0.0, 0.0, 1.0);
+    a = normalize(mix(af, la > 1e-5 ? a / la : af, smoothstep(0.08, 0.4, la)));
     vec3 r = normalize(cross(n, a));
     // the first set round the form, leaning a little along it (a stroke
     // drawn round a limb, not a lathe's ring); the others 60 degrees off it
-    vec3 d1 = 0.96 * a - 0.28 * r;
+    vec3 d1 = normalize(a - uLean * r);
     vec3 d2 = 0.5 * d1 + 0.866 * cross(n, d1), d3 = 0.5 * d1 - 0.866 * cross(n, d1);
     float f = uFreq * uForm * vScale * (1.0 + 0.55 * vTaut);
     // the chart the wobble and the stipple are seeded on: the point at rest
@@ -399,7 +405,7 @@ const FRAG = /* glsl */`
 // A sharable set of uniforms (uTime, uCamPos are driven per frame by
 // burinTick(); the rest are the material's own).
 export function engravingMaterial(opts = {}) {
-  const o = Object.assign({ paper: BONE, ink: INK, blood: BLOOD, freq: 1.1, angle: -0.6, tone: 0.0, wet: 0, bloodOn: false, bloodLo: 0, bloodHi: 1, spill: 0, ember: 0, sky: 0.28, keyI: 1.0, transparent: false, opacity: 1, side: THREE.FrontSide, uv: null, invert: false, wobble: 0.6, scroll: null, steps: 0, toneMap: false, bare: 0.14, axis: [0, 1, 0], pitch: 4.5, wobF: 0.35, swell: 0, ring: null, form: 0, stipple: 0 }, opts);
+  const o = Object.assign({ paper: BONE, ink: INK, blood: BLOOD, freq: 1.1, angle: -0.6, tone: 0.0, wet: 0, bloodOn: false, bloodLo: 0, bloodHi: 1, spill: 0, ember: 0, sky: 0.28, keyI: 1.0, transparent: false, opacity: 1, side: THREE.FrontSide, uv: null, invert: false, wobble: 0.6, scroll: null, steps: 0, toneMap: false, bare: 0.14, axis: [0, 1, 0], pitch: 4.5, wobF: 0.35, swell: 0, ring: null, form: 0, stipple: 0, lean: 0 }, opts);
   const m = new THREE.ShaderMaterial({
     vertexShader: VERT, fragmentShader: FRAG,
     uniforms: {
@@ -412,7 +418,7 @@ export function engravingMaterial(opts = {}) {
       uScroll: { value: new THREE.Vector2(o.scroll ? o.scroll[0] : 0, o.scroll ? o.scroll[1] : 0) }, uSteps: { value: o.steps }, uToneMap: { value: o.toneMap ? 1 : 0 }, uBare: { value: o.bare },
       uAxis: { value: new THREE.Vector3(...(o.axis || [0, 1, 0])) }, uAxisOn: { value: o.axis ? 1 : 0 }, uPitchPx: { value: o.pitch },
       uRing: { value: new THREE.Vector4(...(o.ring || [0, 0, 0, 0])) }, uWobF: { value: o.wobF }, uSwell: { value: o.swell },
-      uForm: { value: o.form }, uStip: { value: o.stipple }
+      uForm: { value: o.form }, uStip: { value: o.stipple }, uLean: { value: o.lean }
     },
     transparent: o.transparent, side: o.side, lights: false, fog: false
   });

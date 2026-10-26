@@ -257,9 +257,19 @@ function loft(secs, o = {}) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  g.setAttribute('aAlong', new THREE.Float32BufferAttribute(along, 3));
+  if (o.along !== false) g.setAttribute('aAlong', new THREE.Float32BufferAttribute(along, 3));   // (along: false - a finger, a toe: the plate's lines run along it, not round it)
   g.setIndex(idx);
   return g;
+}
+// a hull lofted up y laid forward along -z (a foot): the loft's rings stand
+// up, their `front` toward the top of it; the direction turned with it
+// (BufferGeometry.rotateX turns the positions and normals, not a custom
+// attribute)
+function lieForward(geo) {
+  geo.rotateX(HALF);
+  const al = geo.attributes.aAlong;
+  if (al) for (let i = 0; i < al.count; i++) { const y = al.getY(i), z = al.getZ(i); al.setY(i, -z); al.setZ(i, y); }
+  return geo;
 }
 // the UV plates' scales in the valley's kit, and the pitch laid on the hulls
 // (the plate's uv scale, and its freq: the hatch is laid at DENS x 1.3 lines a unit whatever the plate's own freq)
@@ -324,7 +334,7 @@ function stave(pts, w, t, axis) {
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); return g;
 }
 // (a knob's direction is its own up: a wrapped plate lays its lines level round it)
-const knob = (r, sx = 1, sy = 1, sz = 1, detail = 1) => { const g = new THREE.IcosahedronGeometry(r, detail); g.scale(sx, sy, sz); const n = g.attributes.position.count, al = new Float32Array(n * 3); for (let i = 0; i < n; i++) al[3 * i + 1] = 1; g.setAttribute('aAlong', new THREE.BufferAttribute(al, 3)); return g; };
+const knob = (r, sx = 1, sy = 1, sz = 1, detail = 1, along = true) => { const g = new THREE.IcosahedronGeometry(r, detail); g.scale(sx, sy, sz); if (along) { const n = g.attributes.position.count, al = new Float32Array(n * 3); for (let i = 0; i < n; i++) al[3 * i + 1] = 1; g.setAttribute('aAlong', new THREE.BufferAttribute(al, 3)); } return g; };
 
 // where a shaft lies in a closed hand (hand space): across the palm, under
 // the fingers' roots, on the palm's side (+z: the fingers curl toward +z)
@@ -559,7 +569,7 @@ function buildHand(kit, s, m, o = {}) {
     { y: 0, rx: 3.1, rz: 1.6 }, { y: -2.2, rx: 3.9, rz: 1.9 }, { y: -5.5, rx: 4.3, rz: 1.5 }, { y: -8.4, rx: 4.5, rz: 1.3 }
   ], { n: 8 }), m, hand, 1.2);
   // the ball of the thumb
-  const ball = facet(knob(2.2, 1, 1.3, 0.7), m, hand, 0.8); ball.position.set(s * 2.4, -3.6, 0.9);
+  const ball = facet(knob(2.2, 1, 1.3, 0.7, 1, false), m, hand, 0.8); ball.position.set(s * 2.4, -3.6, 0.9);   // (no rings round it: it printed as a black blob on the palm)
   const fingers = [];
   const FING = [[-3.1, 8.2, 0.95], [-1.05, 9.2, 1.0], [1.05, 8.6, 0.95], [3.05, 6.8, 0.85]];   // x, length, girth
   FING.forEach(([fx, len, gr], f) => {
@@ -569,24 +579,27 @@ function buildHand(kit, s, m, o = {}) {
     const shares = [0.42, 0.32, 0.26];
     let at = kn; const chain = [kn];
     shares.forEach((sh, k) => {
-      const L = len * sh, r = gr * (1 - k * 0.12);
-      facet(tube([[0, r * 1.05], [-L * 0.5, r], [-L, r * 0.85]], 6), m, at, 0.7);
+      const L = len * sh, r = gr * (1 - k * 0.12), r0 = k ? gr * (1 - (k - 1) * 0.12) * 0.88 : r * 1.05;
+      // (one girth from joint to joint, the lines along the finger, one
+      // contour for the whole: a step at each joint with its own outline
+      // printed as a ring, a finger of stacked tubes)
+      facet(tube([[0, r0], [-L * 0.5, r], [-L, r * 0.88]], 6, { along: false }), m, at, k ? 0 : 0.7);
       const nx = G(at, 0, -L, 0); if (k < 2) nx.rotation.x = -bend * (k ? 0.9 : 1.1);
       at = nx; chain.push(nx);
     });
     // the nail: a flat plane at the tip (o.nails, a build's men: a thin
     // curved shell lying flush on the back of the last joint, in the skin's
     // own plate - the blocks read as a row of white tiles)
-    if (o.nails) { const nail = facet(knob(gr * 0.5, 1.0, 1.5, 0.3, 1), m, at, 0); nail.position.set(0, 1.05, -gr * 0.6); nail.rotation.x = 0.08; }
+    if (o.nails) { const nail = facet(knob(gr * 0.5, 1.0, 1.5, 0.3, 1, false), m, at, 0); nail.position.set(0, 1.05, -gr * 0.6); nail.rotation.x = 0.08; }   // (no rings round a nail: it printed as a black blob)
     else { const nail = facet(block(gr * 1.1, 1.4, 0.35, 0), kit.bone, at, 0); nail.position.set(0, 0.8, -gr * 0.8); }
     fingers.push({ chain, bend, f });
   });
   // the thumb: out from the side of the palm, two phalanges, opposed
   const th = G(hand, s * 3.6, -2.6, 0.6);
   th.rotation.set(-0.9 - curl * 0.5, s * 0.5, s * (0.7 - curl * 0.3));
-  facet(tube([[0, 1.3], [-3.4, 1.15], [-3.8, 1.0]], 6), m, th, 0.8);
+  facet(tube([[0, 1.3], [-3.4, 1.15], [-3.8, 1.0]], 6, { along: false }), m, th, 0.8);
   const th2 = G(th, 0, -3.8, 0); th2.rotation.x = -0.4 - curl * 0.8;
-  facet(tube([[0, 1.1], [-2.8, 0.95], [-3.2, 0.7]], 6), m, th2, 0.7);
+  facet(tube([[0, 1.1], [-2.8, 0.95], [-3.2, 0.7]], 6, { along: false }), m, th2, 0);
   hand.userData = { palm, fingers, thumb: th };
   // the grip, as the Death's: c 0 the rest curl, 1 closed on a shaft at GRIP
   hand.userData.grip = (c = 0) => {
@@ -1637,10 +1650,20 @@ export function buildFigure(kit, rnd, o = {}) {
     if (!(B && !flayed)) { cap = facet(knob(2.6, 1.05, 1.2, 0.55, 1), legS, kn, 0); cap.position.set(0, 1.0, -5.0 * kS); cap.userData.tissue = TISSUE.RIGID; }   // (the valley's own rig: a plate at the front of the knee; bone: cloth lies crisp over it)
     if (flayed) { seam([[s * 2.2, -3, -5.8], [s * 1.2, -16, -4.8], [s * 0.6, -34, -3.6]], kn, kit.ink, 0.4); seam([[0, -4, 8.2], [0, -14, 7.2], [0, -26, 5.0]], kn, kit.ink, 0.4); }
     const foot = G(kn, 0, -41, 0);
-    // the foot: the heel's block, the instep's slope out to the toes
-    facet(loft([{ y: -0.5, rx: 3.6, rz: 4.2, z: 0.6 }, { y: -3.0, rx: 4.6, rz: 6.0, z: -1.8, front: 1.0 }], { n: 8 }), skin, foot, 1.2);
-    const inst = facet(loft([{ y: -1.0, rx: 3.4, rz: 2.6, z: -3.0 }, { y: -2.2, rx: 4.6, rz: 2.4, z: -8.0 }, { y: -3.2, rx: 5.2, rz: 1.2, z: -12.0 }], { n: 6 }), skin, foot, 1.0);
-    for (let t = 0; t < 5; t++) { const toe = facet(tube([[0, 0.8], [-2.2 + t * 0.2, 0.7]], 5), skin, foot, 0.6); toe.position.set((t - 2) * 1.5 * s - s * 0.4, -2.9, -12.4 + Math.abs(t - 0.5) * 0.5); toe.rotation.x = HALF; }
+    // the foot: one hull from the heel to the toes' root, lofted along its
+    // length and turned to lie forward (the heel's block, a wedge for the
+    // instep and five tubes read as three things in a heap), the instep
+    // domed, the sole flat on the ground; the toes out of its front
+    if (B && !flayed) {
+      const F = [{ y: 4.8, rx: 1.0, rz: 0.9, z: 1.7 }, { y: 3.4, rx: 2.6, rz: 1.8, z: 1.8 }, { y: 0.8, rx: 3.3, rz: 2.4, z: 1.3, front: 0.6 }, { y: -2.5, rx: 3.5, rz: 2.0, z: 1.7, front: 0.9 }, { y: -6.5, rx: 4.3, rz: 1.5, z: 2.2, front: 0.5 }, { y: -10.0, rx: 4.8, rz: 1.1, z: 2.5 }, { y: -11.4, rx: 4.5, rz: 0.9, z: 2.6 }];
+      facet(lieForward(loft(F.map(f => Object.assign({}, f, { rx: f.rx * (1 + 0.1 * B.mass), rz: f.rz })), { n: 12 })), skin, foot, 1.2);
+      const TOE = [[1.05, 2.6], [0.82, 2.5], [0.76, 2.3], [0.7, 2.0], [0.62, 1.6]];
+      TOE.forEach(([g, L], t) => { const toe = facet(tube([[0, g], [-L * 0.6, g * 0.92], [-L * 0.9, g * 0.7], [-L, g * 0.3]], 6, { along: false }), skin, foot, 0.6); toe.position.set((t - 2) * 1.55 * s - s * 0.5, -2.75, -11.2 + Math.abs(t - 0.5) * 0.45); toe.rotation.x = HALF; });
+    } else {
+      facet(loft([{ y: -0.5, rx: 3.6, rz: 4.2, z: 0.6 }, { y: -3.0, rx: 4.6, rz: 6.0, z: -1.8, front: 1.0 }], { n: 8 }), skin, foot, 1.2);
+      facet(loft([{ y: -1.0, rx: 3.4, rz: 2.6, z: -3.0 }, { y: -2.2, rx: 4.6, rz: 2.4, z: -8.0 }, { y: -3.2, rx: 5.2, rz: 1.2, z: -12.0 }], { n: 6 }), skin, foot, 1.0);
+      for (let t = 0; t < 5; t++) { const toe = facet(tube([[0, 0.8], [-1.6 + t * 0.15, 0.72], [-2.2 + t * 0.2, 0.5], [-2.5 + t * 0.2, 0.2]], 6, { along: false }), skin, foot, 0.6); toe.position.set((t - 2) * 1.5 * s - s * 0.4, -2.9, -12.4 + Math.abs(t - 0.5) * 0.5); toe.rotation.x = HALF; }
+    }
     legs[key] = { hip, kn, foot, cap, thigh };
   });
   // (a hose's knee sleeves are added by dress; the body's own joints have none)

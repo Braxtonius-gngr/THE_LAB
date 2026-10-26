@@ -199,17 +199,22 @@ float ucTaut = 0.0;
   ucTaut = u_tissueType > 1.5 ? clamp(ucH / max(u_maxDepth * 0.45, 1e-3), 0.0, 1.0) : 0.0;
 
   #if defined( UC_OBJECT_NORMAL ) || defined( UC_VNORMAL )
-    // the shape's normal: the surface's tangents tilted by the height's slope
+    // the shape's normal: the mesh's own smooth normal, tilted by the
+    // height's slope - the tilt is the difference between the tangents'
+    // normal with the slope and without it, added to the vertex normal
+    // (the tangents' normal alone is a face's on an unindexed mesh: it
+    // printed every facet of a smooth skin as a tile of its own tone)
     vec3 ucBase = cross(ucDu, ucDv);
     float ucSide = dot(ucBase, ucN);
-    if (abs(ucSide) > 1e-12) {
+    if (ucM > 0.0 && abs(ucSide) > 1e-12) {
       float ucE = max(u_uvEps, 1e-6);
       float ucHu = ucM * (ucHeight(ucUv + vec2(ucE, 0.0)) - ucHeight(ucUv - vec2(ucE, 0.0))) / (2.0 * ucE);
       float ucHv = ucM * (ucHeight(ucUv + vec2(0.0, ucE)) - ucHeight(ucUv - vec2(0.0, ucE))) / (2.0 * ucE);
       vec3 ucC = cross(ucDu + ucHu * ucN, ucDv + ucHv * ucN);
       float ucL = length(ucC);
       if (ucL > 1e-12) {
-        vec3 ucN2 = ucC / ucL * sign(ucSide);
+        vec3 ucN0 = ucBase / length(ucBase) * sign(ucSide);
+        vec3 ucN2 = normalize(ucN + ucC / ucL * sign(ucSide) - ucN0);
         #ifdef UC_OBJECT_NORMAL
           objectNormal = ucN2;
         #endif
@@ -250,7 +255,7 @@ function patch(mat, uniforms, normals, uvName, maskName) {
     shader.vertexShader = shader.vertexShader.replace('#include <skinning_vertex>', MAIN);
   };
   const key = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-  mat.customProgramCacheKey = () => key() + '|uc-cloth-4' + (normals ? 'n' : '') + (uvName || '') + '|' + (maskName || '');
+  mat.customProgramCacheKey = () => key() + '|uc-cloth-5' + (normals ? 'n' : '') + (uvName || '') + '|' + (maskName || '');
   // (a clone keeps the patch, on the same uniforms: a scene that gives each
   // figure its own copy of a plate - the valley's ownMats - keeps the cloth)
   mat.clone = function () { return patch(new this.constructor().copy(this), uniforms, normals, uvName, maskName); };
