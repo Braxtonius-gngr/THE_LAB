@@ -143,7 +143,7 @@ const SND = { wind: 0.06, bell: 0.22, saw: 0.05, crow: 0.09 };
 // engraver lights a page: the lights of a figure turned to you left open,
 // its far half cut into shade - lit from nearer the front, a figure turned
 // to you printed as blank paper)
-const KEY_SEAT = new THREE.Vector3(0.8, 0.52, -0.22).normalize();
+export const KEY_SEAT = new THREE.Vector3(0.8, 0.52, -0.22).normalize();
 
 // ------------------------------------------------------------ helpers
 // (every surface here is the block's: paper left where the light falls,

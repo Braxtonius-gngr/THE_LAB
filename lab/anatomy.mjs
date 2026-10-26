@@ -27,7 +27,7 @@
 //     the lobes blue (L) and red (R) with the pouch orange, or opaque brown
 //   - every panel and the settings dock fold away for a clear view
 import * as THREE from '../assets/vendor/three/three.module.js';
-import { valleyKit } from '../assets/intro3d/valley.mjs';
+import { valleyKit, KEY_SEAT } from '../assets/intro3d/valley.mjs';
 import { buildFigure, BODY_HIPS, getAnatomy, updateSleeves, FACE_VARIANTS } from '../assets/intro3d/figure.mjs';
 import { FleshSim } from '../assets/intro3d/flesh.mjs';
 import { burinTick, engravingMaterial, paperMaterial, BONE } from '../assets/intro3d/burin.mjs';
@@ -465,6 +465,7 @@ function pose(dt, fresh) {
 
 // ---------- the camera: only where you send it ----------
 const view = { target: new THREE.Vector3(0, 95, 0), dist: 900, yaw: 0, pitch: 0.12 };
+const labKey = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
 let tween = null;
 // the clear strip of screen between the slider panel (or the top bar) and
 // the dock: the view is centred in it and a man fitted to its height
@@ -715,8 +716,10 @@ function loop(now) {
   if (dirty) {
     aimIntoBand();
     placeCamera();
-    // (a fixed clock into the plates: the hatch holds still)
-    burinTick(scene, camera, renderer, 0);
+    // (a fixed clock into the plates: the hatch holds still; the valley's key,
+    // turned with the view as the valley turns it with the seat, so the men
+    // are lit from the plate's upper left whichever way you look at them)
+    burinTick(scene, camera, renderer, 0, labKey.copy(KEY_SEAT).applyAxisAngle(UP, view.yaw));
     renderer.render(scene, camera);
     dirty = false;
   }
