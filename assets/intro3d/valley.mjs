@@ -78,7 +78,7 @@ import * as THREE from '../vendor/three/three.module.js';
 import { CSS3DRenderer, CSS3DObject } from '../vendor/three/three.addons.js';
 import { tableKit as K } from './table.mjs';
 import { engravingMaterial, outlineOf, burinTick, BONE, INK, BLOOD, BLOOD_WET } from './burin.mjs';
-import { buildFigure, buildDeath, buildSkull, BODY_HIPS, GRIP, hold, reach, setArm, lerp3, setHalo } from './figure.mjs';
+import { buildFigure, buildDeath, buildSkull, BODY_HIPS, GRIP, hold, reach, setArm, lerp3, setHalo, skinRigid } from './figure.mjs';
 // dev overlay for live anatomy tuning (loaded dynamically, only on ?lab)
 const devOverlayP = (new URLSearchParams(window.location.search)).has('lab')
   ? import('./dev-overlay.mjs').then(m => m.initDevOverlay).catch(() => null)
@@ -1457,6 +1457,9 @@ export async function prepareTable(opts) {
   const deskIn = new THREE.Group(); deskIn.position.set(-RING.c[0], 0, -RING.c[1]); desk.add(deskIn);
   const table = buildTable(kit); deskIn.add(table);
   const hands = buildHands(kit, rnd, table); deskIn.add(hands);
+  // (the figures baked down to a draw per plate, their joints the bones:
+  // a phone is bound by draws - see figure.mjs skinRigid)
+  let compacted = skinRigid(hands);
   await breathe();
 
   const soulsG = new THREE.Group(); seat.add(soulsG);
@@ -1506,6 +1509,8 @@ export async function prepareTable(opts) {
     walk(root);
     return { mats, outs };
   };
+  // (each station's figures and scenery, before their plates are copied)
+  pivots.forEach(p => { compacted += skinRigid(p.userData.v.g, { skip: GORE }) + skinRigid(p.userData.v.death); });
   pivots.forEach(p => {
     const v = p.userData.v;
     v.gore = []; v.g.traverse(o => { if (o.isMesh && !o.userData.outline && GORE.has(o.material)) v.gore.push(o); });
@@ -1516,7 +1521,7 @@ export async function prepareTable(opts) {
   const freedRnd = seeded(77);
   // (the freed are clean-shaven: in the negative a beard printed as a black
   // wedge under the chin, a gaping jaw)
-  const freedFigs = [0, 1].map(k => { const f = buildMan(kit, freedRnd, { calm: true, shirt: true, hose: true }); restBody(f); f.visible = false; f.userData.plates = ownMats(f); return f; });
+  const freedFigs = [0, 1].map(k => { const f = buildMan(kit, freedRnd, { calm: true, shirt: true, hose: true }); restBody(f); compacted += skinRigid(f); f.visible = false; f.userData.plates = ownMats(f); return f; });
   const setPlates = (pl, flip, ghost) => { pl.mats.forEach(m => { m.uniforms.uFlip.value = flip; m.uniforms.uGhost.value = ghost; }); pl.outs.forEach(m => { m.uniforms.uFlip.value = flip; m.uniforms.uGhost.value = ghost; }); };
   const FREE = { IN: 0.8, HOLD: 3.8, OUT: 1.1 };
   const snapOf = root => { const out = []; root.traverse(o => out.push([o, o.position.clone(), o.quaternion.clone()])); return out; };
@@ -1682,6 +1687,9 @@ export async function prepareTable(opts) {
   [[452, 9, 11], [SHELF + 6, 5, 6]].forEach(([r0, s0, s1]) => { for (let th = -2.8; th <= 2.8; th += (40 + rnd() * 50) / r0) { if (rnd() < 0.35) continue; const [x, z] = ringAt(th, r0 + (rnd() - 0.5) * 20); if (!clearOf(x, z, 58)) continue; const st = mesh(stoneGeo, kit.stone, dress, 1.4); const sc = s0 + rnd() * s1; st.scale.set(sc * (1 + rnd() * 0.8), sc * (0.6 + rnd() * 0.5), sc * 0.8); st.rotation.set(rnd() * 0.6, rnd() * 6, rnd() * 0.6); st.position.set(x, height(x, z) + sc * 0.1, z); } });
   // dead trees between the stations, on the rise, as a woodcutter fills to the border
   STATIONS.forEach((st, i) => { if (i === 0 || rnd() < 0.3) return; const th = st.th + Math.sign(st.th) * RING.step * 0.5, [x, z] = ringAt(th, 470 + rnd() * 40), t = buildTree(kit, rnd); t.scale.setScalar(0.75 + rnd() * 0.35); t.position.set(x, height(x, z) - 2, z); t.rotation.y = rnd() * 6; dress.add(t); });
+  // (the far crowd and the ground's dressing bake to a mesh a plate: nothing poses them)
+  compacted += skinRigid(far, { still: true }) + skinRigid(dress, { still: true });
+  try { if (new URLSearchParams(window.location.search).has('perf')) console.info('[dro perf] valley: compaction saved', compacted, 'draws'); } catch (e) { /* fine */ }
   // the drops and the crows
   const drops = dropMesh(drips.length * 3); seat.add(drops);
   const dropP = Array.from({ length: drips.length * 3 }, (_, i) => ({ e: Math.floor(i / 3), t: Math.random() }));
@@ -2063,6 +2071,7 @@ export async function prepareTable(opts) {
     // are in, so a slow phone's report says what to trim (the page's own
     // readout, the shot to the seat, sits below it)
     let PERF = false; try { PERF = new URLSearchParams(window.location.search).has('perf'); } catch (e) { /* fine */ }
+    if (PERF) window.__seat = { scene, seat, draw, get renderer() { return world.renderer; } };   // (the readout's hook for a headless count)
     const perfWin = []; let perfEl = null, perfN = 0, perfPlates = '', perfScanAt = 0;
     const perfScan = () => {
       const by = new Map();

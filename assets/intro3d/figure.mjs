@@ -529,8 +529,8 @@ function buildFace(kit, o, B) {
   facet(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(lipPts(MY + 0.42, -0.12, 0.25).map(p => new THREE.Vector3(...p))), 24, 0.3, 8, false), lipM, parts.upper, 0.4, 1);
   facet(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(lipPts(MY - 0.5, 0, -0.2).map(p => new THREE.Vector3(...p))), 24, 0.36, 8, false), lipM, parts.lower, 0.4, 1);
   seam(lipPts(MY, 0, 0.2).map(p => [p[0] * 1.04, p[1], p[2] - 0.25]), parts.line, kit.ink, 0.09);
-  parts.gap = new THREE.Mesh(new THREE.CircleGeometry(1, 20), kit.ink); parts.gap.position.set(0, MY - 0.1, F(MY) - 0.12); parts.gap.rotation.y = PI; head.add(parts.gap);
-  parts.teeth = facet(block(MW * 1.25, 0.55, 0.4, 0), kit.bone, head, 0); parts.teeth.position.set(0, MY + 0.05, F(MY) - 0.05);
+  parts.gap = new THREE.Mesh(new THREE.CircleGeometry(1, 20), kit.ink); parts.gap.userData.keep = true;   // (keep: moved and shown by setFace - see compactRigid) parts.gap.position.set(0, MY - 0.1, F(MY) - 0.12); parts.gap.rotation.y = PI; head.add(parts.gap);
+  parts.teeth = facet(block(MW * 1.25, 0.55, 0.4, 0), kit.bone, head, 0); parts.teeth.userData.keep = true; parts.teeth.position.set(0, MY + 0.05, F(MY) - 0.05);
   // (an older or heavier man: the folds from the nose's wings to the mouth's corners)
   if (old > 0.25 || fat > 0.5) [-1, 1].forEach(sx => seam([[sx * 1.7, -0.5, F(-0.5, 1.7) - 0.05], [sx * 2.6, -1.4, F(-1.4, 2.6) - 0.02], [sx * (MW + 0.5), -2.6, F(-2.6, MW + 0.5) + 0.05]], head, lipM, 0.13 + 0.06 * old));
   // (an old man's forehead: three faint lines)
@@ -956,6 +956,110 @@ function buildAnatomy(pouch, m, a) {
 
 // rebuild in place: tear down the old mesh and build with new params,
 // keeping the pouch group's position and orientation (for the dev overlay)
+// ------------------------------------------------------------ compaction
+// A figure is some thousand small meshes - every plane, knob and bone its
+// own draw, and its outline another - and a phone is bound by draws before
+// triangles. skinRigid bakes a figure down to one skinned mesh per plate
+// (and one per outline and halo plate): every mesh that never moves on its
+// own goes into the plate's mesh with its vertices in the figure's space
+// at the pose it stands in, bound to one bone - a Bone put in its joint
+// group - so the pose still bends it (the burin shader skins, and carries
+// aAlong with the bones; a garment already comes this way, facetSkinned).
+// What a frame moves or swaps on its own - a lid, the mouth, a pouch
+// rebuilt live (`keep`, `pouch`), a mesh of a material in `opts.skip` (gore
+// shown and hidden) - and anything already skinned stays as it is. Call it
+// once the figure stands at its height: a bind reads the joints' world
+// matrices. Returns how many draws it saved.
+const _bm = new THREE.Matrix4(), _bn = new THREE.Matrix3(), _bv = new THREE.Vector3();
+function bakeSkinned(items, still = false) {
+  // items: [{ geo, matrix (into the figure's space), bone }] of one plate,
+  // all with the same attributes; the result carries skinIndex / skinWeight
+  const names = Object.keys(items[0].geo.attributes);
+  const parts = items.map(it => ({ g: it.geo.index ? it.geo.toNonIndexed() : it.geo, m: it.matrix, b: it.bone }));
+  const total = parts.reduce((a, pt) => a + pt.g.attributes.position.count, 0);
+  const out = new THREE.BufferGeometry();
+  names.forEach(n => {
+    const size = items[0].geo.attributes[n].itemSize;
+    const arr = new Float32Array(total * size); let at = 0;
+    parts.forEach(pt => {
+      const a = pt.g.attributes[n];
+      if (n === 'position' || n === 'normal' || n === 'aAlong') {
+        const isP = n === 'position'; if (!isP) _bn.setFromMatrix4(pt.m);
+        for (let i = 0; i < a.count; i++) {
+          _bv.fromBufferAttribute(a, i);
+          if (isP) _bv.applyMatrix4(pt.m); else { _bv.applyMatrix3(_bn); if (_bv.lengthSq() > 1e-12) _bv.normalize(); }
+          arr[at++] = _bv.x; arr[at++] = _bv.y; arr[at++] = _bv.z;
+        }
+      } else { arr.set(a.array.subarray(0, a.count * size), at); at += a.count * size; }
+    });
+    out.setAttribute(n, new THREE.BufferAttribute(arr, size));
+  });
+  if (still) return out;
+  const si = new Float32Array(total * 4), sw = new Float32Array(total * 4); let v = 0;
+  parts.forEach(pt => { const n = pt.g.attributes.position.count; for (let i = 0; i < n; i++, v++) { si[4 * v] = pt.b; sw[4 * v] = 1; } });
+  out.setAttribute('skinIndex', new THREE.BufferAttribute(si, 4));
+  out.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
+  return out;
+}
+// (opts.still: a group nothing poses - the far crowd, the ground's litter -
+// bakes to plain meshes in the root's space, no bones, culled by their own
+// bounds)
+export function skinRigid(root, opts = {}) {
+  const skip = opts.skip || null, still = !!opts.still;
+  root.updateMatrixWorld(true);
+  const rootInv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const bones = [], boneOf = new Map(), buckets = new Map(), doomed = [];
+  const attrsOf = g => Object.keys(g.attributes).sort().join(',');
+  // (an outline's material is its own instance per mesh, made alike: keyed
+  // by what it was made with, so a figure's outlines come down to one)
+  const matKey = m => { const u = m.uniforms; return u && u.uPx ? ['out', u.uPx.value, u.uInk.value.getHex(), u.uNeg.value.getHex(), u.uLitSwell ? u.uLitSwell.value : 0, u.uLimbHalo ? u.uLimbHalo.value : 0, m.side, m.renderOrder].join(',') : m.uuid; };
+  root.traverse(c => {
+    if (!c.isMesh || c.isSkinnedMesh || c.userData.outline || c.userData.halo || c.userData.keep || c.userData.pouch || !c.visible || Array.isArray(c.material) || !c.geometry.attributes.position) return;
+    if (skip && skip.has(c.material)) return;
+    if (c.children.some(k => !k.isMesh || k.isSkinnedMesh || !(k.userData.outline || k.userData.halo) || k.children.length)) return;
+    // (a hidden ancestor between it and the root: a part switched off - left alone)
+    for (let a = c.parent; a && a !== root; a = a.parent) if (!a.visible) return;
+    const g = c.parent; if (!g) return;
+    const key = [c.material.uuid, c.renderOrder, c.castShadow, c.receiveShadow, attrsOf(c.geometry), ...c.children.map(k => matKey(k.material) + ':' + k.renderOrder + ':' + attrsOf(k.geometry))].join('|');
+    let B = buckets.get(key);
+    if (!B) { B = { first: c, items: [], kids: c.children.map(() => []) }; buckets.set(key, B); }
+    let bi = still ? 0 : boneOf.get(g);
+    if (bi == null) { bi = bones.length; boneOf.set(g, bi); const b = new THREE.Bone(); b.userData.rig = true; g.add(b); bones.push(b); }
+    c.updateMatrix();
+    const m = new THREE.Matrix4().multiplyMatrices(rootInv, g.matrixWorld).multiply(c.matrix);
+    B.items.push({ geo: c.geometry, matrix: m, bone: bi });
+    c.children.forEach((k, j) => B.kids[j].push({ geo: k.geometry, matrix: m, bone: bi }));
+    doomed.push(c);
+  });
+  if (!doomed.length) return 0;
+  root.updateMatrixWorld(true);
+  const skeleton = still ? null : new THREE.Skeleton(bones);
+  // (culled by its bounds at the pose it was bound in, widened: a posed
+  // figure bends past them, and most stations are off the seat's view)
+  const make = (items, mat) => {
+    const geo = bakeSkinned(items, still);
+    if (still) { geo.computeBoundingSphere(); return new THREE.Mesh(geo, mat); }
+    const m = new THREE.SkinnedMesh(geo, mat); return m;
+  };
+  const bind = (m, parent) => { parent.add(m); if (still) return; m.matrixWorld.copy(root.matrixWorld); m.bind(skeleton, m.matrixWorld); m.computeBoundingSphere(); m.boundingSphere.radius *= 1.6; };
+  let draws = 0;
+  buckets.forEach(B => {
+    const f = B.first;
+    const sm = make(B.items, f.material);
+    sm.userData = Object.assign({}, f.userData, { rig: true }); sm.renderOrder = f.renderOrder; sm.castShadow = f.castShadow; sm.receiveShadow = f.receiveShadow;
+    bind(sm, root);
+    draws++;
+    f.children.forEach((k0, j) => {
+      const km = make(B.kids[j], k0.material);
+      km.userData = Object.assign({}, k0.userData); km.renderOrder = k0.renderOrder;
+      bind(km, sm);
+      draws++;
+    });
+  });
+  doomed.forEach(c => c.parent.remove(c));
+  return doomed.reduce((a, c) => a + 1 + c.children.length, 0) - draws;
+}
+
 export function rebuildAnatomy(fig, newParams) {
   const p = fig.userData.pouch; if (!p) return;
   const old = p.children[0] && p.children[0].userData.params;
