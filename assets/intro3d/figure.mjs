@@ -198,6 +198,10 @@ function loft(secs, o = {}) {
       // part of the one surface, not a plate laid on it)
       if (s.lobes) for (const L of s.lobes) { const d = (x - L.x) / L.w; z -= L.d * fz * Math.exp(-d * d); }
       if (s.backLobes) for (const L of s.backLobes) { const d = (x - L.x) / L.w; z += L.d * bz * Math.exp(-d * d); }   // (the buttocks: lobes of the seat, one surface with the trunk)
+      // (round lobes: a swell out of the ring at angle `a0` round it, `w`
+      // radians wide, `d` deep - the deltoid on the arm's outer side, the
+      // kneecap at the shin's front - a part of the one surface)
+      if (s.round) for (const L of s.round) { let da = a - L.a0; da = Math.atan2(Math.sin(da), Math.cos(da)); const k = Math.exp(-(da / L.w) * (da / L.w)) * L.d, r0 = Math.hypot(x, z) || 1; x += x / r0 * k; z += z / r0 * k; }
       if (s.squash) z *= 1 - s.squash * Math.abs(Math.cos(a));
       let y = s.y;
       if (s.locks) y += (i % 2 ? 1 : -1) * s.locks * (0.6 + 0.4 * Math.sin(i * 2.3)) * (0.5 + 0.5 * fz);   // (a hem cut into locks, deepest at the brow)
@@ -283,7 +287,7 @@ function frontZAt(secs, y, x) {
   return z + zc;
 }
 // a round-section loft, radii given: [[y, r], ...] with optional pulls
-const tube = (pts, n = 8, o = {}) => loft(pts.map(p => ({ y: p[0], rx: p[1], rz: p[2] == null ? p[1] : p[2], front: p[3] || 0, back: p[4] || 0 })), Object.assign({ n }, o));
+const tube = (pts, n = 8, o = {}) => loft(pts.map(p => ({ y: p[0], rx: p[1], rz: p[2] == null ? p[1] : p[2], front: p[3] || 0, back: p[4] || 0, round: p[5] })), Object.assign({ n }, o));
 // a joint's ball as a tube's rings: the half of a sphere of radius r about
 // y0 on the side `dir` (+1 above, -1 below), closed to a point - two limbs
 // ending in the same ball meet at any bend with no seam
@@ -1401,7 +1405,7 @@ function seatTrunk(T, b) {
   });
 }
 // a limb's radii thickened (k = 1 hands the points back untouched)
-const thick = (pts, k) => k === 1 ? pts : pts.map(p => [p[0], p[1] * k, p[2] == null ? p[2] : p[2] * k, (p[3] || 0) * k, (p[4] || 0) * k]);
+const thick = (pts, k) => k === 1 ? pts : pts.map(p => [p[0], p[1] * k, p[2] == null ? p[2] : p[2] * k, (p[3] || 0) * k, (p[4] || 0) * k, p[5] && p[5].map(L => Object.assign({}, L, { d: L.d * k }))]);
 const secAt = (T, y) => T.find(s => s.y === y);
 
 // ------------------------------------------------------------ the body
@@ -1559,17 +1563,21 @@ export function buildFigure(kit, rnd, o = {}) {
     // the elbow, and ending in the elbow's ball - the forearm starts in the
     // same ball, so the joint bends with no seam (knobs laid over a joint
     // read as a ring, a mannequin's)
-    const upperArm = tube(thick([[0.2, 0.3], [-0.2, 3.4], [-1.4, 5.4], [-3.2, 6.4], [-7, 6.3, 6.0, 0.7], [-12, 5.6, 5.3, 0.6], [-19, 4.8, 4.6, 0.3], [-25, 4.2], ...ball(-30, 4.0, -1)], kA), 12, { metric: UVS });
+    // (the deltoid a round lobe of the arm's own hull on its outer side, a
+    // bell over the arm's head to the biceps - a knob capping it stood on
+    // the arm with a step under it)
+    const dOut = s < 0 ? PI : 0, dAmp = (1.4 + 1.0 * Math.max(0, B ? B.muscle : 0) + 0.4 * Math.max(0, B ? B.mass : 0)) * (B ? 1 : 0);
+    const delt = (y, k) => [{ a0: dOut, w: 1.25, d: dAmp * k }];
+    const upperArm = tube(thick([[0.2, 0.3], [-0.2, 3.4, 3.4, 0, 0, delt(-0.2, 0.35)], [-1.4, 5.4, 5.4, 0, 0, delt(-1.4, 0.8)], [-3.2, 6.4, 6.4, 0, 0, delt(-3.2, 1.0)], [-5, 6.5, 6.2, 0.5, 0, delt(-5, 0.9)], [-7, 6.3, 6.0, 0.7, 0, delt(-7, 0.65)], [-9.5, 5.9, 5.6, 0.65, 0, delt(-9.5, 0.3)], [-12, 5.6, 5.3, 0.6], [-19, 4.8, 4.6, 0.3], [-25, 4.2], ...ball(-30, 4.0, -1)], kA), 16, { metric: UVS });
     if (B && !flayed) skinParts.push({ geo: upperArm, group: sh, bone: 'sh' + key.toUpperCase() }); else facet(upperArm, skinUV, sh, 1.8);
     if (flayed) { seam([[s * 5.4, -4, -1.5], [s * 5.4, -14, -2.4], [s * 4.6, -26, -1.6]], sh, kit.ink, 0.4); seam([[0, -5, -5.9], [s * 1.5, -15, -5.6], [0, -25, -4.9]], sh, kit.ink, 0.35); }
     // (the sleeve domed over the shoulder, the cuff turned in)
     // (a build's: the deltoid capping the shoulder, rounder with muscle)
-    if (B && !flayed) { const dl = facet(knob(5.4 * kA, 1.05, 1.3, 1.0, 2), skin, sh, 0.8); dl.position.set(s * 1.0, -3.6, 0.2); }
     if (o.shirt && !flayed && !B) facet(tube(thick([[2.4, 0.3], [1.8, 3.8], [0.4, 6.0], [-1.8, 7.2], [-6, 7.2], [-14, 6.8], [-20, 6.4], [-20.6, 4.9]], kA), 12, { metric: UVM.linen }), kit.linen, sh, 1.5);
     const el = G(sh, 0, -30, 0);
     // the forearm: out of the elbow's ball, its belly under the elbow,
     // narrowing to the wrist, closed inside the hand
-    const forearm = tube(thick([...ball(0, 4.0, 1), [-5, 5.0, 4.5, 0, 0.7], [-12, 4.5, 4.0], [-20, 3.3, 2.7], [-25.5, 2.4, 1.9], [-27.2, 2.2, 1.7], [-28.0, 1.6, 1.3], [-28.4, 0.3]], kF), 12, { metric: UVS });
+    const forearm = tube(thick([...ball(0, 4.0, 1), [-5, 5.0, 4.5, 0, 0.7], [-12, 4.5, 4.0], [-20, 3.3, 2.7], [-25.5, 2.4, 1.9], [-27.2, 2.2, 1.7], [-28.0, 1.6, 1.3], [-28.4, 0.3]], kF), 16, { metric: UVS });
     if (B && !flayed) skinParts.push({ geo: forearm, group: el, bone: 'el' + key.toUpperCase() }); else facet(forearm, skinUV, el, 1.7);   // (the forearm's belly high under the elbow, narrowing hard to a slim wrist: one width end to end read as a mannequin's tube)
     if (flayed) seam([[s * 4.4, -3, -0.5], [s * 4.2, -12, -2.2], [s * 2.8, -24, -1.8]], el, kit.ink, 0.35);
     const hand = G(el, 0, -29, 0);
@@ -1610,16 +1618,23 @@ export function buildFigure(kit, rnd, o = {}) {
     const hip = G(hips, s * (8.5 + (B ? (secAt(T, 0.0).rx - 16.0) * 0.5 : 0)), -4, 0);
     // the thigh: full under the hip, the quadriceps' swell, the knee's taper
     // (one hull from a dome inside the trunk to the knee's ball)
-    const thighGeo = tube(thick([...THIGH_SKIN, ...ball(-44, 5.2, -1)], kT), 12, { metric: legUV });
+    const thighGeo = tube(thick([...THIGH_SKIN, ...ball(-44, 5.2, -1)], kT), 16, { metric: legUV });
     let thigh = null;
     if (B && !flayed) skinParts.push({ geo: thighGeo, group: hip, bone: 'leg' + key.toUpperCase() }); else thigh = facet(thighGeo, legM, hip, 2);
     if (flayed) { seam([[s * 6.5, -2, -6.2], [s * 2.5, -16, -8.4], [-s * 3, -32, -6.4], [-s * 3.8, -40, -4.6]], hip, kit.ink, 0.45); seam([[-s * 7.8, -4, -2.6], [-s * 7.2, -20, -3.0], [-s * 5.8, -36, -2.4]], hip, kit.ink, 0.4); }
     const kn = G(hip, 0, -44, 0);
     // the shin: out of the knee's ball, the calf's swell behind, the ankle
-    const shinGeo = tube(thick([...ball(0, 5.2, 1), [-7, 5.4, 6.2, 0, 2.6], [-14, 5.0, 5.6, 0, 1.8], [-24, 3.8, 4.0, 0, 0.4], [-33, 2.9, 3.0], [-37, 2.6, 2.8], [-39, 2.3], [-40.4, 0.3]], kS), 12, { metric: legUV });
+    // (a build's kneecap: a round lobe at the front of the knee's ball, the
+    // ball's rings laid closer so it has a shape - the plate that rode on
+    // the shin read as a pebble stuck to it)
+    // (laid from the ball's equator down to the shin's head - inside the
+    // thigh's dome it shows only as a fin at its edge)
+    const capL = k => (B && !flayed ? [{ a0: -HALF, w: 0.6, d: 1.2 * k }] : undefined);
+    const shinGeo = tube(thick([...ball(0, 5.2, 1), [-2, 5.5, 5.9, 0, 0.8, capL(0.45)], [-4.5, 5.5, 6.1, 0, 1.6, capL(1.0)], [-7, 5.4, 6.2, 0, 2.6, capL(0.75)], [-10, 5.2, 5.9, 0, 2.2, capL(0.25)], [-14, 5.0, 5.6, 0, 1.8], [-24, 3.8, 4.0, 0, 0.4], [-33, 2.9, 3.0], [-37, 2.6, 2.8], [-39, 2.3], [-40.4, 0.3]], kS), 16, { metric: legUV });
     if (B && !flayed) skinParts.push({ geo: shinGeo, group: kn, bone: 'knee' + key.toUpperCase() }); else facet(shinGeo, legM, kn, 1.8);   // (the calf swelling high behind and falling away to a slim ankle)
     // the kneecap: a flat plate at the front of the knee's ball, riding on the shin
-    const cap = facet(knob(2.6, 1.05, 1.2, 0.55, 1), legS, kn, 0); cap.position.set(0, 1.0, -5.0 * kS); cap.userData.tissue = TISSUE.RIGID;   // (bone: cloth lies crisp over it)
+    let cap = null;
+    if (!(B && !flayed)) { cap = facet(knob(2.6, 1.05, 1.2, 0.55, 1), legS, kn, 0); cap.position.set(0, 1.0, -5.0 * kS); cap.userData.tissue = TISSUE.RIGID; }   // (the valley's own rig: a plate at the front of the knee; bone: cloth lies crisp over it)
     if (flayed) { seam([[s * 2.2, -3, -5.8], [s * 1.2, -16, -4.8], [s * 0.6, -34, -3.6]], kn, kit.ink, 0.4); seam([[0, -4, 8.2], [0, -14, 7.2], [0, -26, 5.0]], kn, kit.ink, 0.4); }
     const foot = G(kn, 0, -41, 0);
     // the foot: the heel's block, the instep's slope out to the toes
@@ -1654,9 +1669,9 @@ export function buildFigure(kit, rnd, o = {}) {
     const J = [];
     ['l', 'r'].forEach(k => {
       const K = k.toUpperCase(), A = arms[k], L = legs[k], sh = A.sh.position, hp = L.hip.position;
-      J.push({ a: bi.hips, b: bi['sh' + K], P: sh.clone(), R0: 0, R: 8.5 * kA });
+      J.push({ a: bi.hips, b: bi['sh' + K], P: sh.clone(), R0: 0, R: 10 * kA });
       J.push({ a: bi['sh' + K], b: bi['el' + K], P: sh.clone().add(A.el.position), R0: 4.4 * kA, R: 8 * kA });
-      J.push({ a: bi.hips, b: bi['leg' + K], P: hp.clone(), R0: 0, R: 10.5 * kT });
+      J.push({ a: bi.hips, b: bi['leg' + K], P: hp.clone(), R0: 0, R: 13.5 * kT });
       J.push({ a: bi['leg' + K], b: bi['knee' + K], P: hp.clone().add(L.kn.position), R0: 5.7 * kS, R: 10 * kT });
     });
     const smooth01 = t => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
