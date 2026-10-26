@@ -1114,10 +1114,10 @@ function dress(kit, o, T, hips, arms, legs, pouch, x, sleeves) {
   const briefSecs = [
     { y: 4.0, rx: s5.rx + 1.0 + E * 0.4, rz: s5.rz + 1.0 + E * 0.4, front: (s5.front || 0) + 0.8, back: (s5.back || 0) + 0.5 },
     { y: 0.0, rx: s0.rx + 1.6 + E * 0.7, rz: s0.rz + 1.6 + E * 0.7, front: (s0.front || 0) + 0.9, back: (s0.back || 0) + gb * 0.8 },
-    { y: -6.0, rx: s6.rx + 2.2 + E, rz: s6.rz + 1.8 + E, back: (s6.back || 0) + gb + 1.2 },
-    { y: -10.0, rx: s6.rx + 1.0 + E, rz: s9.rz + 4.4 + E, back: gb + 2.0, z: 1.2, saddle: 4.0, dropBack: 3.5 },
-    { y: -13.0, rx: s6.rx * 0.8 + E, rz: 7.6 + E, back: gb + 1.6, z: 2.4, saddle: 5.0, dropBack: 6.5 },
-    { y: -14.6, rx: 0.3, rz: 0.3, z: 3.0, dropBack: 6.0 }
+    { y: -6.0, rx: s6.rx + 2.2 + E, rz: s6.rz + 1.8 + E, back: (s6.back || 0) + gb * 0.7 + 0.6 },
+    { y: -10.0, rx: s6.rx + 1.0 + E, rz: s9.rz + 4.0 + E, back: gb * 0.5 + 0.6, z: 1.2, saddle: 4.0, dropBack: 1.8 },
+    { y: -13.0, rx: s6.rx * 0.8 + E, rz: 6.8 + E, back: gb * 0.2, z: 2.4, saddle: 5.0, dropBack: 2.8 },
+    { y: -14.6, rx: 0.3, rz: 0.3, z: 3.0, dropBack: 2.4 }
   ];
   const briefGeo = loft(densify(briefSecs, F.fit ? 5 : 4), { n: F.fit ? 64 : 48, front: F.fit ? 0.5 : 0.3, metric: UVM.linen });
   // (shrink-wrapped over the buttocks: a point of the cloth that falls
@@ -1401,9 +1401,9 @@ export function buildFigure(kit, rnd, o = {}) {
   const T0 = [
     { y: -11.6, rx: 0.2, rz: 0.2 },
     { y: -10.8, rx: 5.0, rz: 3.6 },
-    { y: -9.0, rx: 9.0, rz: 6.0 },                              // the fork
-    { y: -6.0, rx: 15.0, rz: 9.8, back: 2.2 },                  // the seat
-    { y: 0.0, rx: 16.0, rz: 10.4, back: 1.6 },                  // the hips
+    { y: -9.0, rx: 9.0, rz: 6.0, back: 1.6 },                   // the fork
+    { y: -6.0, rx: 15.0, rz: 9.8, back: 3.4 },                  // the seat
+    { y: 0.0, rx: 16.0, rz: 10.4, back: 2.8 },                  // the hips
     { y: 5.0, rx: 15.4, rz: 10.0, front: 0.8 },                 // the pelvis' rim
     { y: 11.0, rx: 13.4, rz: 9.4, front: 1.4 },                 // the belly's swell
     { y: 17.0, rx: 12.6, rz: 9.0, front: 1.4 },                 // the waist
@@ -1491,11 +1491,12 @@ export function buildFigure(kit, rnd, o = {}) {
     // (skin: the brief and whatever is over it are cloth of their own)
     const gm = skin;
     [-1, 1].forEach(sx => {
-      const c = new THREE.Vector3(sx * 7.0 * fx, -7.0 - 2.2 * Math.max(0, B.age), secAt(T, -6.0).rz + (secAt(T, -6.0).back || 0) - 4.4), q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.22, sx * 0.28, sx * 0.08));
-      glutes.push({ c, q, r: [7.0 * gk, 7.56 * gk, 5.95 * gk] });
+      const c = new THREE.Vector3(sx * 6.6 * fx, -5.0 - 2.2 * Math.max(0, B.age), secAt(T, -6.0).rz + (secAt(T, -6.0).back || 0) - 7.0), q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.3, sx * 0.22, sx * 0.06));   // (pitched so the upper mass swells out and the fold tucks under: pitched the other way, the mass hung under the seat as a ball)
+      const gr = [6.6 * gk, 8.6 * gk, 5.2 * gk];
+      glutes.push({ c, q, r: gr });
       // (a part of his one skin, laid where it sits - see the skin below)
-      if (!flayed) skinParts.push({ geo: knob(7.0 * gk, 1.0, 1.08, 0.85, 2).applyMatrix4(new THREE.Matrix4().compose(c, q, new THREE.Vector3(1, 1, 1))), group: hips, bone: 'hips' });
-      else { const gl = facet(knob(7.0 * gk, 1.0, 1.08, 0.85, 2), gm, hips, 1.4); gl.position.copy(c); gl.quaternion.copy(q); }
+      if (!flayed) skinParts.push({ geo: knob(gr[0], 1.0, gr[1] / gr[0], gr[2] / gr[0], 2).applyMatrix4(new THREE.Matrix4().compose(c, q, new THREE.Vector3(1, 1, 1))), group: hips, bone: 'hips' });
+      else { const gl = facet(knob(gr[0], 1.0, gr[1] / gr[0], gr[2] / gr[0], 2), gm, hips, 1.4); gl.position.copy(c); gl.quaternion.copy(q); }
     });
   }
   if (o.shirt && !flayed && !B) { const sh = facet(loft([...(o.hose ? [] : [{ y: -21.0, rx: 15.0 * fx, rz: 11.6 * fz, back: gb * 0.6 }, { y: -15.0, rx: 15.6 * fx, rz: 11.6 * fz, back: gb }, { y: -11.4, rx: 15.8 * fx, rz: 11.6 * fz, back: gb }]), ...T.slice(3, 15).map(s => Object.assign({}, s, { rx: s.rx + 1.4, rz: s.rz + 1.2 })), { y: 56.2, rx: 6.6, rz: 6.0 }], { n: 16, metric: UVM.linen, cap: false }), kit.linen, hips, 1.5); sh.position.z = 0.2; }
