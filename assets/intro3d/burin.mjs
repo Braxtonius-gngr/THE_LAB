@@ -65,7 +65,15 @@ const VERT = /* glsl */`
   varying float vDepth;
   varying vec3 vAxisW;
   varying vec2 vTone;
+  // the form's own frame, for a plate whose lines wrap the form (uForm):
+  varying vec3 vAlongO;   // the hull's direction at this point (aAlong, carried by its bones), object space; zero on a mesh that has none
+  varying vec3 vNormalO;  // the normal in the same space
+  varying vec3 vLocal;    // the point as it stands now (posed, the soft tissue out), object space: the lines are laid in it, so they bend with it
+  varying vec3 vBind;     // the point at rest: the hand's wobble and the stipple are fixed to the skin by it
+  varying float vTaut;    // 0..1: cloth drawn taut over what is under it (UniversalClothMaterial's ucTaut)
+  varying float vScale;   // the object's scale in the world, so a pitch in its units prints the same on every man
   attribute vec2 aTone;
+  attribute vec3 aAlong;
   uniform vec3 uAxis;
   #include <common>
   #include <skinning_pars_vertex>
@@ -78,6 +86,20 @@ const VERT = /* glsl */`
     #include <begin_vertex>
     #include <morphtarget_vertex>
     #include <skinning_vertex>
+    vec3 alongO = aAlong;
+    #ifdef USE_SKINNING
+      alongO = (skinMatrix * vec4(alongO, 0.0)).xyz;
+    #endif
+    vAlongO = alongO;
+    vNormalO = objectNormal;
+    vLocal = transformed;
+    vBind = position;
+    vScale = length(modelMatrix[1].xyz);
+    #ifdef UC_TAUT
+      vTaut = ucTaut;
+    #else
+      vTaut = 0.0;
+    #endif
     vec4 w = modelMatrix * vec4(transformed, 1.0);
     vWorld = w.xyz;
     vNormalW = normalize(mat3(modelMatrix) * objectNormal);
@@ -98,6 +120,14 @@ const FRAG = /* glsl */`
   varying float vDepth;
   varying vec3 vAxisW;
   varying vec2 vTone;
+  varying vec3 vAlongO;
+  varying vec3 vNormalO;
+  varying vec3 vLocal;
+  varying vec3 vBind;
+  varying float vTaut;
+  varying float vScale;
+  uniform float uForm;     // >0: the lines wrap the form - laid round each hull square to its aAlong, the shade crossed at 60 degrees (the value: the pitch, as a factor on uFreq)
+  uniform float uStip;     // 0..1: a stipple in the lit flat of a wrapped form - dots in the hatch's gaps, fixed to the skin
   uniform float uBare;     // the tone below which a plane is left as bare paper (a figure's lights held open wider than the land's)
   uniform float uToneMap;  // >0: the tone laid in from aTone (x: the value, y: how much of it) - an engraver's planned passage, the light only modelling it
   uniform vec3 uPaper;
@@ -185,20 +215,22 @@ const FRAG = /* glsl */`
     if (uSwell > 0.0) { float sw = 1.0 + uSwell * (vnoise(vec2(dot(p, along) * 0.035, floor(dot(p, d1) * uFreq + wob) * 1.37)) - 0.5) * 2.0; w1 *= sw; w1b *= sw; }
     float w2 = mix(0.0, 0.42, smoothstep(0.62, 0.95, t));
     float w3 = mix(0.0, 0.3, smoothstep(0.8, 1.0, t));
+    // (cloth drawn taut over a form under it: the lines close up over it)
+    float fq = uFreq * (1.0 + 0.55 * vTaut);
     float ink;
     if (uPitchPx > 0.0) {
       // the pitch held on screen: where uFreq would put more than one
       // line per uPitchPx pixels, drop an octave (half the lines), and
       // blend the two octaves so nothing pops as it recedes
-      float lpp = fwidth(dot(p, d1)) * uFreq;             // lines per pixel at uFreq
+      float lpp = fwidth(dot(p, d1)) * fq;                // lines per pixel at fq
       float k = max(0.0, log2(max(lpp * uPitchPx, 1e-5)));
       float k0 = floor(k), fr = k - k0;
-      float f0 = uFreq * exp2(-k0), f1 = f0 * 0.5;
+      float f0 = fq * exp2(-k0), f1 = f0 * 0.5;
       ink = mix(sets(p, d1, f0, w1, w1b, w2, w3, wob), sets(p, d1, f1, w1, w1b, w2, w3, wob), smoothstep(0.0, 1.0, fr));
     } else {
-      ink = sets(p, d1, uFreq, w1, w1b, w2, w3, wob);
+      ink = sets(p, d1, fq, w1, w1b, w2, w3, wob);
       // where the lines fall under a pixel they dissolve into their mean
-      float px = fwidth(dot(p, d1) * uFreq);
+      float px = fwidth(dot(p, d1) * fq);
       float mean = clamp(w1 + w1b + w2 * 0.6 + w3 * 0.4, 0.0, 1.0);
       ink = mix(ink, mean, smoothstep(0.45, 1.0, px));
     }
@@ -206,6 +238,58 @@ const FRAG = /* glsl */`
     vec2 cell = p * uFreq * 1.6;
     float dot_ = length(fract(cell) - 0.5);
     float sp = step(0.965, hash(floor(cell))) * (1.0 - smoothstep(0.12, 0.2, dot_)) * smoothstep(0.3, 0.12, t) * smoothstep(0.04, 0.1, t) * 0.6 * (1.0 - uFlip);   // (no flecks in the negative: they print as salt)
+    return max(ink, sp);
+  }
+  // the three sets of a wrapped form at frequency f: the first in rings
+  // round the hull (s1: the distance along it), the second across them at
+  // the engraver's 60 degrees, the third on the other diagonal
+  float setsForm(float s1, float s2, float s3, float f, float w1, float w2, float w3, float wob) {
+    float ink = lines(s1 * f + wob, w1);
+    ink = max(ink, lines(s2 * f + wob * 0.7, w2) * step(0.001, w2));
+    ink = max(ink, lines(s3 * f - wob * 0.5, w3) * step(0.001, w3));
+    return ink;
+  }
+  // the hatch of a form the lines wrap (uForm): a burin follows the form,
+  // so the first set runs round each limb and the trunk's girth, square to
+  // the hull's own direction (vAlongO, carried by the bones, so the rings
+  // turn with the joints), laid in the posed object space (vLocal: a belly
+  // pulsed out bends them). The light is not a darker hatch: into the shade
+  // a second set crosses the first at 60 degrees over the terminator, and a
+  // third, the other way, only in the deepest cores - the tone cut in a few
+  // plate steps, never a gradient. A stipple in the lit flat, in the gaps.
+  float hatchForm(float t, float wobble) {
+    vec3 n = normalize(vNormalO);
+    vec3 a = vAlongO - n * dot(vAlongO, n);
+    float la = length(a);
+    a = la > 1e-4 ? a / la : normalize(cross(n, vec3(0.0, 0.0, 1.0)));
+    vec3 r = normalize(cross(n, a));
+    // the first set round the form, leaning a little along it (a stroke
+    // drawn round a limb, not a lathe's ring); the others 60 degrees off it
+    vec3 d1 = 0.96 * a - 0.28 * r;
+    vec3 d2 = 0.5 * d1 + 0.866 * cross(n, d1), d3 = 0.5 * d1 - 0.866 * cross(n, d1);
+    float f = uFreq * uForm * vScale * (1.0 + 0.55 * vTaut);
+    // the chart the wobble and the stipple are seeded on: the point at rest
+    vec2 q = vec2(vBind.x + 0.6 * vBind.z, vBind.y - 0.3 * vBind.z);
+    float wob = (vnoise(q * uWobF) - 0.5) * wobble;
+    // the tone in plate cuts: five steps, mostly
+    float tq = mix(t, floor(t * 5.0 + 0.5) / 5.0, 0.65);
+    // the first set a hairline in the light, a cut in the half tone; the
+    // second comes in over the terminator (the key gone: t about 0.5), the
+    // third only in the cores
+    float w1 = mix(0.0, 0.55, smoothstep(uBare, 0.72, tq));
+    float w2 = 0.46 * smoothstep(0.5, 0.64, tq);
+    float w3 = 0.4 * smoothstep(0.72, 0.84, tq);
+    float s1 = dot(vLocal, d1), s2 = dot(vLocal, d2), s3 = dot(vLocal, d3);
+    // the pitch held on screen, as hatch() holds it
+    float lpp = fwidth(s1) * f;
+    float k = max(0.0, log2(max(lpp * max(uPitchPx, 1.0), 1e-5)));
+    float k0 = floor(k), fr = k - k0;
+    float f0 = f * exp2(-k0), f1 = f0 * 0.5;
+    float ink = mix(setsForm(s1, s2, s3, f0, w1, w2, w3, wob), setsForm(s1, s2, s3, f1, w1, w2, w3, wob), smoothstep(0.0, 1.0, fr));
+    // the stipple: a dot in a cell of the rest chart, only in the gaps
+    vec2 cell = q * f0 * 1.5;
+    float dot_ = length(fract(cell) - 0.5);
+    float sp = step(1.0 - 0.07 * uStip, hash(floor(cell))) * (1.0 - smoothstep(0.1, 0.2, dot_)) * smoothstep(0.34, 0.1, tq) * smoothstep(0.02, 0.08, tq) * 0.7 * (1.0 - ink) * (1.0 - uFlip);
     return max(ink, sp);
   }
   void main() {
@@ -277,7 +361,10 @@ const FRAG = /* glsl */`
     // the wet pass: fresh ink spreads a little wider and the tone deepens
     // (blood is always a darker passage than the skin it runs on)
     float tt = clamp(max(t, bm * 0.42) + bm * 0.1 + uWet * 0.06 * max(bm, 0.3), 0.0, 1.0);
-    float ink = hatch(p, along, tt, uWobble);
+    // (a wrapped form, where the mesh carries its direction; the plate's
+    // own lines where it does not)
+    bool form = uForm > 0.0 && dot(vAlongO, vAlongO) > 0.25;
+    float ink = form ? hatchForm(tt, uWobble) : hatch(p, along, tt, uWobble);
     // ember: in the darks, the ink glows from under (the valley burning)
     // (blood is a wash: the paper under the lines goes red; the lines stay ink)
     vec3 inkCol = uInk;
@@ -295,7 +382,8 @@ const FRAG = /* glsl */`
       // standing as the ground, so the figure prints dark, and only the
       // light cut out of it in bone lines, thin in the half tones, gone in
       // the shade (the tone before the blood: no blood, no plate tone)
-      float inkN = hatch(p, along, mix(0.05, 0.5, 1.0 - t), uWobble);   // (the stroke count kept: the lights cut as fully as the positive's shade, so the ground keeps its lines and a figure its form)
+      float tn = mix(0.05, 0.5, 1.0 - t);   // (the stroke count kept: the lights cut as fully as the positive's shade, so the ground keeps its lines and a figure its form)
+      float inkN = form ? hatchForm(tn, uWobble) : hatch(p, along, tn, uWobble);
       vec3 bone = vec3(0.91, 0.863, 0.753);
       col = mix(col, mix(uInk * 0.85, bone, inkN), uFlip);
     }
@@ -311,7 +399,7 @@ const FRAG = /* glsl */`
 // A sharable set of uniforms (uTime, uCamPos are driven per frame by
 // burinTick(); the rest are the material's own).
 export function engravingMaterial(opts = {}) {
-  const o = Object.assign({ paper: BONE, ink: INK, blood: BLOOD, freq: 1.1, angle: -0.6, tone: 0.0, wet: 0, bloodOn: false, bloodLo: 0, bloodHi: 1, spill: 0, ember: 0, sky: 0.28, keyI: 1.0, transparent: false, opacity: 1, side: THREE.FrontSide, uv: null, invert: false, wobble: 0.6, scroll: null, steps: 0, toneMap: false, bare: 0.14, axis: [0, 1, 0], pitch: 4.5, wobF: 0.35, swell: 0, ring: null }, opts);
+  const o = Object.assign({ paper: BONE, ink: INK, blood: BLOOD, freq: 1.1, angle: -0.6, tone: 0.0, wet: 0, bloodOn: false, bloodLo: 0, bloodHi: 1, spill: 0, ember: 0, sky: 0.28, keyI: 1.0, transparent: false, opacity: 1, side: THREE.FrontSide, uv: null, invert: false, wobble: 0.6, scroll: null, steps: 0, toneMap: false, bare: 0.14, axis: [0, 1, 0], pitch: 4.5, wobF: 0.35, swell: 0, ring: null, form: 0, stipple: 0 }, opts);
   const m = new THREE.ShaderMaterial({
     vertexShader: VERT, fragmentShader: FRAG,
     uniforms: {
@@ -323,10 +411,13 @@ export function engravingMaterial(opts = {}) {
       uInvert: { value: o.invert ? 1 : 0 }, uFlip: { value: 0 }, uGhost: { value: 0 }, uWobble: { value: o.wobble }, uUvMode: { value: o.uv ? 1 : 0 }, uUvScale: { value: new THREE.Vector2(o.uv ? o.uv[0] : 1, o.uv ? o.uv[1] : 1) },
       uScroll: { value: new THREE.Vector2(o.scroll ? o.scroll[0] : 0, o.scroll ? o.scroll[1] : 0) }, uSteps: { value: o.steps }, uToneMap: { value: o.toneMap ? 1 : 0 }, uBare: { value: o.bare },
       uAxis: { value: new THREE.Vector3(...(o.axis || [0, 1, 0])) }, uAxisOn: { value: o.axis ? 1 : 0 }, uPitchPx: { value: o.pitch },
-      uRing: { value: new THREE.Vector4(...(o.ring || [0, 0, 0, 0])) }, uWobF: { value: o.wobF }, uSwell: { value: o.swell }
+      uRing: { value: new THREE.Vector4(...(o.ring || [0, 0, 0, 0])) }, uWobF: { value: o.wobF }, uSwell: { value: o.swell },
+      uForm: { value: o.form }, uStip: { value: o.stipple }
     },
     transparent: o.transparent, side: o.side, lights: false, fog: false
   });
+  // (a mesh without the form's direction reads it as zero: the plate's own lines)
+  Object.assign(m.defaultAttributeValues, { aAlong: [0, 0, 0], aTone: [0, 0] });
   m.userData.burin = true;
   return m;
 }
@@ -338,6 +429,10 @@ export function engravingMaterial(opts = {}) {
 const OUT_VERT = /* glsl */`
   uniform float uPx;
   uniform vec2 uViewport;
+  uniform vec3 uKey;        // the light, for the swell
+  uniform float uLitSwell;  // 0..1: the line swells toward the light and thins in the shade, as an engraver's contour does
+  uniform float uLimbHalo;  // the line (a halo's) stands this much wider round a limb (aLimb 1), where it crosses the trunk
+  attribute float aLimb;
   #include <common>
   #include <skinning_pars_vertex>
   void main() {
@@ -349,8 +444,10 @@ const OUT_VERT = /* glsl */`
     vec4 mv = modelViewMatrix * vec4(transformed, 1.0);
     vec3 nv = normalize(normalMatrix * objectNormal);
     vec4 clip = projectionMatrix * mv;
-    // push along the screen-space normal by uPx pixels, thinning far off
-    vec2 off = normalize(nv.xy + vec2(1e-5)) * uPx * clip.w / uViewport * 2.0;
+    vec3 nw = normalize(mat3(modelMatrix) * objectNormal);
+    float px = uPx * (1.0 + uLitSwell * clamp(dot(nw, normalize(uKey)), -1.0, 1.0)) * (1.0 + uLimbHalo * aLimb);
+    // push along the screen-space normal by px pixels, thinning far off
+    vec2 off = normalize(nv.xy + vec2(1e-5)) * px * clip.w / uViewport * 2.0;
     float far = clamp(1.45 - (-mv.z) / 520.0, 0.4, 1.35);
     clip.xy += off * far;
     gl_Position = clip;
@@ -372,7 +469,9 @@ const OUT_FRAG = /* glsl */`
 `;
 const NEG_BONE = new THREE.Color(0.91, 0.863, 0.753);
 export function outlineMaterial(px = 2.2, ink = INK, neg = NEG_BONE) {
-  return new THREE.ShaderMaterial({ vertexShader: OUT_VERT, fragmentShader: OUT_FRAG, uniforms: { uPx: { value: px }, uViewport: { value: new THREE.Vector2(1, 1) }, uInk: { value: ink.clone() }, uNeg: { value: neg.clone() }, uFlip: { value: 0 }, uGhost: { value: 0 } }, side: THREE.BackSide, depthWrite: true });
+  const m = new THREE.ShaderMaterial({ vertexShader: OUT_VERT, fragmentShader: OUT_FRAG, uniforms: { uPx: { value: px }, uViewport: { value: new THREE.Vector2(1, 1) }, uInk: { value: ink.clone() }, uNeg: { value: neg.clone() }, uFlip: { value: 0 }, uGhost: { value: 0 }, uKey: { value: KEY.clone() }, uLitSwell: { value: 0 }, uLimbHalo: { value: 0 } }, side: THREE.BackSide, depthWrite: true });
+  m.defaultAttributeValues.aLimb = [0];
+  return m;
 }
 // a halo: the paper knocked out round a figure where it stands against a
 // dark passage, as an engraver leaves a hair of white along a contour - an
@@ -405,7 +504,7 @@ export function burinTick(root, camera, renderer, t, key = null) {
     const mats = obj.material ? [].concat(obj.material) : [];
     for (const m of mats) {
       if (m.userData && m.userData.burin) { m.uniforms.uTime.value = t; m.uniforms.uCamPos.value.copy(camera.position); if (key) m.uniforms.uKey.value.copy(key); }
-      else if (m.uniforms && m.uniforms.uViewport) m.uniforms.uViewport.value.copy(_v2);
+      else if (m.uniforms && m.uniforms.uViewport) { m.uniforms.uViewport.value.copy(_v2); if (key && m.uniforms.uKey) m.uniforms.uKey.value.copy(key); }
     }
   });
 }
