@@ -367,6 +367,19 @@ const INK = [
   { key: 'core0', u: 'uCore', i: 'x', label: 'Core in', min: 0, max: 1, step: 0.01 },
   { key: 'core1', u: 'uCore', i: 'y', label: 'Core full', min: 0, max: 1, step: 0.01 },
 ];
+const INK_KEY = 'dev_overlay_ink_v1';
+function readInk() { try { return JSON.parse(localStorage.getItem(INK_KEY) || '{}') || {}; } catch (_) { return {}; } }
+function writeInk(all) { try { localStorage.setItem(INK_KEY, JSON.stringify(all)); } catch (_) { /* storage blocked */ } }
+// `?ink=face.bare=0.4,face.tone=-0.2;flesh.pitch=4` <-> { face: { bare, tone }, flesh: { pitch } }
+function inkFromQuery() {
+  const o = {};
+  let q = ''; try { q = new URLSearchParams(location.search).get('ink') || ''; } catch (_) { /* no window */ }
+  q.split(/[;,]/).forEach(kv => { const m = /^\s*([A-Za-z]\w*)\.(\w+)=(-?\d*\.?\d+)\s*$/.exec(kv); if (m && INK.some(p => p.key === m[2])) (o[m[1]] = o[m[1]] || {})[m[2]] = +m[3]; });
+  return o;
+}
+function inkToQuery(all) {
+  return Object.keys(all).map(n => Object.keys(all[n]).map(k => `${n}.${k}=${all[n][k]}`).join(',')).filter(Boolean).join(';');
+}
 // the plates worth the panel, in the order they are met
 const INK_PLATES = ['face', 'flesh', 'fleshUV', 'linen', 'breech', 'skull', 'bone', 'hair'];
 function buildInkPanel(ink, opts = {}) {
@@ -406,9 +419,27 @@ function buildInkPanel(ink, opts = {}) {
   box.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;column-gap:10px;';
   body.append(pick, box);
   let mats = [], plate = '';
-  const read = p => { const m = mats[0]; if (!m) return 0; const v = m.uniforms[p.u].value; return p.i ? v[p.i] : v; };
-  const write = (p, v) => mats.forEach(m => { if (p.i) m.uniforms[p.u].value[p.i] = v; else m.uniforms[p.u].value = v; });
+  const readOf = (m, p) => { const v = m.uniforms[p.u].value; return p.i ? v[p.i] : v; };
+  const writeTo = (m, p, v) => { if (p.i) m.uniforms[p.u].value[p.i] = v; else m.uniforms[p.u].value = v; };
+  const read = p => (mats[0] ? readOf(mats[0], p) : 0);
+  const write = (p, v) => mats.forEach(m => writeTo(m, p, v));
   const fmt = (p, v) => (p.step >= 1 ? String(Math.round(v)) : Number(v).toFixed(2));
+  // what was tuned is kept (per plate, only the keys moved) and put back on
+  // every plate it names at open and at each rescan - a reload, or a hop
+  // from the phone to the tablet, keeps the numbers; `?ink=face.bare=0.4,
+  // face.tone=-0.2;flesh.pitch=4` seeds them from the link and is kept too
+  const saved = readInk(), fromLink = inkFromQuery();
+  Object.keys(fromLink).forEach(n => { saved[n] = Object.assign(saved[n] || {}, fromLink[n]); });
+  if (Object.keys(fromLink).length) writeInk(saved);
+  const defaults = {};   // each plate's numbers as the kit cut them, from the first copy seen
+  const applySaved = all => {
+    all.forEach((set, n) => {
+      const ms = [...set];
+      if (!defaults[n]) defaults[n] = Object.fromEntries(INK.map(p => [p.key, readOf(ms[0], p)]));
+      const sv = saved[n]; if (!sv) return;
+      INK.forEach(p => { if (sv[p.key] != null && isFinite(sv[p.key])) ms.forEach(m => writeTo(m, p, +sv[p.key])); });
+    });
+  };
   const rows = INK.map(p => {
     const row = document.createElement('div'); row.style.cssText = 'margin-bottom:3px;';
     const lbl = document.createElement('label'); lbl.style.cssText = 'display:flex;justify-content:space-between;align-items:center;';
@@ -419,13 +450,14 @@ function buildInkPanel(ink, opts = {}) {
     slider.type = 'range'; slider.min = p.min; slider.max = p.max; slider.step = p.step;
     slider.setAttribute('aria-label', `Ink: ${p.label}`);
     slider.style.cssText = 'width:100%;margin:0;height:18px;accent-color:#d9b45a;';
-    slider.addEventListener('input', () => { const v = parseFloat(slider.value); val.textContent = fmt(p, v); write(p, v); if (opts.onChange) opts.onChange({ plate, [p.key]: v }); });
+    slider.addEventListener('input', () => { const v = parseFloat(slider.value); val.textContent = fmt(p, v); write(p, v); (saved[plate] = saved[plate] || {})[p.key] = +fmt(p, v); writeInk(saved); if (opts.onChange) opts.onChange({ plate, [p.key]: v }); });
     row.append(lbl, slider); box.appendChild(row);
     return { p, slider, val };
   });
   const sync = () => rows.forEach(r => { const v = read(r.p); r.slider.value = v; r.val.textContent = fmt(r.p, v); });
   const choose = name => {
     const all = byPlate();
+    applySaved(all);
     plate = all.has(name) ? name : (all.keys().next().value || '');
     mats = [...(all.get(plate) || [])];
     pick.replaceChildren(...[...all.keys()].sort((a, b) => (INK_PLATES.indexOf(a) + 1 || 99) - (INK_PLATES.indexOf(b) + 1 || 99)).map(n => { const o = document.createElement('option'); o.value = n; o.textContent = `${n} (${all.get(n).size})`; o.selected = n === plate; return o; }));
@@ -434,16 +466,31 @@ function buildInkPanel(ink, opts = {}) {
   pick.addEventListener('change', () => choose(pick.value));
   // (the scene may have filled since - the lab builds its men after the panel opens)
   pick.addEventListener('focus', () => { if (byPlate().size !== pick.options.length) choose(plate); });
-  const current = () => { const o = {}; INK.forEach(p => { o[p.key] = +fmt(p, read(p)); }); return { plate, ...o }; };
+  const current = () => { const o = {}; INK.forEach(p => { o[p.key] = +fmt(p, read(p)); }); return Object.assign({}, saved, { [plate]: o }); };
   const btnCss = 'margin-top:6px;width:100%;padding:6px;border:1px solid #555;background:#222;color:#ccc;border-radius:4px;cursor:pointer;font:11px monospace;';
   const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = 'Copy ink'; copy.style.cssText = btnCss;
   copy.addEventListener('click', () => {
     navigator.clipboard.writeText(JSON.stringify(current(), null, 2))
       .then(() => { copy.textContent = 'Copied ✓'; setTimeout(() => copy.textContent = 'Copy ink', 1200); });
   });
+  // the link: this page with every tuned number in its ?ink=
+  const link = document.createElement('button'); link.type = 'button'; link.textContent = 'Copy link'; link.style.cssText = btnCss;
+  link.addEventListener('click', () => {
+    const u = new URL(location.href), q = inkToQuery(saved);
+    if (q) u.searchParams.set('ink', q); else u.searchParams.delete('ink');
+    navigator.clipboard.writeText(u.toString())
+      .then(() => { link.textContent = 'Copied ✓'; setTimeout(() => link.textContent = 'Copy link', 1200); });
+  });
+  // the plate back to the kit's numbers, and forgotten
+  const reset = document.createElement('button'); reset.type = 'button'; reset.textContent = 'Reset plate'; reset.style.cssText = btnCss;
+  reset.addEventListener('click', () => {
+    delete saved[plate]; writeInk(saved);
+    const d = defaults[plate]; if (d) INK.forEach(p => write(p, d[p.key]));
+    sync(); if (opts.onChange) opts.onChange({ plate, reset: true });
+  });
   const again = document.createElement('button'); again.type = 'button'; again.textContent = 'Rescan plates'; again.style.cssText = btnCss;
   again.addEventListener('click', () => choose(plate));
-  body.append(copy, again);
+  body.append(copy, link, reset, again);
   choose(ink.plate || 'face');
   root.choose = choose; root.current = current;
   return root;

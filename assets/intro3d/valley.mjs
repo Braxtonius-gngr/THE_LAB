@@ -1373,7 +1373,7 @@ export function valleyKit() {
     // (the skull wraps the face's forward axis - figure.mjs buildFace; the
     // lids, the ears, the nose's wings take the plate's own lines)
     face: mat({ freq: 1.25, angle: 1.1, tone: -0.2, keyI: 1.15, sky: 0.44, wobble: 0.45, bare: 0.32, form: 0.8, stipple: 1, cross: [0.62, 0.8], core: [0.82, 0.95] }),   // (its cross sets later than the skin's: a face is left open, its half tones a hairline - crossed at the skin's tone it printed as slabs)
-    hair: mat({ uv: [24, 8], angle: 0.3, tone: 0.58, freq: 1.6, wobble: 1.2 }),
+    hair: mat({ freq: 1.6, angle: 0.3, tone: 0.5, wobble: 0.9, pitch: 3.8 }),   // (no UVs: the strokes run with the head's up axis as it lies on each face - hair falling from the crown, a beard from the jaw - not round the cap's rings; the wrapped field could not: a ring's tangent projects to nothing)
     raw: mat({ paper: BLOOD, tone: 0.34, freq: 1.4, angle: -0.4, keyI: 1.2 }),
     rawUV: mat({ paper: BLOOD, uv: [12, 5], angle: 0.1, tone: 0.34, freq: 1.3, keyI: 1.2 }),
     gut: mat({ paper: BLOOD, uv: [40, 5], angle: HALF, tone: 0.46, freq: 1.0 }),

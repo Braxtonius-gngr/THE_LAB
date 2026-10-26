@@ -269,6 +269,9 @@ const FRAG = /* glsl */`
     // rings swirled; it eases over to a fixed one there, lines laid across
     // the form's side-to-side)
     vec3 af = cross(n, vec3(1.0, 0.0, 0.0)); float lf = length(af); af = lf > 1e-4 ? af / lf : vec3(0.0, 0.0, 1.0);
+    // (the fixed one turned to the hull's side of the line: eased against
+    // it, the blend passed through nothing and the lines zigzagged)
+    if (dot(af, a) < 0.0) af = -af;
     a = normalize(mix(af, la > 1e-5 ? a / la : af, smoothstep(0.08, 0.4, la)));
     vec3 r = normalize(cross(n, a));
     // the first set round the form, leaning a little along it (a stroke

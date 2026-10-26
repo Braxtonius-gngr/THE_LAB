@@ -271,6 +271,20 @@ function lieForward(geo) {
   if (al) for (let i = 0; i < al.count; i++) { const y = al.getY(i), z = al.getZ(i); al.setY(i, -z); al.setZ(i, y); }
   return geo;
 }
+// a hull whose direction eases from its own (the loft's, ring to ring) to
+// a fixed one (x, y, z) between y0 and y1 up it: a neck turning its rings
+// into the jaw's lines, so the two fields meet without a seam
+function alongEase(geo, y0, y1, x, y, z) {
+  const p = geo.attributes.position, al = geo.attributes.aAlong;
+  if (!al) return geo;
+  for (let i = 0; i < p.count; i++) {
+    const t = Math.min(1, Math.max(0, (p.getY(i) - y0) / (y1 - y0))), k = t * t * (3 - 2 * t);
+    if (k <= 0) continue;
+    const ax = al.getX(i) * (1 - k) + x * k, ay = al.getY(i) * (1 - k) + y * k, az = al.getZ(i) * (1 - k) + z * k, l = Math.hypot(ax, ay, az) || 1;
+    al.setXYZ(i, ax / l, ay / l, az / l);
+  }
+  return geo;
+}
 // a hull given one direction for the whole of it, (x, y, z) in its own frame
 function alongAll(geo, x, y, z) {
   const n = geo.attributes.position.count, al = new Float32Array(n * 3);
@@ -1571,7 +1585,9 @@ export function buildFigure(kit, rnd, o = {}) {
     const band = facet(new THREE.TorusGeometry(16.6, 1.3, 6, 24), bm, hips, 1.0); band.position.y = 2.0; band.rotation.x = HALF; band.scale.set(fx, 0.66 * fz, 1);
     const lc = facet(loft([{ y: -21.0, rx: 0.2, rz: 0.2, z: -1.0 }, { y: -20.2, rx: 3.6, rz: 6.8, z: -1.0 }, { y: -18.4, rx: 8.6, rz: 10.2, z: -0.4 }, { y: -15.0, rx: 17.8, rz: 11.8 }, { y: -8, rx: 18.0, rz: 11.8 }, { y: -2, rx: 17.2, rz: 11.2 }, { y: 2.2, rx: 16.6, rz: 10.9 }], { n: 16, metric: UVM.linen }), bm, hips, 1.4); lc.scale.set(fx, 1, fz); }
   const neck = G(hips, 0, 55, B ? secAt(T, 54.0).z || 0 : 0);
-  facet(tube(thick([[0, 5.6, 5.2], [5, 4.6, 4.3], [10.5, 4.4, 4.1]], kN), 12, { metric: UVS }), skinUV, neck, 1.2);
+  // (its rings turn into the face's field up its top half - the jaw's lines
+  // run back, the neck's round: met square under the ear they printed a seam)
+  facet(alongEase(tube(thick([[0, 5.6, 5.2], [5, 4.6, 4.3], [10.5, 4.4, 4.1]], kN), 12, { metric: UVS }), 4.5, 10.5, 0, 0, -1), skinUV, neck, 1.2);
   const head = G(neck, 0, 11, 0);
   // (the head a size up on the body: at a ninth of the height it read as a doll's)
   // (a build's man - the lab's - has a face; the valley's keep their screams,
