@@ -998,7 +998,17 @@ initDevOverlay(figures, {
   ink: { root: scene, dock: 'left' },
   // (a slider moved: the overlay rebuilt each man's anatomy in place - give
   // the new pieces the room's look and put them back in the pose)
-  onChange() { active().forEach(s => { if (bare()) proxy(s.man); applyLook(s.man); syncRaw(s); }); awake = 1; pose(0, !!state.compareRaw); }
+  onChange() { active().forEach(s => { if (bare()) proxy(s.man); applyLook(s.man); syncRaw(s); }); awake = 1; pose(0, !!state.compareRaw); },
+  // (Randomize · realism: the lab's own physical values off their bell
+  // curves too - the Firm about 0.4, the pose's rest bias about its
+  // default, never under 0 - truncated like the overlay's at 2.2 spreads)
+  onRandomize(g) {
+    const t = () => { for (let i = 0; i < 20; i++) { const z = g(); if (Math.abs(z) <= 2.2) return z; } return 0; };
+    state.firm = Math.round(Math.min(1, Math.max(0, 0.4 + 0.15 * t())) * 100) / 100;
+    active().forEach(s => { const c = s.man && s.man.userData.cloth; if (c && c.setState) c.setState(state.firm); });
+    const R = restOf(), p = state.pose; R[p] = Math.round(Math.min(180, Math.abs((state.physics ? REST : REST_FIXED)[p] + 8 * t())));
+    ui.tools(); awake = 1; pose(0, true);
+  }
 });
 // the lab's own hook for the visual checks (scripts in a headless browser)
 window.__lab = { state, setLook, setWearView, setGhost, setCompareRaw, setClothPush, pose: (f) => pose(0, f), step: dt => pose(dt), redraw: () => { dirty = true; }, goTo, buildAll, slots, cmpSlots, active, setCompare, setPaint, layoutPanels, ui, view, camera, framing };

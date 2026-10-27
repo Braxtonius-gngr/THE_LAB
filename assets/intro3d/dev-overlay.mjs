@@ -194,6 +194,40 @@ const PARTS = [
 ];
 const PARAMS = PARTS.flatMap(p => p.params);
 
+// ── Randomize · realism: every slider drawn from a bell curve ─────────
+// Each parameter is a normal distribution about its baseline (the average
+// man's), its spread a natural one; a draw past 2.2 spreads is drawn again
+// (a truncated normal), so the tails stay rare and nothing reaches the
+// sliders' clipping extremes. Pairs that go together are drawn together:
+// the lobes' size with the pouch's (r 0.5), left and right fullness (0.7)
+// and hang (0.6) - so a man is usually a little uneven, seldom lopsided.
+// `sd` in the slider's own units; `corr` names the parameter it leans on.
+const REALISM = {
+  sizePouch: { sd: 0.12 },
+  length: { sd: 12 }, girth: { sd: 11 }, depth: { sd: 10 }, gorge: { sd: 8, floor: 0 }, sway: { sd: 0.2 },
+  sizeLobe: { sd: 0.1, corr: ['sizePouch', 0.5] },
+  fullnessL: { sd: 10 }, fullnessR: { sd: 10, corr: ['fullnessL', 0.7] },
+  hangL: { sd: 10 }, hangR: { sd: 10, corr: ['hangL', 0.6] },
+};
+// a standard normal (Box-Muller), and one truncated at +-t
+export function gauss(rnd = Math.random) { let u = 0; while (!u) u = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rnd()); }
+function gaussT(t, rnd) { for (let i = 0; i < 20; i++) { const z = gauss(rnd); if (Math.abs(z) <= t) return z; } return 0; }
+// a full set of values about `base` (each in its slider's range): the
+// standard scores are kept, so a correlated pair shares part of its draw
+export function realismDraw(base = DEFAULTS, rnd = Math.random) {
+  const z = {}, out = {};
+  PARAMS.forEach(p => {
+    const R = REALISM[p.key]; if (!R) return;
+    let zi = gaussT(2.2, rnd);
+    if (R.corr && z[R.corr[0]] != null) { const r = R.corr[1]; zi = Math.max(-2.2, Math.min(2.2, r * z[R.corr[0]] + Math.sqrt(1 - r * r) * zi)); }
+    z[p.key] = zi;
+    let v = (base[p.key] ?? (p.min + p.max) / 2) + zi * R.sd;
+    if (R.floor != null) v = Math.max(R.floor, Math.abs(v - R.floor) + R.floor);
+    out[p.key] = Math.min(p.max, Math.max(p.min, Math.round(v / p.step) * p.step));
+  });
+  return out;
+}
+
 // saved slider states (this browser only; nothing loads on its own, so a
 // bad set can never stick - a reload is always the baseline)
 const PRESETS_KEY = 'dev_overlay_presets_v1';
@@ -324,6 +358,9 @@ function buildOverlayUI(figures, opts = {}) {
     mkBtn('All max', () => setAll(extreme('max'))),
   );
   tools.appendChild(trio);
+  // (a realistic man at random: every slider off its bell curve - and the
+  // host's own physical values with it, opts.onRandomize(gauss))
+  tools.appendChild(mkBtn('🎲 Randomize · realism', () => { setAll(realismDraw()); if (opts.onRandomize) opts.onRandomize(gauss, T); }));
 
   // saved states: named sets of slider values, kept in this browser only
   const saves = document.createElement('div');
