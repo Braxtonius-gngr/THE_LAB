@@ -32,7 +32,7 @@ import { buildFigure, buildAnatomy, BODY_HIPS, getAnatomy, updateSleeves, FACE_V
 import { FleshSim } from '../assets/intro3d/flesh.mjs';
 import { burinTick, engravingMaterial, paperMaterial, BONE } from '../assets/intro3d/burin.mjs';
 import { UC_MODE } from '../assets/intro3d/universal-cloth-material.mjs';
-import { initDevOverlay } from '../assets/intro3d/dev-overlay.mjs';
+import { initDevOverlay, inCm } from '../assets/intro3d/dev-overlay.mjs';
 
 const PI = Math.PI, DEG = PI / 180;
 const KNEE_BACK = -1;
@@ -685,7 +685,7 @@ function pushReadout() {
   const st = d.u_state, depth = d.u_maxDepth * (0.3 + 0.7 * st), gap = (1 - d.u_clinginess) * d.u_drapeDistance;
   const peak = Math.max(0, depth - gap), wide = d.u_width * (1.5 + (0.8 - 1.5) * st);
   const sw = Math.hypot(d.u_swingVector[0], d.u_swingVector[1]);
-  el.textContent = `push · firm ${st.toFixed(2)} · depth ${depth.toFixed(1)} − drape ${gap.toFixed(1)} = peak ${peak.toFixed(1)} cm (${Math.round(100 * peak / Math.max(d.u_maxDepth, 1e-3))}% of full) · length ${d.u_length.toFixed(1)} · width ${wide.toFixed(1)} · trail ${sw.toFixed(1)}`;
+  el.textContent = `push · firm ${st.toFixed(2)} · depth ${inCm(depth)} − drape ${inCm(gap)} = peak ${inCm(peak)} (${Math.round(100 * peak / Math.max(d.u_maxDepth, 1e-3))}% of full) · length ${inCm(d.u_length)} · width ${inCm(wide)} · trail ${inCm(sw)}`;
 }
 // raw against held: for the man in focus, both simulations side by side -
 // how far each is swung, and how far the held mass and tip sit from the raw
@@ -696,7 +696,7 @@ function rawReadout() {
   if (!s || !s.raw || !physicsOn(s)) { el.textContent = ''; return; }
   const k = 1 / s.man.getWorldScale(new THREE.Vector3()).x, H = s.sim, R = s.raw.sim;
   const dm = H.p[0].distanceTo(R.p[0]) * k, dt = H.p[1].distanceTo(R.p[1]) * k, dy = (H.p[0].y - R.p[0].y) * k;
-  el.textContent = `raw vs held · swing ${((R.swing || 0) * 180 / PI).toFixed(0)}° raw / ${((H.swing || 0) * 180 / PI).toFixed(0)}° held · mass ${dm.toFixed(1)} cm apart (${dy >= 0 ? 'held ' + dy.toFixed(1) + ' cm higher' : 'held ' + (-dy).toFixed(1) + ' cm lower'}) · tip ${dt.toFixed(1)} cm apart · push ${(s.man.userData.press || 0).toFixed(2)}`;
+  el.textContent = `raw vs held · swing ${((R.swing || 0) * 180 / PI).toFixed(0)}° raw / ${((H.swing || 0) * 180 / PI).toFixed(0)}° held · mass ${inCm(dm)} apart (held ${inCm(Math.abs(dy))} ${dy >= 0 ? 'higher' : 'lower'}) · tip ${inCm(dt)} apart · push ${(s.man.userData.press || 0).toFixed(2)}`;
 }
 function physicsOn(s) { return state.physics && s.sim && !(state.pose === 'hung' && state.hungMode === 'valley'); }
 function pose(dt, fresh) {

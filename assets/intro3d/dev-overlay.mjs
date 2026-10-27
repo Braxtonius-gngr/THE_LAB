@@ -236,6 +236,10 @@ const REALISM = {
   modulus: { sd: 12 }, damping: { sd: 12 }, resist: { sd: 12 }, adhesion: { sd: 12 },
 };
 
+// a length for the owner's eye: inches first, the centimetres beside them
+// (the lab works in cm; the owner reads in inches)
+export function inCm(cm, d = 1) { return `${(cm / 2.54).toFixed(d)}″ (${cm.toFixed(d)} cm)`; }
+
 // ── the realism clamp: what a real man measures ──────────────────────
 // With it on, every set - moved by hand or drawn - is held inside the
 // anthropometric bounds below, in centimetres where the part has one
@@ -356,7 +360,7 @@ function buildOverlayUI(figures, opts = {}) {
   // (the base set's measures, in cm - each man of the line varies a little about them)
   const cmLine = document.createElement('div');
   cmLine.style.cssText = 'margin-top:4px;color:#9fd29f;font:10px/1.4 monospace;';
-  const showCm = vals => { const c = anatomyCm(vals); cmLine.textContent = `≈ length ${c.length.toFixed(1)} cm · girth ${c.girth.toFixed(1)} cm · depth ${c.depth.toFixed(1)} cm${clampOn() ? ' · clamp on' : ''}`; };
+  const showCm = vals => { const c = anatomyCm(vals); cmLine.textContent = `≈ length ${inCm(c.length)} · girth ${inCm(c.girth)} · depth ${inCm(c.depth)}${clampOn() ? ' · clamp on' : ''}`; };
   const apply = patch => {
     if (own) Object.assign(T.params, patch); else setAnatomy(patch);
     showCm(own ? T.params : getAnatomy());
@@ -451,7 +455,7 @@ function buildOverlayUI(figures, opts = {}) {
     if (clampOn()) setAll(current()); else showCm(current());
   });
   clampBtn.dataset.clampBtn = '1'; clampBtn.textContent = `Realism clamp: ${clampOn() ? 'on' : 'off'}`;
-  clampBtn.title = 'On: every slider held to what a real man measures (length 8-16 cm, girth 7-14 cm round, depth 3-7.5 cm, fullness 50-80 and within 10 of each other). Off: the whole range.';
+  clampBtn.title = 'On: every slider held to what a real man measures (length 3.1-6.3″ / 8-16 cm, girth 2.8-5.5″ / 7-14 cm round, depth 1.2-3.0″ / 3-7.5 cm, fullness 50-80 and within 10 of each other). Off: the whole range.';
   tools.appendChild(clampBtn);
   body.insertBefore(cmLine, body.firstChild); showCm(current());
 
