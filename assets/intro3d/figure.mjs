@@ -1876,7 +1876,15 @@ export function buildFigure(kit, rnd, o = {}) {
   // (o.nude, the lab's None: no fabric at all - nothing holds the anatomy,
   // so its physics runs unrestrained: support 180 is no cone, no lift)
   if (B && !flayed && o.nude) worn = { cup: null, support: 180, lift: 0, fabric: 'none', hold: FABRIC.none };
-  if (B && !flayed && !o.nude) { root.updateMatrixWorld(true); worn = dress(kit, o, T, hips, arms, legs, pouch, { gb, kA, kT, kS, fx, glutes, rig, seat: SEAT(B) }, sleeves); }
+  if (B && !flayed && !o.nude) {
+    root.updateMatrixWorld(true);
+    // (every mesh dress() adds is the outfit's - userData.garment, for the
+    // lab's garment view: see-through, wire or hidden over the anatomy)
+    const had = new Set(); root.traverse(m => had.add(m));
+    worn = dress(kit, o, T, hips, arms, legs, pouch, { gb, kA, kT, kS, fx, glutes, rig, seat: SEAT(B) }, sleeves);
+    root.traverse(m => { if (m.isMesh && !had.has(m)) m.userData.garment = true; });
+    if (worn.skinned) worn.skinned.forEach(m => m.traverse(c => { if (c.isMesh && !had.has(c)) c.userData.garment = true; }));
+  }
   if (worn && worn.skinned) skinned.push(...worn.skinned);
   if (B && B.height !== 1) root.scale.setScalar(B.height);
   // (bound at the man's height: a bind reads the bones' world matrices)

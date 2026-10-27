@@ -67,6 +67,10 @@ const state = {
   rest: Object.assign({}, REST), restFixed: Object.assign({}, REST_FIXED), hungMode: 'physics', paused: false,
   // the GPU cloth's hydrostatic state over the fork, 0 slack to 1 firm (the Firm slider)
   firm: 0.4,
+  // how the outfit is drawn over the anatomy: 'normal', 'semi' (a quarter
+  // opaque), 'wire' or 'hidden' - the cloth still carried out by what is
+  // under it, on the same uniforms, so the pouch's push reads from inside
+  wearView: 'normal',
   // (None's paint: 'orange' see-through, 'split' lobes blue/red and the
   // pouch orange, 'brown' opaque - nothing bare in a physics test)
   paint: 'orange',
@@ -320,6 +324,39 @@ function applyLook(root) {
     o.material = studio ? (toStudio.get(ink) || STUDIO[ink.userData && ink.userData.studioKey] || STUDIO.flesh) : ink;
     o.castShadow = o.receiveShadow = studio;
   });
+  applyWearView(root);
+}
+// the garment view over the look: a see-through or wire twin of each
+// garment's material (a cloth's on its own uniforms - the same push and the
+// same normal - a plain one's skinned as it is), or the garment away; the
+// anatomy under a fitted brief, not drawn in the normal view, shown
+const WEAR_VIEWS = ['normal', 'semi', 'wire', 'hidden'];
+const WEAR_LABEL = { normal: 'Normal', semi: 'See-through', wire: 'Wire', hidden: 'Hidden' };
+function wearMat(o, view) {
+  const studio = state.look === 'studio', key = view + (studio ? 's' : 'i');
+  const cache = o.userData.wearMats || (o.userData.wearMats = {});
+  if (cache[key]) return cache[key];
+  const base = view === 'wire'
+    ? new THREE.MeshBasicMaterial({ color: studio ? 0xe8dcc0 : 0x2a1d17, wireframe: true })
+    : new (studio ? THREE.MeshStandardMaterial : THREE.MeshBasicMaterial)({ color: studio ? 0xd8d2c4 : 0x8a7a68, transparent: true, opacity: 0.25, depthWrite: false, side: THREE.DoubleSide });
+  return (cache[key] = o.userData.ucm ? o.userData.ucm.twin(base).material : base);
+}
+function applyWearView(root) {
+  const v = state.wearView;
+  root.traverse(o => {
+    if (o.userData.cloth && o.userData.cloth.covers && o.userData.pouch) o.userData.pouch.visible = v !== 'normal';
+    if (!o.isMesh || !o.userData.garment) return;
+    if (o.userData.outline) { if (v !== 'normal') o.visible = false; return; }
+    if (v === 'hidden') { if (o.userData.wearWas == null) o.userData.wearWas = o.visible; o.visible = false; return; }
+    if (o.userData.wearWas != null) { o.visible = o.userData.wearWas; o.userData.wearWas = null; }
+    if (v === 'normal') return;
+    o.material = wearMat(o, v); o.castShadow = false;
+  });
+}
+function setWearView(v) {
+  state.wearView = v;
+  const b = document.getElementById('wearView'); if (b) { b.textContent = 'Garment: ' + WEAR_LABEL[v]; b.classList.toggle('on', v !== 'normal'); }
+  applyLook(scene); dirty = true;
 }
 function setLook(look) {
   state.look = look;
@@ -687,6 +724,7 @@ document.querySelectorAll('[data-pose]').forEach(b => b.addEventListener('click'
   state.pose = b.dataset.pose; active().forEach(s => s.man && setFaceOf(s.man)); pose(0, true); ui.tools();
   if (state.focus >= 0) goTo(state.frame, state.focus);   // (the man's moved: the view follows, once)
 }));
+$('#wearView').addEventListener('click', () => setWearView(WEAR_VIEWS[(WEAR_VIEWS.indexOf(state.wearView) + 1) % WEAR_VIEWS.length]));
 document.querySelectorAll('[data-outfit]').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('[data-outfit]').forEach(x => x.classList.toggle('on', x === b));
   state.outfit = b.dataset.outfit; $('#paintRow').classList.toggle('hidden', !bare()); buildAll();
@@ -845,4 +883,4 @@ initDevOverlay(figures, {
   onChange() { active().forEach(s => { if (bare()) proxy(s.man); applyLook(s.man); }); awake = 1; pose(0); }
 });
 // the lab's own hook for the visual checks (scripts in a headless browser)
-window.__lab = { state, setLook, pose: (f) => pose(0, f), step: dt => pose(dt), redraw: () => { dirty = true; }, goTo, buildAll, slots, cmpSlots, active, setCompare, setPaint, layoutPanels, ui, view, camera, framing };
+window.__lab = { state, setLook, setWearView, pose: (f) => pose(0, f), step: dt => pose(dt), redraw: () => { dirty = true; }, goTo, buildAll, slots, cmpSlots, active, setCompare, setPaint, layoutPanels, ui, view, camera, framing };
