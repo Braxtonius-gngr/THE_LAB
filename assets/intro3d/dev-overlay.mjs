@@ -492,7 +492,7 @@ function buildInkPanel(ink, opts = {}) {
   again.addEventListener('click', () => choose(plate));
   body.append(copy, link, reset, again);
   choose(ink.plate || 'face');
-  root.choose = choose; root.current = current;
+  root.choose = choose; root.current = current; root.rescan = () => choose(plate || ink.plate || 'face');
   return root;
 }
 

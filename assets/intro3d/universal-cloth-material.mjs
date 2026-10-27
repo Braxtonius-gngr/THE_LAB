@@ -235,7 +235,14 @@ float ucTaut = 0.0;
 
 // patch one material's shader; normals: whether it shades (a shadow material
 // does not); uvName: the attribute the shape is read off (null: the mesh's uv)
+// (?uc=off leaves every cloth as its base material, ?uc=nonorm carries the
+// cloth out but keeps the mesh's own normal: for telling, on a phone whose
+// GPU prints the skin black, which part of the patch it chokes on)
+let UC_PROBE = '';
+try { UC_PROBE = new URLSearchParams(window.location.search).get('uc') || ''; } catch (e) { /* no window */ }
 function patch(mat, uniforms, normals, uvName, maskName) {
+  if (UC_PROBE === 'off') return mat;
+  if (UC_PROBE === 'nonorm') normals = false;
   const prev = mat.onBeforeCompile;
   mat.onBeforeCompile = (shader, renderer) => {
     if (prev) prev.call(mat, shader, renderer);

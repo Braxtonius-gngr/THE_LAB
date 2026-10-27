@@ -745,7 +745,7 @@ initDevOverlay(figures, {
   compact: true,
   // (fold or unfold a panel or a tab: the view's strip may have moved)
   onFold() { aimIntoBand(); if (state.focus < 0) Object.assign(view, framing('all', -1)); dirty = true; },
-  onAuthed(api) { overlay = api; open(); layoutPanels(); },
+  onAuthed(api) { overlay = api; open(); layoutPanels(); if (api.ink) setTimeout(() => api.ink.rescan(), 1500); },   // (the men are built after the panel: its saved and linked numbers land on a rescan)
   // (the ink panel: the burin's pitch and thresholds on the men's plates)
   ink: { root: scene, dock: 'left' },
   // (a slider moved: the overlay rebuilt each man's anatomy in place - give
