@@ -34,13 +34,12 @@ const SIGNIN_KEY = 'dev_overlay_signin_v1';
 })();
 
 // ── helpers ──────────────────────────────────────────────────────────
+const APP_TOKEN_KEY = `sb-${new URL(SB_URL).hostname.split('.')[0]}-auth-token`;
+function appSession() { try { return JSON.parse(localStorage.getItem(APP_TOKEN_KEY) || 'null'); } catch (_) { return null; } }
 function sbHeaders() {
   const h = { 'Content-Type': 'application/json', apikey: SB_ANON };
-  try {
-    const ref = new URL(SB_URL).hostname.split('.')[0];
-    const tok = JSON.parse(localStorage.getItem(`sb-${ref}-auth-token`) || '{}');
-    if (tok.access_token) h.authorization = `Bearer ${tok.access_token}`;
-  } catch (_) { /* no session */ }
+  const tok = appSession();
+  if (tok && tok.access_token && !(tok.expires_at && Date.now() / 1000 > tok.expires_at - 30)) h.authorization = `Bearer ${tok.access_token}`;
   if (!h.authorization) { const t = gateSignIn(); if (t) h.authorization = `Bearer ${t}`; }
   return h;
 }
@@ -52,7 +51,23 @@ function gateSignIn() {
     return t.access_token && Date.now() / 1000 < t.expires_at - 30 ? t.access_token : null;
   } catch (_) { return null; }
 }
-function signedIn() { return !!sbHeaders().authorization; }
+function signedIn() { const t = appSession(); return !!(sbHeaders().authorization || (t && t.refresh_token)); }
+
+// the app's sign-in lasts an hour and only the app's own page renews it -
+// this page runs no supabase-js, so a stale token came back "Unauthorized".
+// Renew it here the same way (and keep it where the app will find it).
+async function renewAppSession() {
+  const t = appSession();
+  if (!t || !t.refresh_token || !(t.expires_at && Date.now() / 1000 > t.expires_at - 30)) return;
+  const r = await fetch(`${SB_URL}/auth/v1/token?grant_type=refresh_token`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', apikey: SB_ANON },
+    body: JSON.stringify({ refresh_token: t.refresh_token }),
+  });
+  if (!r.ok) throw new Error('Sign-in ran out: open dailyrollover.com once, then come back');
+  const s = await r.json();
+  if (!s.expires_at) s.expires_at = Math.floor(Date.now() / 1000) + (s.expires_in || 3600);
+  try { localStorage.setItem(APP_TOKEN_KEY, JSON.stringify(s)); } catch (_) { /* storage blocked */ }
+}
 
 // email the owner a sign-in link back to this page (an existing account only)
 async function emailSignIn(email) {
@@ -65,6 +80,7 @@ async function emailSignIn(email) {
 }
 
 async function callEdge(fn, body) {
+  await renewAppSession();
   const r = await fetch(`${SB_URL}/functions/v1/${fn}`, {
     method: 'POST', headers: sbHeaders(), body: JSON.stringify(body),
   });
