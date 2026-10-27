@@ -245,9 +245,17 @@ float ucTaut = 0.0;
 // GPU prints the skin black, which part of the patch it chokes on)
 let UC_PROBE = '';
 try { UC_PROBE = new URLSearchParams(window.location.search).get('uc') || ''; } catch (e) { /* no window */ }
+// (a phone's GPU - an Adreno under Chrome on Android - makes a wrong normal
+// of the slope-tilted one, valid but turned, and prints every skin the
+// cloth draws black and every garment as the land's bands: on a phone the
+// cloth keeps the mesh's own normal, which it drew as it should; the tilt
+// only softens the shade on a pulsed belly or a brief, nothing at a phone's
+// scale. ?uc=norm asks for it anyway, to test a phone that can.)
+let UC_MOBILE = false;
+try { UC_MOBILE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent); } catch (e) { /* no navigator */ }
 function patch(mat, uniforms, normals, uvName, maskName) {
   if (UC_PROBE === 'off') return mat;
-  if (UC_PROBE === 'nonorm') normals = false;
+  if (UC_PROBE === 'nonorm' || (UC_MOBILE && UC_PROBE !== 'norm')) normals = false;
   const prev = mat.onBeforeCompile;
   mat.onBeforeCompile = (shader, renderer) => {
     if (prev) prev.call(mat, shader, renderer);
