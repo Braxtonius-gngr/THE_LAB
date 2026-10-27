@@ -818,7 +818,7 @@ function sweep(pts, radii, n = 12, metric, shape = null) {
 // length and the girth reach 1.6x
 const gorgeAmp = a => 1 + Math.max(0, Math.min(100, a.gorge || 0)) / 100 * 0.6;
 
-function buildAnatomy(pouch, m, a) {
+export function buildAnatomy(pouch, m, a) {
   a = migrateAnatomy(a);
   // clear any previous build (for live rebuild)
   while (pouch.children.length) {

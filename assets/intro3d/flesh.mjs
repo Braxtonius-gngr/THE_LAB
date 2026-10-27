@@ -14,6 +14,11 @@
 // Looseness: the anatomy's own `sway` (the dev overlay's Sway slider) -
 // higher is looser. Rest bias: an angle forward off the body's down that
 // the tissue prefers (the lab's Rest angle).
+// What he wears may push back on it (`fig.userData.press`, 0-1, the lab's
+// Cloth push - on by default since the owner asked for it back, with a
+// toggle): a snug garment's compression resistance holds it harder toward
+// its rest, and its adhesion drags it along with the body, so it swings
+// less and settles sooner; 0 is the cloth-free tissue alone.
 // Each step it publishes the swing vector (`fig.userData.swing`, the hips'
 // own frame and units): how far the mass and the tip are off their rest, and
 // the mass's velocity against the body. The cloth reads it (cloth.mjs: the
@@ -109,8 +114,9 @@ export class FleshSim {
   step(dt) {
     const P = this.pouch, g = this.inner; if (!P || !g) return false;
     const u = g.userData, s = g.scale.x, sc = this.fig.getWorldScale(_w).x * P.scale.x * s;
-    const loose = Math.max(0.2, u.sway || 1), k = K / loose, c = C / Math.sqrt(loose);
-    const lobeMax = LOBE.max * (u.kl || 1), lobeK = LOBE.k;
+    const loose = Math.max(0.2, u.sway || 1), press = Math.max(0, Math.min(1, this.fig.userData.press || 0));
+    const k = K / loose * (1 + 3 * press), c = C / Math.sqrt(loose) * (1 + 4 * press);
+    const lobeMax = LOBE.max * (u.kl || 1) * (1 - 0.5 * press), lobeK = LOBE.k * (1 + press), lobeC = LOBE.c * (1 + 2 * press);
     const T0 = new THREE.Vector3(), T1 = new THREE.Vector3(), root = new THREE.Vector3();
     this.targets(T0, T1, root);
     const L0 = T0.distanceTo(this.anchor), L1 = T1.distanceTo(this.anchor);
@@ -168,7 +174,7 @@ export class FleshSim {
       // jolts (its change of velocity - gravity it hangs against cancels out)
       jolt.subVectors(this.v[0], vm).divideScalar(STEP).applyQuaternion(_qi).divideScalar(sc);
       this.lobe.forEach((L, i) => {
-        _a.copy(L.o).multiplyScalar(-lobeK).addScaledVector(L.v, -LOBE.c).addScaledVector(jolt, -(i ? 1.12 : 1));
+        _a.copy(L.o).multiplyScalar(-lobeK).addScaledVector(L.v, -lobeC).addScaledVector(jolt, -(i ? 1.12 : 1));
         L.v.addScaledVector(_a, STEP); L.o.addScaledVector(L.v, STEP);
         if (L.o.length() > lobeMax) { L.o.setLength(lobeMax); L.v.multiplyScalar(0.5); }
       });

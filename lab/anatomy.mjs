@@ -28,7 +28,7 @@
 //   - every panel and the settings dock fold away for a clear view
 import * as THREE from '../assets/vendor/three/three.module.js';
 import { valleyKit, KEY_SEAT } from '../assets/intro3d/valley.mjs';
-import { buildFigure, BODY_HIPS, getAnatomy, updateSleeves, FACE_VARIANTS } from '../assets/intro3d/figure.mjs';
+import { buildFigure, buildAnatomy, BODY_HIPS, getAnatomy, updateSleeves, FACE_VARIANTS } from '../assets/intro3d/figure.mjs';
 import { FleshSim } from '../assets/intro3d/flesh.mjs';
 import { burinTick, engravingMaterial, paperMaterial, BONE } from '../assets/intro3d/burin.mjs';
 import { UC_MODE } from '../assets/intro3d/universal-cloth-material.mjs';
@@ -75,6 +75,12 @@ const state = {
   // but never carried out - as a wire over the live one (the baseline the
   // push is measured from)
   ghost: false,
+  // the garment pushes back on the anatomy (flesh.mjs `press`: compression
+  // and adhesion, by the fabric's cling) - on unless switched off
+  clothPush: true,
+  // Raw: the same anatomy again, in no garment at all - its own physics, the
+  // same body and rest bias - as a ghost beside the garment-held one
+  compareRaw: false,
   // (None's paint: 'orange' see-through, 'split' lobes blue/red and the
   // pouch orange, 'brown' opaque - nothing bare in a physics test)
   paint: 'orange',
@@ -261,10 +267,41 @@ function build(s) {
   s.g.add(man); s.man = man;
   if (u.cloth && u.cloth.setState) u.cloth.setState(state.firm);
   s.sim = u.pouch ? new FleshSim(man) : null;
+  u.press = pressOf(u);
+  syncRaw(s);
   if (bare()) proxy(man);
   setFaceOf(man);
   applyLook(man);
   return man;
+}
+// how hard the garment pushes back: a fitted fabric by its cling, a loose
+// one at under half of it, none with nothing on (or Cloth push off)
+function pressOf(u) { const h = u.hold; return state.clothPush && h && h.cling ? h.cling * (h.fit ? 1 : 0.4) : 0; }
+// the raw ghost: the anatomy built again beside his own, from the same
+// parameters, simulated as if he wore nothing - the fabric's hold cone, its
+// lift and its push all left out - and drawn as a see-through shell over
+// everything, so what the garment does to it reads as the gap between the two
+const RAW = new THREE.MeshBasicMaterial({ color: 0xff3df0, transparent: true, opacity: 0.35, depthWrite: false, depthTest: false, side: THREE.DoubleSide });
+function syncRaw(s) {
+  if (s.raw) { s.raw.g.removeFromParent(); s.raw = null; }
+  const u = s.man && s.man.userData, P = u && u.pouch;
+  if (!state.compareRaw || !P || !s.sim || !P.children[0]) return;
+  const g = new THREE.Group(); g.position.copy(P.position); g.scale.copy(P.scale);
+  P.parent.add(g); buildAnatomy(g, RAW, P.children[0].userData.params);
+  g.traverse(o => { o.userData.rawGhost = true; if (o.isMesh) { o.renderOrder = 3; if (o.userData.outline) o.visible = false; else o.material = RAW; } });
+  const ud = Object.create(u, { pouch: { value: g }, support: { value: 180 }, lift: { value: 0 }, press: { value: 0 }, swing: { value: null, writable: true } });
+  const sim = new FleshSim({ userData: ud, getWorldScale: v => s.man.getWorldScale(v) });
+  s.raw = { g, sim };
+}
+function setCompareRaw(on) {
+  state.compareRaw = on;
+  const b = document.getElementById('rawCmp'); if (b) b.classList.toggle('on', on);
+  active().forEach(syncRaw); pose(0, true);
+}
+function setClothPush(on) {
+  state.clothPush = on;
+  const b = document.getElementById('clothPush'); if (b) { b.classList.toggle('on', on); b.textContent = 'Cloth push ' + (on ? 'on' : 'off'); }
+  active().forEach(s => { if (s.man) s.man.userData.press = pressOf(s.man.userData); }); awake = 1; pose(0);
 }
 // the face: by the pose unless one is picked - calm standing, walking or
 // seated; effort in a jog, a skip, a jump or a climb; strain hung head down
@@ -314,7 +351,7 @@ function setPaint(p) { state.paint = p; if (bare()) active().forEach(s => { prox
 function applyLook(root) {
   const studio = state.look === 'studio';
   root.traverse(o => {
-    if (!o.isMesh || o.userData.ghostOf) return;
+    if (!o.isMesh || o.userData.ghostOf || o.userData.rawGhost) return;
     if (o.userData.proxyHidden) { o.visible = false; return; }
     if (o.userData.wire === true) { o.visible = true; return; }
     if (o.userData.outline) { o.visible = !studio; return; }
@@ -371,6 +408,7 @@ function applyWearView(root) {
   const v = state.wearView, cut = [];
   root.traverse(o => {
     if (o.userData.ghostOf) { o.visible = state.ghost && o.userData.ghostOf.visible; return; }
+    if (o.userData.rawGhost) return;
     if (state.ghost && o.isSkinnedMesh && o.userData.garment && o.userData.ucm && !o.userData.outline && !o.userData.ghost) cut.push(o);
     if (o.userData.cloth && o.userData.cloth.covers && o.userData.pouch) o.userData.pouch.visible = v !== 'normal';
     if (!o.isMesh || !o.userData.garment) return;
@@ -606,6 +644,17 @@ function pushReadout() {
   const sw = Math.hypot(d.u_swingVector[0], d.u_swingVector[1]);
   el.textContent = `push · firm ${st.toFixed(2)} · depth ${depth.toFixed(1)} − drape ${gap.toFixed(1)} = peak ${peak.toFixed(1)} cm (${Math.round(100 * peak / Math.max(d.u_maxDepth, 1e-3))}% of full) · length ${d.u_length.toFixed(1)} · width ${wide.toFixed(1)} · trail ${sw.toFixed(1)}`;
 }
+// raw against held: for the man in focus, both simulations side by side -
+// how far each is swung, and how far the held mass and tip sit from the raw
+// ones (cm, his own scale): the garment's whole effect, as numbers
+function rawReadout() {
+  const el = document.getElementById('rawcmp'); if (!el) return;
+  const s = active()[Math.max(0, state.focus)];
+  if (!s || !s.raw || !physicsOn(s)) { el.textContent = ''; return; }
+  const k = 1 / s.man.getWorldScale(new THREE.Vector3()).x, H = s.sim, R = s.raw.sim;
+  const dm = H.p[0].distanceTo(R.p[0]) * k, dt = H.p[1].distanceTo(R.p[1]) * k, dy = (H.p[0].y - R.p[0].y) * k;
+  el.textContent = `raw vs held · swing ${((R.swing || 0) * 180 / PI).toFixed(0)}° raw / ${((H.swing || 0) * 180 / PI).toFixed(0)}° held · mass ${dm.toFixed(1)} cm apart (${dy >= 0 ? 'held ' + dy.toFixed(1) + ' cm higher' : 'held ' + (-dy).toFixed(1) + ' cm lower'}) · tip ${dt.toFixed(1)} cm apart · push ${(s.man.userData.press || 0).toFixed(2)}`;
+}
 function physicsOn(s) { return state.physics && s.sim && !(state.pose === 'hung' && state.hungMode === 'valley'); }
 function pose(dt, fresh) {
   if (ANIMATED[state.pose] && !state.paused) tAnim += dt;
@@ -617,7 +666,14 @@ function pose(dt, fresh) {
     s.sim.boxes.length = 0;
     if (state.pose === 'seat') { s.seat.updateMatrixWorld(true); s.sim.boxes.push(new THREE.Box3().setFromObject(s.seat)); }
     if (s.sim.step(fresh ? 0 : dt)) awake = 0.6;
+    if (s.raw) {
+      const r = s.raw.sim; r.rest = s.sim.rest; r.floor = s.sim.floor; r.boxes = s.sim.boxes;
+      if (fresh) r.reset();
+      if (r.step(fresh ? 0 : dt)) awake = Math.max(awake, 0.6);
+    }
   });
+  // (the raw ghost only means something while the physics runs)
+  active().forEach(s => { if (s.raw) s.raw.g.visible = physicsOn(s); });
   // the cloth over each man, fitted to where his body and anatomy are now
   active().forEach(s => { const c = s.man && s.man.userData.cloth; if (c) c.update(fresh ? 0 : dt); });
   // (and the soft tissue of each skin, from the body's motion)
@@ -751,6 +807,8 @@ const ui = {
     const add = html => { const d = document.createElement('div'); d.innerHTML = html; while (d.firstChild) box.appendChild(d.firstChild); };
     if (ANIMATED[p]) add(`<button type="button" class="chip" id="pause">${state.paused ? '▶ Play' : '❚❚ Pause'}</button>`);
     add(`<button type="button" class="chip ${state.physics ? 'on' : ''}" id="phys">Physics ${state.physics ? 'on' : 'off'}</button>`);
+    add(`<button type="button" class="chip ${state.clothPush ? 'on' : ''}" id="clothPush" title="The garment pushes back on the anatomy: compression and adhesion, by the fabric's cling">Cloth push ${state.clothPush ? 'on' : 'off'}</button>`);
+    add(`<button type="button" class="chip ${state.compareRaw ? 'on' : ''}" id="rawCmp" title="The same anatomy in no garment, simulated beside his own, as a pink ghost">Compare raw</button>`);
     if (p === 'hung') add(`<span class="seg"><button type="button" data-hm="physics" class="${state.hungMode === 'physics' ? 'on' : ''}">Falls</button><button type="button" data-hm="valley" class="${state.hungMode === 'valley' ? 'on' : ''}">Valley flip</button></span>`);
     const live = !(p === 'hung' && state.hungMode === 'valley'), R = restOf();
     if (live) add(`<label>${state.physics ? 'Rest bias' : 'Rest angle'} <input type="range" id="restA" min="0" max="180" step="1" value="${R[p]}"><output id="restO">${R[p]}°</output></label>`);
@@ -758,9 +816,12 @@ const ui = {
     if (active().some(s => s.man && s.man.userData.cloth && s.man.userData.cloth.covers)) add(`<label>Firm <input type="range" id="firmA" min="0" max="1" step="0.01" value="${state.firm}"><output id="firmO">${state.firm.toFixed(2)}</output></label>`);
     add(`<span class="lbl" id="hold" style="text-transform:none;letter-spacing:0;flex:1 1 100%"></span>`);
     add(`<span class="lbl" id="push" style="text-transform:none;letter-spacing:0;flex:1 1 100%"></span>`);
+    add(`<span class="lbl" id="rawcmp" style="text-transform:none;letter-spacing:0;flex:1 1 100%"></span>`);
     box.classList.toggle('hidden', !box.children.length);
     const pz = $('#pause'); if (pz) pz.onclick = () => { state.paused = !state.paused; ui.tools(); };
     const ph = $('#phys'); if (ph) ph.onclick = () => { state.physics = !state.physics; ui.tools(); pose(0, true); };
+    const cp = $('#clothPush'); if (cp) cp.onclick = () => setClothPush(!state.clothPush);
+    const rc = $('#rawCmp'); if (rc) rc.onclick = () => setCompareRaw(!state.compareRaw);
     box.querySelectorAll('[data-hm]').forEach(b => { b.onclick = () => { state.hungMode = b.dataset.hm; ui.tools(); pose(0, true); }; });
     const ra = $('#restA'); if (ra) ra.oninput = () => { restOf()[p] = +ra.value; $('#restO').textContent = ra.value + '°'; awake = 1; pose(0); };
     const fa = $('#firmA'); if (fa) fa.oninput = () => { state.firm = +fa.value; $('#firmO').textContent = state.firm.toFixed(2); active().forEach(s => { const c = s.man && s.man.userData.cloth; if (c && c.setState) c.setState(state.firm); }); dirty = true; };
@@ -886,7 +947,7 @@ function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   // (the poses that move, and the flesh while it is still settling)
   if ((ANIMATED[state.pose] && !state.paused) || awake > 0) { awake = Math.max(0, awake - dt); pose(dt); }
-  if (now - (loop.hold || 0) > 200) { loop.hold = now; holdReadout(now); pushReadout(); }
+  if (now - (loop.hold || 0) > 200) { loop.hold = now; holdReadout(now); pushReadout(); rawReadout(); }
   if (tween) {
     tween.t = Math.min(1, (now - tween.t0) / 750); const k = ease(tween.t);
     view.target.lerpVectors(tween.from.target, tween.to.target, k);
@@ -937,7 +998,7 @@ initDevOverlay(figures, {
   ink: { root: scene, dock: 'left' },
   // (a slider moved: the overlay rebuilt each man's anatomy in place - give
   // the new pieces the room's look and put them back in the pose)
-  onChange() { active().forEach(s => { if (bare()) proxy(s.man); applyLook(s.man); }); awake = 1; pose(0); }
+  onChange() { active().forEach(s => { if (bare()) proxy(s.man); applyLook(s.man); syncRaw(s); }); awake = 1; pose(0, !!state.compareRaw); }
 });
 // the lab's own hook for the visual checks (scripts in a headless browser)
-window.__lab = { state, setLook, setWearView, setGhost, pose: (f) => pose(0, f), step: dt => pose(dt), redraw: () => { dirty = true; }, goTo, buildAll, slots, cmpSlots, active, setCompare, setPaint, layoutPanels, ui, view, camera, framing };
+window.__lab = { state, setLook, setWearView, setGhost, setCompareRaw, setClothPush, pose: (f) => pose(0, f), step: dt => pose(dt), redraw: () => { dirty = true; }, goTo, buildAll, slots, cmpSlots, active, setCompare, setPaint, layoutPanels, ui, view, camera, framing };
