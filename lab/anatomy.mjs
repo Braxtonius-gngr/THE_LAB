@@ -443,7 +443,7 @@ function holdReadout(now) {
   holdLog.push([now, swing]); while (holdLog.length && now - holdLog[0][0] > 3000) holdLog.shift();
   const peak = Math.max(...holdLog.map(h => h[1]));
   const sup = u.support, fabric = state.outfit === 'both' ? 'Shirt + hose' : (u.hold && u.hold.name) || state.outfit;
-  el.textContent = `${nameOf(s)} · ${fabric}: swing ${swing.toFixed(0)}° · peak ${peak.toFixed(0)}° (3s) · hold ${!sup || sup >= 180 ? 'none' : sup + '° max'}${u.lift ? ', lifted ' + Math.round(u.lift * 180 / Math.PI) + '°' : ''}`;
+  el.textContent = `${STAMP} · ${nameOf(s)} · ${fabric}: swing ${swing.toFixed(0)}° · peak ${peak.toFixed(0)}° (3s) · hold ${!sup || sup >= 180 ? 'none' : sup + '° max'}${u.lift ? ', lifted ' + Math.round(u.lift * 180 / Math.PI) + '°' : ''}`;
 }
 function physicsOn(s) { return state.physics && s.sim && !(state.pose === 'hung' && state.hungMode === 'valley'); }
 function pose(dt, fresh) {
@@ -742,7 +742,8 @@ function open() {
   requestAnimationFrame(loop);
 }
 // (the build and the cloth's mode, so a phone's screenshot says which it was)
-fetch('../sw.js', { cache: 'no-cache' }).then(r => r.text()).then(t => { const m = /CACHE_NAME = '([^']+)'/.exec(t); const el = document.getElementById('stamp'); if (el) el.textContent = `· ${m ? m[1] : '?'} · uc:${UC_MODE}`; }).catch(() => {});
+let STAMP = `uc:${UC_MODE}`;
+fetch('../sw.js', { cache: 'no-cache' }).then(r => r.text()).then(t => { const m = /CACHE_NAME = '([^']+)'/.exec(t); STAMP = `${m ? m[1].replace('almanac-', '') : '?'} uc:${UC_MODE}`; const el = document.getElementById('stamp'); if (el) el.textContent = '· ' + STAMP; }).catch(() => {});
 initDevOverlay(figures, {
   top: 'calc(max(10px, env(safe-area-inset-top)) + 46px)',
   compact: true,
