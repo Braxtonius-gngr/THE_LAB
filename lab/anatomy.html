@@ -18,7 +18,7 @@
     .seg { display: inline-flex; background: var(--glass); border: 1px solid var(--line); border-radius: 999px; padding: 3px; gap: 2px; }
     .seg button, .chip, .nav button { font: inherit; font-size: 13px; color: var(--muted); background: transparent; border: 0; border-radius: 999px; padding: 6px 11px; cursor: pointer; white-space: nowrap; }
     .seg button.on, .chip.on { background: var(--on); color: #1a0f0c; }
-    a.out { font-size: 12px; color: var(--muted); text-decoration: none; background: var(--glass); border: 1px solid var(--line); border-radius: 999px; padding: 7px 11px; }
+    a.out, button.out { font-size: 12px; color: var(--muted); text-decoration: none; background: var(--glass); border: 1px solid var(--line); border-radius: 999px; padding: 7px 11px; }
     .dock { position: fixed; left: 10px; right: 10px; bottom: max(10px, env(safe-area-inset-bottom)); max-width: 640px; margin: 0 auto; display: grid; gap: 6px; }
     .row { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; background: var(--glass); border: 1px solid var(--line); border-radius: 14px; padding: 5px; align-items: center; }
     .row::-webkit-scrollbar { display: none; }
@@ -37,6 +37,10 @@
     .panels > .dev-anatomy-panel { position: relative !important; width: auto !important; max-height: 38vh; }
     /* (the settings folded: only their own toggle row stays) */
     .dock.folded > .row:not(#topRow), .dock.folded > .panels { display: none !important; }
+    /* (the bar's Hide: every panel away, the view the whole screen - the GL report stays, folded with its own tap) */
+    body.clear .dock, body.clear .dev-anatomy-panel { display: none !important; }
+    button.out { font: inherit; font-size: 12px; cursor: pointer; }
+    button.out.on { background: var(--on); color: #1a0f0c; }
   </style>
 </head>
 <body>
@@ -49,6 +53,7 @@
       <button type="button" data-look="ink" class="on">Ink</button>
       <button type="button" data-look="studio">Studio</button>
     </div>
+    <button type="button" class="out" id="clear" title="Hide every panel for a clear view (tap again for them back)">◱ Hide</button>
     <a class="out" href="./cloth.html" title="The GPU cloth material on a skinned limb">Cloth</a>
     <a class="out" href="../?lab=valley" title="Tune over the valley instead">Valley</a>
   </div>
