@@ -864,10 +864,10 @@ const ui = {
     }
     // (a snug fabric: the cloth's hydrostatic state over the fork)
     const snug = active().some(s => s.man && s.man.userData.cloth && s.man.userData.cloth.covers);
-    if (snug || state.firmLink) {
-      add(`<button type="button" class="chip ${state.firmLink ? 'on' : ''}" id="firmLink" title="Linked: Firm and the anatomy's Gorge move together - the body's own state, shown with or without a garment. Unlinked: Firm is the garment's alone">${state.firmLink ? '🔗 Firm = Gorge' : '⛓ Firm alone'}</button>`);
-      add(`<label>${state.firmLink ? 'State' : 'Firm'} <input type="range" id="firmA" min="0" max="1" step="0.01" value="${state.firm}"><output id="firmO">${state.firm.toFixed(2)}</output></label>`);
-    }
+    // (the link chip always shows - unclothed is where the body's own state
+    // is seen; Firm's slider with a snug garment or the link on)
+    add(`<button type="button" class="chip ${state.firmLink ? 'on' : ''}" id="firmLink" title="Linked: Firm and the anatomy's Gorge move together - the body's own state, shown with or without a garment. Unlinked: Firm is the garment's alone">${state.firmLink ? '🔗 Firm = Gorge' : '⛓ Firm alone'}</button>`);
+    if (snug || state.firmLink) add(`<label>${state.firmLink ? 'State' : 'Firm'} <input type="range" id="firmA" min="0" max="1" step="0.01" value="${state.firm}"><output id="firmO">${state.firm.toFixed(2)}</output></label>`);
     add(`<span class="lbl" id="hold" style="text-transform:none;letter-spacing:0;flex:1 1 100%"></span>`);
     add(`<span class="lbl" id="push" style="text-transform:none;letter-spacing:0;flex:1 1 100%"></span>`);
     add(`<span class="lbl" id="rawcmp" style="text-transform:none;letter-spacing:0;flex:1 1 100%"></span>`);
@@ -1062,9 +1062,9 @@ initDevOverlay(figures, {
   // (a slider moved: the overlay rebuilt each man's anatomy in place - give
   // the new pieces the room's look and put them back in the pose)
   onChange(patch) {
-    // (the seat, the belly and the chest are the trunk's own loft and the
+    // (the seat, the belly, the chest and the limbs are the trunk's and limbs' own lofts and the
     // skin's soft tissue: one of their sliders rebuilds the men, a moment after the slider stops moving)
-    const seatNow = patch && JSON.stringify(Object.keys(patch).filter(k => /^(seat|belly|chest)/.test(k)).sort().map(k => patch[k]));
+    const seatNow = patch && JSON.stringify(Object.keys(patch).filter(k => /^(seat|belly|chest)|^(arm|forearm|hand|thigh|calf|foot)Size$/.test(k)).sort().map(k => [k, patch[k]]));
     if (seatNow && seatNow !== '[]' && seatNow !== onChangeSeat) { onChangeSeat = seatNow; clearTimeout(seatTimer); seatTimer = setTimeout(() => (state.compare ? cmpSlots : slots).forEach(rebuildOne), 160); }
     active().forEach(s => { if (bare()) proxy(s.man); applyLook(s.man); syncRaw(s); }); awake = 1; pose(0, !!state.compareRaw);
     // (linked: Gorge moved by hand moves the garment's Firm with it)

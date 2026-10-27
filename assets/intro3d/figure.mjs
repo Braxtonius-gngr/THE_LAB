@@ -774,6 +774,14 @@ function buildHead(kit, o = {}) {
 //     chestSpread 0-100: set wide (over 50) or close, +-15%
 //     chestLift  0-100: carried high or low, +-3 cm
 //     chestJiggle, chestFirm  as the seat's
+//   the limbs (every man; 50 as it was on each):
+//     armSize    0-100: the upper arm's girth, 0.7x to 1.3x
+//     forearmSize 0-100: the forearm's, 0.75x to 1.25x
+//     handSize   0-100: the hand's size, 0.85x to 1.15x
+//     thighSize  0-100: the thigh's girth, 0.7x to 1.3x
+//     calfSize   0-100: the shin and calf's, 0.75x to 1.25x
+//     footSize   0-100: the foot's length and breadth, 0.85x to 1.15x
+//                (a garment's sleeves and hose follow the girths)
 //   the material (50 as it was on each):
 //     modulus    0-100: the stiffness gradient - how far down the shaft its
 //                stiff root reaches before it bends (25% to 51% of its run;
@@ -801,7 +809,8 @@ let ANATOMY = {
   modulus: 50, damping: 50, resist: 50, adhesion: 50,
   seatSize: 1, seatFullL: 50, seatFullR: 50, seatLift: 50, seatSpread: 50, seatJiggle: 50, seatFirm: 50,
   bellySize: 50, bellyLift: 50, bellyJiggle: 50, bellyFirm: 50,
-  chestSize: 50, chestSpread: 50, chestLift: 50, chestJiggle: 50, chestFirm: 50
+  chestSize: 50, chestSpread: 50, chestLift: 50, chestJiggle: 50, chestFirm: 50,
+  armSize: 50, forearmSize: 50, handSize: 50, thighSize: 50, calfSize: 50, footSize: 50
 };
 // (a set from before the parts were split - one Size, length and girth as
 // scales, depth as a scale - read as the same man)
@@ -841,6 +850,7 @@ function anatomyFor(rnd) {
     taper: ANATOMY.taper, elevation: ANATOMY.elevation, pitch: ANATOMY.pitch, twist: ANATOMY.twist, lobeLag: ANATOMY.lobeLag, density: ANATOMY.density,
     bellySize: ANATOMY.bellySize, bellyLift: ANATOMY.bellyLift, bellyJiggle: ANATOMY.bellyJiggle, bellyFirm: ANATOMY.bellyFirm,
     chestSize: ANATOMY.chestSize, chestSpread: ANATOMY.chestSpread, chestLift: ANATOMY.chestLift, chestJiggle: ANATOMY.chestJiggle, chestFirm: ANATOMY.chestFirm,
+    armSize: ANATOMY.armSize, forearmSize: ANATOMY.forearmSize, handSize: ANATOMY.handSize, thighSize: ANATOMY.thighSize, calfSize: ANATOMY.calfSize, footSize: ANATOMY.footSize,
     seatSize: ANATOMY.seatSize, seatFullL: ANATOMY.seatFullL, seatFullR: ANATOMY.seatFullR, seatLift: ANATOMY.seatLift, seatSpread: ANATOMY.seatSpread, seatJiggle: ANATOMY.seatJiggle, seatFirm: ANATOMY.seatFirm,
     hood: ANATOMY.hood, ring: ANATOMY.ring, tether: ANATOMY.tether, glide: ANATOMY.glide, retract: ANATOMY.retract, folds: ANATOMY.folds,
     modulus: ANATOMY.modulus, damping: ANATOMY.damping, resist: ANATOMY.resist, adhesion: ANATOMY.adhesion
@@ -1712,6 +1722,19 @@ const SEAT = (b, a = {}) => {
 };
 // the seat's measures for the owner (cm): how far the fuller side stands out
 // of the back, and how wide the two are together
+// the limbs' factors from a set (1 each at 50)
+export function LIMBS(a) {
+  const f = (v, r) => 1 + r * ((v == null ? 50 : v) - 50) / 50;
+  return { arm: f(a.armSize, 0.3), forearm: f(a.forearmSize, 0.25), hand: f(a.handSize, 0.15), thigh: f(a.thighSize, 0.3), calf: f(a.calfSize, 0.25), foot: f(a.footSize, 0.15) };
+}
+// the limbs' measures in cm for a build (the overlay's readout): the upper
+// arm's and the thigh's girth round at their fullest, the calf's, and the
+// foot's length
+export function limbCm(a, b = { mass: 0, muscle: 0, age: 0 }) {
+  const L = LIMBS(Object.assign({}, ANATOMY, a)), ring = (rx, rz) => PI * (3 * (rx + rz) - Math.sqrt((3 * rx + rz) * (rx + 3 * rz)));
+  const kA = (1 + 0.30 * b.mass + 0.28 * b.muscle - 0.12 * b.age) * L.arm, kT = (1 + 0.32 * b.mass + 0.20 * b.muscle - 0.10 * b.age) * L.thigh, kS = (1 + 0.12 * b.mass + 0.15 * b.muscle - 0.08 * b.age) * L.calf;
+  return { arm: ring(6.5 * kA, 6.2 * kA), thigh: ring(8.8 * kT, 9.4 * kT), calf: ring(5.4 * kS, 6.2 * kS), foot: 18.6 * L.foot };
+}
 export function seatCm(a, b = { mass: 0, muscle: 0, age: 0 }) { const St = SEAT(b, Object.assign({}, ANATOMY, a)); return { depth: Math.max(St.dL, St.dR), width: 2 * (St.x + St.w) }; }
 // the trunk's seat: rings laid closer through it, and each buttock a lobe
 // of the back (loft's backLobes), its swell a bell in y about SEAT.y - so the
@@ -1748,9 +1771,13 @@ export function buildFigure(kit, rnd, o = {}) {
   const root = new THREE.Group();
   const hips = G(root, 0, BODY_HIPS, 0);
   const B = o.build ? Object.assign({ height: 1, mass: 0, muscle: 0, age: 0 }, o.build) : null;
-  // (each limb's thickening under the build; 1 each for the valley's men)
-  const kA = B ? 1 + 0.30 * B.mass + 0.28 * B.muscle - 0.12 * B.age : 1, kF = B ? 1 + 0.15 * B.mass + 0.20 * B.muscle - 0.08 * B.age : 1;
-  const kT = B ? 1 + 0.32 * B.mass + 0.20 * B.muscle - 0.10 * B.age : 1, kS = B ? 1 + 0.12 * B.mass + 0.15 * B.muscle - 0.08 * B.age : 1;
+  // (the anatomy set - the seat's and the limbs' parameters are in it too)
+  const SA = Object.assign({}, ANATOMY, migrateAnatomy(o.anatomy) || {});
+  const LG = LIMBS(SA);
+  // (each limb's thickening under the build; 1 each for the valley's men -
+  // then each girth's own slider on top, 50 as it was)
+  const kA = (B ? 1 + 0.30 * B.mass + 0.28 * B.muscle - 0.12 * B.age : 1) * LG.arm, kF = (B ? 1 + 0.15 * B.mass + 0.20 * B.muscle - 0.08 * B.age : 1) * LG.forearm;
+  const kT = (B ? 1 + 0.32 * B.mass + 0.20 * B.muscle - 0.10 * B.age : 1) * LG.thigh, kS = (B ? 1 + 0.12 * B.mass + 0.15 * B.muscle - 0.08 * B.age : 1) * LG.calf;
   const kN = B ? 1 + 0.25 * B.mass + 0.25 * B.muscle : 1;
   // the trunk, fork to the top of the shoulders (hips-relative y -9 .. 55)
   // (closed to a point under the fork: a flat cap there took no uv and
@@ -1773,8 +1800,6 @@ export function buildFigure(kit, rnd, o = {}) {
     { y: 54.0, rx: 10.0, rz: 6.6 },                             // the trapezius' slope
     { y: 56.5, rx: 5.6, rz: 5.2 }                               // the neck's root
   ];
-  // (the anatomy set - the seat's parameters are in it too)
-  const SA = Object.assign({}, ANATOMY, migrateAnatomy(o.anatomy) || {});
   const T = B ? seatTrunk(shapeTrunk(T0, B, SA), B, SA) : T0;
   // (how far the build has moved the front of the trunk at y: features laid
   // on it move with it)
@@ -1912,6 +1937,7 @@ export function buildFigure(kit, rnd, o = {}) {
     if (flayed) seam([[s * 4.4, -3, -0.5], [s * 4.2, -12, -2.2], [s * 2.8, -24, -1.8]], el, kit.ink, 0.35);
     const hand = G(el, 0, -29, 0);
     const hh = buildHand(kit, s, skin, { curl: o.curl, nails: !!B }); hand.add(hh); hand.userData.grip = hh.userData.grip;
+    hh.scale.setScalar(LG.hand);   // (the hand's own size: its group, the wrist the pose turns, stays put)
     arms[key] = { sh, el, hand };
   });
   // (hose came with a codpiece: a modest rounded front to the fork in the
@@ -1981,6 +2007,7 @@ export function buildFigure(kit, rnd, o = {}) {
       facet(loft([{ y: -1.0, rx: 3.4, rz: 2.6, z: -3.0 }, { y: -2.2, rx: 4.6, rz: 2.4, z: -8.0 }, { y: -3.2, rx: 5.2, rz: 1.2, z: -12.0 }], { n: 6 }), skin, foot, 1.0);
       for (let t = 0; t < 5; t++) { const toe = facet(tube([[0, 0.8], [-1.6 + t * 0.15, 0.72], [-2.2 + t * 0.2, 0.5], [-2.5 + t * 0.2, 0.2]], 6, { along: false }), skin, foot, 0.6); toe.position.set((t - 2) * 1.5 * s - s * 0.4, -2.9, -12.4 + Math.abs(t - 0.5) * 0.5); toe.rotation.x = HALF; }
     }
+    foot.scale.set(LG.foot, 1, LG.foot);   // (its length and breadth; the sole stays on the ground)
     legs[key] = { hip, kn, foot, cap, thigh };
   });
   // (a hose's knee sleeves are added by dress; the body's own joints have none)
