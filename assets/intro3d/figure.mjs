@@ -725,6 +725,20 @@ function buildHead(kit, o = {}) {
 //     fullnessL/R  0-100: each lobe's fill (0 slack, 100 round and high)
 //     hangL/R    0-100: each lobe's drop from the body (0 tight to it, 100
 //                as low as its Size lets the sac fall)
+//   the shape's finer cut (50 is the old shape on each - a set from before
+//   them reads as before):
+//     taper      0-100: the profile root to tip - under 50 the tip fuller
+//                (a teardrop's), over 50 narrower (a cone's); +-30% at the ends
+//     elevation  0-100: the whole anatomy up (over 50) or down the body,
+//                +-1.5 cm at Size 1
+//     pitch      0-100: the shaft turned forward (over 50) or back about its
+//                root, +-25 degrees, apart from depth's push
+//     twist      0-100: the shaft leaning to his left (under 50) or right,
+//                +-15 degrees - no man hangs dead centre
+//     lobeLag    0-100: how far the right lobe lags the left in a jolt (50:
+//                12% more, as it was; 0 the same, 100 24%)
+//     density    0-100: the lobes' give to gravity - over 50 they sag toward
+//                the ground (whichever way that is), under 50 they hold up
 //
 // Gravity comes from the pose: the `pouch` group's orientation is set by
 // valley.mjs per figure (the sawyer hung head-down turns it end for end).
@@ -737,7 +751,8 @@ let ANATOMY = {
   sizePouch: 1.0, sizeLobe: 1.0, length: 50, girth: 50, depth: 33.3,
   fullnessL: 65, fullnessR: 60,
   hangL: 45, hangR: 55,
-  gorge: 0, sway: 1.0
+  gorge: 0, sway: 1.0,
+  taper: 50, elevation: 50, pitch: 50, twist: 50, lobeLag: 50, density: 50
 };
 // (a set from before the parts were split - one Size, length and girth as
 // scales, depth as a scale - read as the same man)
@@ -771,7 +786,10 @@ function anatomyFor(rnd) {
     hangL: pct(ANATOMY.hangL, 40),
     hangR: pct(ANATOMY.hangR, 40),
     gorge: ANATOMY.gorge,
-    sway: ANATOMY.sway
+    sway: ANATOMY.sway,
+    // (the finer cut as the base has it - no draws of their own, so every
+    // man is drawn as before)
+    taper: ANATOMY.taper, elevation: ANATOMY.elevation, pitch: ANATOMY.pitch, twist: ANATOMY.twist, lobeLag: ANATOMY.lobeLag, density: ANATOMY.density
   };
 }
 
@@ -831,6 +849,9 @@ export function buildAnatomy(pouch, m, a) {
   // without the other. Laid out in the pouch's own units, the group unscaled.)
   const amp = gorgeAmp(a), sL = a.sizeLobe * amp, sP = a.sizePouch * amp;
   const kL = (0.5 + 1.5 * a.length / 100) * amp, kG = (0.5 + 1.5 * a.girth / 100) * amp;
+  // (the finer cut, each 50 at the old shape: see the notes above)
+  const cut = k => ((a[k] ?? 50) - 50) / 50;
+  const tp = cut('taper'), el = cut('elevation') * 1.5 * sL, pitch = cut('pitch') * 25 * PI / 180, twist = cut('twist') * 15 * PI / 180;
   const g = new THREE.Group(); pouch.add(g);
 
   // the two lobes, each with its own fullness and hang
@@ -850,7 +871,7 @@ export function buildAnatomy(pouch, m, a) {
     { sx:  1, lr: lrR, drop: dropR, full: fR, squash: lobeSquash(fR) }
   ].map(({ sx, lr, drop, full, squash }) => {
     const lobe = facet(knob(lr, 1.0, squash, 1.0, 2), m, g, 0);
-    lobe.position.set(sx * (lr * 0.62), -drop, -0.6 * sL);
+    lobe.position.set(sx * (lr * 0.62), -drop + el, -0.6 * sL);
     lobe.rotation.z = sx * 0.12;
     lobe.userData.pouch = true; lobe.userData.side = sx < 0 ? 'L' : 'R';
     return lobe;
@@ -871,9 +892,9 @@ export function buildAnatomy(pouch, m, a) {
       const L = lobes[0].position, R = lobes[1].position, cx = (L.x + R.x) / 2, zc = (L.z + R.z) / 2 + 0.4 * sL, spread = Math.abs(R.x - L.x) / 2;
       const low = Math.min(L.y, R.y) - 0.45 * sL, wide = avgLR * 1.55 * Math.max(0.85, spread / spread0);
       return [
-        { y: 3.0 * sL, rx: 2.4 * sL, rz: 2.0 * sL },
-        { y: 1.0 * sL, rx: 2.0 * sL, rz: 1.6 * sL },
-        { y: -2.0 * sL, rx: avgLR * 1.15, rz: avgLR * 0.9, x: cx * 0.3, z: zc * 0.3 },
+        { y: 3.0 * sL + el, rx: 2.4 * sL, rz: 2.0 * sL },
+        { y: 1.0 * sL + el, rx: 2.0 * sL, rz: 1.6 * sL },
+        { y: -2.0 * sL + el, rx: avgLR * 1.15, rz: avgLR * 0.9, x: cx * 0.3, z: zc * 0.3 },
         { y: low + avgLR * 0.3, rx: wide, rz: avgLR * 0.95, x: cx, z: zc },
         { y: low - avgLR * 0.55, rx: avgLR * 1.25, rz: avgLR * 0.8, x: cx, z: zc },
         { y: low - avgLR * 0.95, rx: 0.3 * sL, rz: 0.3 * sL, x: cx, z: zc }
@@ -884,11 +905,11 @@ export function buildAnatomy(pouch, m, a) {
     updateSac = () => { const ng = loft(secs(), { n: 14, metric: UVM.linen }); geo.attributes.position.array.set(ng.attributes.position.array); geo.attributes.position.needsUpdate = true; geo.computeVertexNormals(); ng.dispose(); };
   } else {
     sac = facet(loft([
-      { y: 1.0 * sL, rx: 2.0 * sL, rz: 1.6 * sL },
-      { y: -2.0 * sL, rx: avgLR * 1.15, rz: avgLR * 0.9 },
-      { y: sacLow + avgLR * 0.3, rx: avgLR * 1.55, rz: avgLR * 0.95 },
-      { y: sacLow - avgLR * 0.55, rx: avgLR * 1.25, rz: avgLR * 0.8 },
-      { y: sacLow - avgLR * 0.95, rx: 0.3 * sL, rz: 0.3 * sL }
+      { y: 1.0 * sL + el, rx: 2.0 * sL, rz: 1.6 * sL },
+      { y: -2.0 * sL + el, rx: avgLR * 1.15, rz: avgLR * 0.9 },
+      { y: sacLow + avgLR * 0.3 + el, rx: avgLR * 1.55, rz: avgLR * 0.95 },
+      { y: sacLow - avgLR * 0.55 + el, rx: avgLR * 1.25, rz: avgLR * 0.8 },
+      { y: sacLow - avgLR * 0.95 + el, rx: 0.3 * sL, rz: 0.3 * sL }
     ], { n: 14, metric: UVM.linen }), m, g, 0);
     sac.position.z = -0.4 * sL;
   }
@@ -917,6 +938,14 @@ export function buildAnatomy(pouch, m, a) {
     [0, -avgDrop - avgLR * 0.2, front - 0.15 * sL],
     [0, -2.0 * sL - L, front + 0.5 * sL]
   ];
+  // (raised or dropped with the rest; then turned about its root - pitched
+  // forward or back about x, leaned to a side about z)
+  {
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-pitch, 0, twist, 'ZXY')), o = new THREE.Vector3(0, pts[0][1] + el, pts[0][2]), v = new THREE.Vector3();
+    pts.forEach((p, i) => { v.set(p[0], p[1] + el, p[2]); if (i) v.sub(o).applyQuaternion(q).add(o); p[0] = v.x; p[1] = v.y; p[2] = v.z; });
+  }
+  // (the taper: each ring's radius by how far along it sits)
+  const tapered = rs => rs.map((x, i) => x * (1 + tp * 0.3 * (1 - 2 * i / (rs.length - 1))));
   let sh, bendShaft = null;
   if (pouch.userData.live) {
     // (a build's man: its root sealed into the pelvis. It runs on up and back
@@ -927,7 +956,7 @@ export function buildAnatomy(pouch, m, a) {
     const ROOT = 0.15, TAU = 0.035, BEND = 0.38;
     const bury = [0, pts[0][1] + 1.2 * sL, pts[0][2] + 2.6 * sL];
     const taper = t => t >= ROOT ? 1 : (1 - Math.exp(-t / TAU)) / (1 - Math.exp(-ROOT / TAU));
-    const geo = sweep([bury, ...pts], [r * 0.9, r * 1.12, r, r * 0.98, r * 1.02, r * 0.55], 14, UVM.linen, taper);
+    const geo = sweep([bury, ...pts], tapered([r * 0.9, r * 1.12, r, r * 0.98, r * 1.02, r * 0.55]), 14, UVM.linen, taper);
     sh = liveFacet(geo, m, g, 0);
     // turn it by q about its root as the physics asks (null: at rest) - the
     // root's run held where it is, the turn growing to all of q by BEND along
@@ -944,13 +973,13 @@ export function buildAnatomy(pouch, m, a) {
       }
       live.refresh();
     };
-  } else sh = facet(sweep(pts, [r * 1.08, r, r * 0.98, r * 1.02, r * 0.55], 14, UVM.linen), m, g, 0);
+  } else sh = facet(sweep(pts, tapered([r * 1.08, r, r * 0.98, r * 1.02, r * 0.55]), 14, UVM.linen), m, g, 0);
   sh.userData.pouch = true; sh.userData.shaft = true;
   // (for a physics pass - the lab's: where the mass sits, where the shaft
   // roots and ends, their radii; all in this group's own units; kl, the
   // lobes' scale, for their jiggle)
   lobes.forEach(l => { l.userData.p0 = l.position.clone(); });
-  g.userData = { lobes, sac, shaft: sh, sway: a.sway, params: a, mass: [0, -avgDrop, -0.6 * sL], shaftRoot: pts[0], shaftTip: pts[pts.length - 1], lobeR: avgLR, shaftR: r, kl: sL, updateSac, bendShaft };
+  g.userData = { lobes, sac, shaft: sh, sway: a.sway, params: a, mass: [0, -avgDrop + el, -0.6 * sL], shaftRoot: pts[0], shaftTip: pts[pts.length - 1], lobeR: avgLR, shaftR: r, kl: sL, updateSac, bendShaft };
   return g;
 }
 

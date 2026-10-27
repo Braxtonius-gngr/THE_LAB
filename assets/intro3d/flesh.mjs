@@ -117,6 +117,9 @@ export class FleshSim {
     const loose = Math.max(0.2, u.sway || 1), press = Math.max(0, Math.min(1, this.fig.userData.press || 0));
     const k = K / loose * (1 + 3 * press), c = C / Math.sqrt(loose) * (1 + 4 * press);
     const lobeMax = LOBE.max * (u.kl || 1) * (1 - 0.5 * press), lobeK = LOBE.k * (1 + press), lobeC = LOBE.c * (1 + 2 * press);
+    // (the right lobe's lag on the left, and the lobes' sag toward the
+    // ground: figure.mjs's lobeLag and density, 50 as they were)
+    const ap = u.params || {}, lagR = 1 + 0.24 * (ap.lobeLag ?? 50) / 100, sag = (((ap.density ?? 50) - 50) / 50) * 0.5 * (u.kl || 1);
     const T0 = new THREE.Vector3(), T1 = new THREE.Vector3(), root = new THREE.Vector3();
     this.targets(T0, T1, root);
     const L0 = T0.distanceTo(this.anchor), L1 = T1.distanceTo(this.anchor);
@@ -137,7 +140,7 @@ export class FleshSim {
     this.anchorPrev.copy(this.anchor);
     // (the lobes' frame: the inner group's, as it stands this frame)
     g.getWorldQuaternion(_qi).invert();
-    const vm = new THREE.Vector3(), jolt = new THREE.Vector3();
+    const vm = new THREE.Vector3(), jolt = new THREE.Vector3(), gDown = _down.clone().applyQuaternion(_qi);
     this.acc += dt;
     let n = 0;
     while (this.acc >= STEP && n < 40) {
@@ -174,7 +177,7 @@ export class FleshSim {
       // jolts (its change of velocity - gravity it hangs against cancels out)
       jolt.subVectors(this.v[0], vm).divideScalar(STEP).applyQuaternion(_qi).divideScalar(sc);
       this.lobe.forEach((L, i) => {
-        _a.copy(L.o).multiplyScalar(-lobeK).addScaledVector(L.v, -lobeC).addScaledVector(jolt, -(i ? 1.12 : 1));
+        _a.copy(L.o).multiplyScalar(-lobeK).addScaledVector(L.v, -lobeC).addScaledVector(jolt, -(i ? lagR : 1)).addScaledVector(gDown, lobeK * sag);
         L.v.addScaledVector(_a, STEP); L.o.addScaledVector(L.v, STEP);
         if (L.o.length() > lobeMax) { L.o.setLength(lobeMax); L.v.multiplyScalar(0.5); }
       });

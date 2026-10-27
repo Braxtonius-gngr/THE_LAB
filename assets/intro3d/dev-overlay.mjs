@@ -183,6 +183,10 @@ const PARTS = [
     { key: 'depth',     label: 'Depth',      min: 0,   max: 100, step: 1 },
     { key: 'gorge',     label: 'Gorge',      min: 0,   max: 100, step: 1 },
     { key: 'sway',      label: 'Sway',       min: 0,   max: 3,   step: 0.1 },
+    { key: 'taper',     label: 'Taper',      min: 0,   max: 100, step: 1 },
+    { key: 'elevation', label: 'Elevation',  min: 0,   max: 100, step: 1 },
+    { key: 'pitch',     label: 'Pitch',      min: 0,   max: 100, step: 1 },
+    { key: 'twist',     label: 'Twist L/R',  min: 0,   max: 100, step: 1 },
   ] },
   { id: 'lobes', label: 'Lobes', params: [
     { key: 'sizeLobe',  label: 'Size lobe',  min: 0.5, max: 3,   step: 0.05 },
@@ -190,6 +194,8 @@ const PARTS = [
     { key: 'fullnessR', label: 'Fullness R', min: 0,   max: 100, step: 1 },
     { key: 'hangL',     label: 'Hang L',     min: 0,   max: 100, step: 1 },
     { key: 'hangR',     label: 'Hang R',     min: 0,   max: 100, step: 1 },
+    { key: 'lobeLag',   label: 'Lag R',      min: 0,   max: 100, step: 1 },
+    { key: 'density',   label: 'Density',    min: 0,   max: 100, step: 1 },
   ] },
 ];
 const PARAMS = PARTS.flatMap(p => p.params);
@@ -208,6 +214,8 @@ const REALISM = {
   sizeLobe: { sd: 0.1, corr: ['sizePouch', 0.5] },
   fullnessL: { sd: 10 }, fullnessR: { sd: 10, corr: ['fullnessL', 0.7] },
   hangL: { sd: 10 }, hangR: { sd: 10, corr: ['hangL', 0.6] },
+  taper: { sd: 10 }, elevation: { sd: 10 }, pitch: { sd: 10 }, twist: { sd: 12 },
+  lobeLag: { sd: 12 }, density: { sd: 12 },
 };
 // a standard normal (Box-Muller), and one truncated at +-t
 export function gauss(rnd = Math.random) { let u = 0; while (!u) u = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rnd()); }
