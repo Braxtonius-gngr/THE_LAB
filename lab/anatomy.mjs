@@ -81,6 +81,31 @@ const restOf = () => (state.physics && !(state.pose === 'hung' && state.hungMode
 // ---------- renderer, scene ----------
 const canvas = document.getElementById('labCanvas');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+// (a shader this device cannot build shows its own words on screen: a phone
+// cannot open a console, and a program that fails is simply not drawn)
+const glReport = (() => {
+  const el = document.createElement('pre');
+  el.id = 'glReport';
+  el.style.cssText = 'position:fixed;left:6px;right:6px;bottom:6px;z-index:100000;max-height:42vh;overflow:auto;margin:0;padding:8px;background:rgba(40,0,0,.92);color:#ffd9c8;font:10px/1.35 monospace;white-space:pre-wrap;display:none;border-radius:6px;';
+  const seen = new Set();
+  const add = t => { if (seen.has(t)) return; seen.add(t); el.textContent += t + '\n'; el.style.display = ''; if (!el.isConnected) document.body.appendChild(el); };
+  const gl = renderer.getContext();
+  const limits = () => {
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    const gpu = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+    return `${gpu} | attribs ${gl.getParameter(gl.MAX_VERTEX_ATTRIBS)} varyings ${gl.getParameter(gl.MAX_VARYING_VECTORS)} vUniforms ${gl.getParameter(gl.MAX_VERTEX_UNIFORM_VECTORS)} fUniforms ${gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS)} vTex ${gl.getParameter(gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS)}`;
+  };
+  renderer.debug.checkShaderErrors = true;
+  renderer.debug.onShaderError = (g, program, vs, fs) => {
+    const plog = (g.getProgramInfoLog(program) || '').trim(), vlog = (g.getShaderInfoLog(vs) || '').trim(), flog = (g.getShaderInfoLog(fs) || '').trim();
+    const head = (g.getShaderSource(vs) || '').split('\n').filter(l => /^#define (UC_|USE_SKINNING|FLIP)/.test(l)).join(' ');
+    add(`SHADER FAILED  ${head}\n program: ${plog.slice(0, 600)}\n vertex: ${vlog.slice(0, 900)}\n fragment: ${flog.slice(0, 600)}`);
+    add(limits());
+  };
+  return { add, limits, el };
+})();
+// (?gl shows the device's limits even when nothing failed)
+try { if (new URLSearchParams(location.search).has('gl')) setTimeout(() => glReport.add(glReport.limits()), 2000); } catch (e) { /* fine */ }
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
