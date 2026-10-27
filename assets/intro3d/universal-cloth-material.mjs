@@ -206,15 +206,20 @@ float ucTaut = 0.0;
     // printed every facet of a smooth skin as a tile of its own tone)
     vec3 ucBase = cross(ucDu, ucDv);
     float ucSide = dot(ucBase, ucN);
-    if (ucM > 0.0 && abs(ucSide) > 1e-12) {
+    if (ucM > 0.0 && abs(ucSide) > 1e-8) {
       float ucE = max(u_uvEps, 1e-6);
       float ucHu = ucM * (ucHeight(ucUv + vec2(ucE, 0.0)) - ucHeight(ucUv - vec2(ucE, 0.0))) / (2.0 * ucE);
       float ucHv = ucM * (ucHeight(ucUv + vec2(0.0, ucE)) - ucHeight(ucUv - vec2(0.0, ucE))) / (2.0 * ucE);
       vec3 ucC = cross(ucDu + ucHu * ucN, ucDv + ucHv * ucN);
       float ucL = length(ucC);
-      if (ucL > 1e-12) {
-        vec3 ucN0 = ucBase / length(ucBase) * sign(ucSide);
-        vec3 ucN2 = normalize(ucN + ucC / ucL * sign(ucSide) - ucN0);
+      if (ucL > 1e-8) {
+        vec3 ucN0 = ucBase / max(length(ucBase), 1e-8) * sign(ucSide);
+        vec3 ucN2 = ucN + ucC / ucL * sign(ucSide) - ucN0;
+        // (never an invalid normal: a phone GPU made nothing of this - not a
+        // number - and printed the whole skin black; anything that is not a
+        // finite vector of a sane length keeps the mesh's own normal)
+        float ucL2 = dot(ucN2, ucN2);
+        ucN2 = (ucL2 > 1e-6 && ucL2 < 1e6) ? ucN2 / sqrt(ucL2) : ucN;
         #ifdef UC_OBJECT_NORMAL
           objectNormal = ucN2;
         #endif
@@ -262,7 +267,7 @@ function patch(mat, uniforms, normals, uvName, maskName) {
     shader.vertexShader = shader.vertexShader.replace('#include <skinning_vertex>', MAIN);
   };
   const key = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-  mat.customProgramCacheKey = () => key() + '|uc-cloth-5' + (normals ? 'n' : '') + (uvName || '') + '|' + (maskName || '');
+  mat.customProgramCacheKey = () => key() + '|uc-cloth-6' + (normals ? 'n' : '') + (uvName || '') + '|' + (maskName || '');
   // (a clone keeps the patch, on the same uniforms: a scene that gives each
   // figure its own copy of a plate - the valley's ownMats - keeps the cloth)
   mat.clone = function () { return patch(new this.constructor().copy(this), uniforms, normals, uvName, maskName); };
