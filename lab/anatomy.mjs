@@ -71,6 +71,10 @@ const state = {
   // opaque), 'wire' or 'hidden' - the cloth still carried out by what is
   // under it, on the same uniforms, so the pouch's push reads from inside
   wearView: 'normal',
+  // the ghost: each fitted garment again, as it is cut - posed with the man
+  // but never carried out - as a wire over the live one (the baseline the
+  // push is measured from)
+  ghost: false,
   // (None's paint: 'orange' see-through, 'split' lobes blue/red and the
   // pouch orange, 'brown' opaque - nothing bare in a physics test)
   paint: 'orange',
@@ -310,7 +314,7 @@ function setPaint(p) { state.paint = p; if (bare()) active().forEach(s => { prox
 function applyLook(root) {
   const studio = state.look === 'studio';
   root.traverse(o => {
-    if (!o.isMesh) return;
+    if (!o.isMesh || o.userData.ghostOf) return;
     if (o.userData.proxyHidden) { o.visible = false; return; }
     if (o.userData.wire === true) { o.visible = true; return; }
     if (o.userData.outline) { o.visible = !studio; return; }
@@ -330,20 +334,44 @@ function applyLook(root) {
 // garment's material (a cloth's on its own uniforms - the same push and the
 // same normal - a plain one's skinned as it is), or the garment away; the
 // anatomy under a fitted brief, not drawn in the normal view, shown
-const WEAR_VIEWS = ['normal', 'semi', 'wire', 'hidden'];
-const WEAR_LABEL = { normal: 'Normal', semi: 'See-through', wire: 'Wire', hidden: 'Hidden' };
+const WEAR_VIEWS = ['normal', 'semi', 'wire', 'heat', 'hidden'];
+const WEAR_LABEL = { normal: 'Normal', semi: 'See-through', wire: 'Wire', heat: 'Heat', hidden: 'Hidden' };
+// Heat: a fitted garment coloured by how far the cloth carried it out at
+// each point (the shader's own push, ucLift, over its full depth): blue
+// where it lies as cut, through green and yellow, to red at the full depth
+// (laid over the cloth's own patch - a clone keeps no onBeforeCompile, so
+// the twin is made first and its compile wrapped)
+function heatMat(ucm) {
+  const m = ucm.twin(new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, side: THREE.DoubleSide })).material;
+  const prev = m.onBeforeCompile, key = m.customProgramCacheKey.bind(m);
+  m.onBeforeCompile = (sh, r) => {
+    prev.call(m, sh, r);
+    sh.vertexShader = 'varying float vHeat;\n' + sh.vertexShader.replace('#include <project_vertex>', 'vHeat = ucLift / max(u_maxDepth, 1e-3);\n#include <project_vertex>');
+    sh.fragmentShader = 'varying float vHeat;\n' + sh.fragmentShader.replace('vec4 diffuseColor = vec4( diffuse, opacity );',
+      'float ht = clamp(vHeat, 0.0, 1.0);\n  vec3 heat = ht < 0.5 ? mix(vec3(0.10, 0.25, 0.85), vec3(0.15, 0.85, 0.35), ht * 2.0) : mix(vec3(0.15, 0.85, 0.35), vec3(0.95, 0.15, 0.10), ht * 2.0 - 1.0);\n  vec4 diffuseColor = vec4( heat, opacity );');
+  };
+  m.customProgramCacheKey = () => key() + '|lab-heat-1';
+  return m;
+}
 function wearMat(o, view) {
-  const studio = state.look === 'studio', key = view + (studio ? 's' : 'i');
+  const studio = state.look === 'studio';
+  // (a garment the cloth does not carry has no push to show: see-through)
+  if (view === 'heat' && !o.userData.ucm) view = 'semi';
+  const key = view + (studio ? 's' : 'i');
   const cache = o.userData.wearMats || (o.userData.wearMats = {});
   if (cache[key]) return cache[key];
+  if (view === 'heat') return (cache[key] = heatMat(o.userData.ucm));
   const base = view === 'wire'
     ? new THREE.MeshBasicMaterial({ color: studio ? 0xe8dcc0 : 0x2a1d17, wireframe: true })
     : new (studio ? THREE.MeshStandardMaterial : THREE.MeshBasicMaterial)({ color: studio ? 0xd8d2c4 : 0x8a7a68, transparent: true, opacity: 0.25, depthWrite: false, side: THREE.DoubleSide });
   return (cache[key] = o.userData.ucm ? o.userData.ucm.twin(base).material : base);
 }
+const GHOST = new THREE.MeshBasicMaterial({ color: 0x35c8ff, wireframe: true, transparent: true, opacity: 0.55, depthWrite: false });
 function applyWearView(root) {
-  const v = state.wearView;
+  const v = state.wearView, cut = [];
   root.traverse(o => {
+    if (o.userData.ghostOf) { o.visible = state.ghost && o.userData.ghostOf.visible; return; }
+    if (state.ghost && o.isSkinnedMesh && o.userData.garment && o.userData.ucm && !o.userData.outline && !o.userData.ghost) cut.push(o);
     if (o.userData.cloth && o.userData.cloth.covers && o.userData.pouch) o.userData.pouch.visible = v !== 'normal';
     if (!o.isMesh || !o.userData.garment) return;
     if (o.userData.outline) { if (v !== 'normal') o.visible = false; return; }
@@ -352,6 +380,20 @@ function applyWearView(root) {
     if (v === 'normal') return;
     o.material = wearMat(o, v); o.castShadow = false;
   });
+  // (the ghost: the same geometry and bones, a plain wire - so it is posed
+  // as the garment is and lies where the garment would without the push)
+  cut.forEach(o => {
+    const g = new THREE.SkinnedMesh(o.geometry, GHOST);
+    g.frustumCulled = false; g.renderOrder = 2; g.userData.ghostOf = o;
+    g.position.copy(o.position); g.quaternion.copy(o.quaternion); g.scale.copy(o.scale);
+    o.parent.add(g); g.bind(o.skeleton, o.bindMatrix);
+    o.userData.ghost = g;
+  });
+}
+function setGhost(on) {
+  state.ghost = on;
+  const b = document.getElementById('ghost'); if (b) b.classList.toggle('on', on);
+  applyLook(scene); dirty = true;
 }
 function setWearView(v) {
   state.wearView = v;
@@ -551,6 +593,19 @@ function holdReadout(now) {
   const sup = u.support, fabric = state.outfit === 'both' ? 'Shirt + hose' : (u.hold && u.hold.name) || state.outfit;
   el.textContent = `${STAMP} · ${nameOf(s)} · ${fabric}: swing ${swing.toFixed(0)}° · peak ${peak.toFixed(0)}° (3s) · hold ${!sup || sup >= 180 ? 'none' : sup + '° max'}${u.lift ? ', lifted ' + Math.round(u.lift * 180 / Math.PI) + '°' : ''}`;
 }
+// the push readout: for the man in focus (or the first) under a fitted
+// garment, what the Firm slider is doing to it - the same sums the shader
+// does at the shape's crown: its depth at this firmness, less the drape gap
+function pushReadout() {
+  const el = document.getElementById('push'); if (!el) return;
+  const s = active()[Math.max(0, state.focus)], c = s && s.man.userData.cloth;
+  const d = c && c.covers && c.debug && c.debug().cloth;
+  if (!d) { el.textContent = ''; return; }
+  const st = d.u_state, depth = d.u_maxDepth * (0.3 + 0.7 * st), gap = (1 - d.u_clinginess) * d.u_drapeDistance;
+  const peak = Math.max(0, depth - gap), wide = d.u_width * (1.5 + (0.8 - 1.5) * st);
+  const sw = Math.hypot(d.u_swingVector[0], d.u_swingVector[1]);
+  el.textContent = `push · firm ${st.toFixed(2)} · depth ${depth.toFixed(1)} − drape ${gap.toFixed(1)} = peak ${peak.toFixed(1)} cm (${Math.round(100 * peak / Math.max(d.u_maxDepth, 1e-3))}% of full) · length ${d.u_length.toFixed(1)} · width ${wide.toFixed(1)} · trail ${sw.toFixed(1)}`;
+}
 function physicsOn(s) { return state.physics && s.sim && !(state.pose === 'hung' && state.hungMode === 'valley'); }
 function pose(dt, fresh) {
   if (ANIMATED[state.pose] && !state.paused) tAnim += dt;
@@ -702,6 +757,7 @@ const ui = {
     // (a snug fabric: the cloth's hydrostatic state over the fork)
     if (active().some(s => s.man && s.man.userData.cloth && s.man.userData.cloth.covers)) add(`<label>Firm <input type="range" id="firmA" min="0" max="1" step="0.01" value="${state.firm}"><output id="firmO">${state.firm.toFixed(2)}</output></label>`);
     add(`<span class="lbl" id="hold" style="text-transform:none;letter-spacing:0;flex:1 1 100%"></span>`);
+    add(`<span class="lbl" id="push" style="text-transform:none;letter-spacing:0;flex:1 1 100%"></span>`);
     box.classList.toggle('hidden', !box.children.length);
     const pz = $('#pause'); if (pz) pz.onclick = () => { state.paused = !state.paused; ui.tools(); };
     const ph = $('#phys'); if (ph) ph.onclick = () => { state.physics = !state.physics; ui.tools(); pose(0, true); };
@@ -725,6 +781,7 @@ document.querySelectorAll('[data-pose]').forEach(b => b.addEventListener('click'
   if (state.focus >= 0) goTo(state.frame, state.focus);   // (the man's moved: the view follows, once)
 }));
 $('#wearView').addEventListener('click', () => setWearView(WEAR_VIEWS[(WEAR_VIEWS.indexOf(state.wearView) + 1) % WEAR_VIEWS.length]));
+$('#ghost').addEventListener('click', () => setGhost(!state.ghost));
 document.querySelectorAll('[data-outfit]').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('[data-outfit]').forEach(x => x.classList.toggle('on', x === b));
   state.outfit = b.dataset.outfit; $('#paintRow').classList.toggle('hidden', !bare()); buildAll();
@@ -829,7 +886,7 @@ function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   // (the poses that move, and the flesh while it is still settling)
   if ((ANIMATED[state.pose] && !state.paused) || awake > 0) { awake = Math.max(0, awake - dt); pose(dt); }
-  if (now - (loop.hold || 0) > 200) { loop.hold = now; holdReadout(now); }
+  if (now - (loop.hold || 0) > 200) { loop.hold = now; holdReadout(now); pushReadout(); }
   if (tween) {
     tween.t = Math.min(1, (now - tween.t0) / 750); const k = ease(tween.t);
     view.target.lerpVectors(tween.from.target, tween.to.target, k);
@@ -883,4 +940,4 @@ initDevOverlay(figures, {
   onChange() { active().forEach(s => { if (bare()) proxy(s.man); applyLook(s.man); }); awake = 1; pose(0); }
 });
 // the lab's own hook for the visual checks (scripts in a headless browser)
-window.__lab = { state, setLook, setWearView, pose: (f) => pose(0, f), step: dt => pose(dt), redraw: () => { dirty = true; }, goTo, buildAll, slots, cmpSlots, active, setCompare, setPaint, layoutPanels, ui, view, camera, framing };
+window.__lab = { state, setLook, setWearView, setGhost, pose: (f) => pose(0, f), step: dt => pose(dt), redraw: () => { dirty = true; }, goTo, buildAll, slots, cmpSlots, active, setCompare, setPaint, layoutPanels, ui, view, camera, framing };

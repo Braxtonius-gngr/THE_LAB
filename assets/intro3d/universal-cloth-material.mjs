@@ -182,6 +182,8 @@ const MAIN = /* glsl */`
 // it stands out, against the depth it can), left for the plate that wears
 // it - burin's ink closes its lines up over it (UC_TAUT)
 float ucTaut = 0.0;
+// (and how far it was carried out, mesh units: a debug view reads it - the lab's Heat)
+float ucLift = 0.0;
 {
   // the point's normal and uv tangents, carried by its bones as the point was
   vec3 ucN = normal, ucDu = clothDu, ucDv = clothDv;
@@ -201,6 +203,7 @@ float ucTaut = 0.0;
   #endif
   float ucH = ucHeight(ucUv) * ucM;
   transformed += ucN * ucH;
+  ucLift = ucH;
   ucTaut = u_tissueType > 1.5 ? clamp(ucH / max(u_maxDepth * 0.45, 1e-3), 0.0, 1.0) : 0.0;
 
   #if defined( UC_OBJECT_NORMAL ) || defined( UC_VNORMAL )
@@ -283,7 +286,7 @@ function patch(mat, uniforms, normals, uvName, maskName) {
     shader.vertexShader = shader.vertexShader.replace('#include <skinning_vertex>', MAIN);
   };
   const key = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-  mat.customProgramCacheKey = () => key() + '|uc-cloth-7' + (normals ? 'n' : '') + (uvName || '') + '|' + (maskName || '');
+  mat.customProgramCacheKey = () => key() + '|uc-cloth-8' + (normals ? 'n' : '') + (uvName || '') + '|' + (maskName || '');
   // (a clone keeps the patch, on the same uniforms: a scene that gives each
   // figure its own copy of a plate - the valley's ownMats - keeps the cloth)
   mat.clone = function () { return patch(new this.constructor().copy(this), uniforms, normals, uvName, maskName); };
