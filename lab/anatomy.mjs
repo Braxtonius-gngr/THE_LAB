@@ -75,6 +75,10 @@ const state = {
   restLink: true, restShaft: Object.assign({}, REST), restShaftFixed: Object.assign({}, REST_FIXED), hungMode: 'physics', paused: false,
   // the GPU cloth's hydrostatic state over the fork, 0 slack to 1 firm (the Firm slider)
   firm: 0.4,
+  // Firm (the garment's hydrostatic state) linked to the anatomy's own Gorge
+  // (its engorgement): one slider moving both, shown unclothed too - so the
+  // state is the body's, and a garment over it shows what it does to it
+  firmLink: false,
   // how the outfit is drawn over the anatomy: 'normal', 'semi' (a quarter
   // opaque), 'wire' or 'hidden' - the cloth still carried out by what is
   // under it, on the same uniforms, so the pouch's push reads from inside
@@ -311,6 +315,22 @@ function setClothPush(on) {
   state.clothPush = on;
   const b = document.getElementById('clothPush'); if (b) { b.classList.toggle('on', on); b.textContent = 'Cloth push ' + (on ? 'on' : 'off'); }
   active().forEach(s => { if (s.man) s.man.userData.press = pressOf(s.man.userData); }); awake = 1; pose(0);
+}
+// the garment's hydrostatic state on every man (and the Firm slider)
+function setFirm(v) {
+  state.firm = Math.round(Math.min(1, Math.max(0, v)) * 100) / 100;
+  active().forEach(s => { const c = s.man && s.man.userData.cloth; if (c && c.setState) c.setState(state.firm); });
+  const fa = document.getElementById('firmA'); if (fa && +fa.value !== state.firm) fa.value = state.firm;
+  const fo = document.getElementById('firmO'); if (fo) fo.textContent = state.firm.toFixed(2);
+  dirty = true;
+}
+// (linked: the anatomy's Gorge set to the same state, through every panel's
+// own slider - so the panel shows it, the clamp holds it and the men rebuild)
+function gorgeTo(v) {
+  document.querySelectorAll('.dev-anatomy-panel input[data-key="gorge"]').forEach(sl => {
+    const g = Math.round(v * 100); if (+sl.value === g) return;
+    sl.value = g; sl.dispatchEvent(new Event('input'));
+  });
 }
 // the face: by the pose unless one is picked - calm standing, walking or
 // seated; effort in a jog, a skip, a jump or a climb; strain hung head down
@@ -842,7 +862,11 @@ const ui = {
       if (!state.restLink) add(`<label>${nm} · pouch <input type="range" id="restS" min="0" max="180" step="1" value="${RS[p]}"><output id="restSO">${RS[p]}°</output></label>`);
     }
     // (a snug fabric: the cloth's hydrostatic state over the fork)
-    if (active().some(s => s.man && s.man.userData.cloth && s.man.userData.cloth.covers)) add(`<label>Firm <input type="range" id="firmA" min="0" max="1" step="0.01" value="${state.firm}"><output id="firmO">${state.firm.toFixed(2)}</output></label>`);
+    const snug = active().some(s => s.man && s.man.userData.cloth && s.man.userData.cloth.covers);
+    if (snug || state.firmLink) {
+      add(`<button type="button" class="chip ${state.firmLink ? 'on' : ''}" id="firmLink" title="Linked: Firm and the anatomy's Gorge move together - the body's own state, shown with or without a garment. Unlinked: Firm is the garment's alone">${state.firmLink ? '🔗 Firm = Gorge' : '⛓ Firm alone'}</button>`);
+      add(`<label>${state.firmLink ? 'State' : 'Firm'} <input type="range" id="firmA" min="0" max="1" step="0.01" value="${state.firm}"><output id="firmO">${state.firm.toFixed(2)}</output></label>`);
+    }
     add(`<span class="lbl" id="hold" style="text-transform:none;letter-spacing:0;flex:1 1 100%"></span>`);
     add(`<span class="lbl" id="push" style="text-transform:none;letter-spacing:0;flex:1 1 100%"></span>`);
     add(`<span class="lbl" id="rawcmp" style="text-transform:none;letter-spacing:0;flex:1 1 100%"></span>`);
@@ -861,7 +885,8 @@ const ui = {
       if (!state.restLink) { Object.assign(state.restShaft, state.rest); Object.assign(state.restShaftFixed, state.restFixed); }
       ui.tools(); awake = 1; pose(0);
     };
-    const fa = $('#firmA'); if (fa) fa.oninput = () => { state.firm = +fa.value; $('#firmO').textContent = state.firm.toFixed(2); active().forEach(s => { const c = s.man && s.man.userData.cloth; if (c && c.setState) c.setState(state.firm); }); dirty = true; };
+    const fa = $('#firmA'); if (fa) fa.oninput = () => { setFirm(+fa.value); if (state.firmLink) gorgeTo(state.firm); };
+    const fl = $('#firmLink'); if (fl) fl.onclick = () => { state.firmLink = !state.firmLink; if (state.firmLink) gorgeTo(state.firm); ui.tools(); };
   }
 };
 // (every panel away for a clear view, and back)
@@ -1035,14 +1060,19 @@ initDevOverlay(figures, {
   ink: { root: scene, dock: 'left' },
   // (a slider moved: the overlay rebuilt each man's anatomy in place - give
   // the new pieces the room's look and put them back in the pose)
-  onChange() { active().forEach(s => { if (bare()) proxy(s.man); applyLook(s.man); syncRaw(s); }); awake = 1; pose(0, !!state.compareRaw); },
+  onChange(patch) {
+    active().forEach(s => { if (bare()) proxy(s.man); applyLook(s.man); syncRaw(s); }); awake = 1; pose(0, !!state.compareRaw);
+    // (linked: Gorge moved by hand moves the garment's Firm with it)
+    if (state.firmLink && patch && patch.gorge != null) setFirm(patch.gorge / 100);
+  },
   // (Randomize · realism: the lab's own physical values off their bell
   // curves too - the Firm about 0.4, the pose's rest bias about its
   // default, never under 0 - truncated like the overlay's at 2.2 spreads)
   onRandomize(g) {
     const t = () => { for (let i = 0; i < 20; i++) { const z = g(); if (Math.abs(z) <= 2.2) return z; } return 0; };
-    state.firm = Math.round(Math.min(1, Math.max(0, 0.4 + 0.15 * t())) * 100) / 100;
-    active().forEach(s => { const c = s.man && s.man.userData.cloth; if (c && c.setState) c.setState(state.firm); });
+    // (linked, the state is the anatomy's own: Firm follows the Gorge just drawn)
+    if (state.firmLink) { const sl = document.querySelector('.dev-anatomy-panel input[data-key="gorge"]'); setFirm(sl ? +sl.value / 100 : state.firm); }
+    else setFirm(0.4 + 0.15 * t());
     const R = restOf(), p = state.pose; R[p] = Math.round(Math.min(180, Math.abs((state.physics ? REST : REST_FIXED)[p] + 8 * t())));
     // (unlinked: the pouch's own about the lobes', a little apart)
     if (!state.restLink) restShaftOf()[p] = Math.round(Math.min(180, Math.abs(R[p] + 6 * t())));
@@ -1050,4 +1080,4 @@ initDevOverlay(figures, {
   }
 });
 // the lab's own hook for the visual checks (scripts in a headless browser)
-window.__lab = { state, setLook, setWearView, setGhost, setCompareRaw, setClothPush, pose: (f) => pose(0, f), step: dt => pose(dt), redraw: () => { dirty = true; }, goTo, buildAll, slots, cmpSlots, active, setCompare, setPaint, layoutPanels, ui, view, camera, framing };
+window.__lab = { state, setFirm, gorgeTo, setLook, setWearView, setGhost, setCompareRaw, setClothPush, pose: (f) => pose(0, f), step: dt => pose(dt), redraw: () => { dirty = true; }, goTo, buildAll, slots, cmpSlots, active, setCompare, setPaint, layoutPanels, ui, view, camera, framing };
