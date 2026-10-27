@@ -332,6 +332,7 @@ function gorgeTo(v) {
     sl.value = g; sl.dispatchEvent(new Event('input'));
   });
 }
+let onChangeSeat = null, seatTimer = 0;
 // the face: by the pose unless one is picked - calm standing, walking or
 // seated; effort in a jog, a skip, a jump or a climb; strain hung head down
 // ('valley': the valley's own head, its scream, for comparison - a rebuild)
@@ -1061,6 +1062,10 @@ initDevOverlay(figures, {
   // (a slider moved: the overlay rebuilt each man's anatomy in place - give
   // the new pieces the room's look and put them back in the pose)
   onChange(patch) {
+    // (the seat, the belly and the chest are the trunk's own loft and the
+    // skin's soft tissue: one of their sliders rebuilds the men, a moment after the slider stops moving)
+    const seatNow = patch && JSON.stringify(Object.keys(patch).filter(k => /^(seat|belly|chest)/.test(k)).sort().map(k => patch[k]));
+    if (seatNow && seatNow !== '[]' && seatNow !== onChangeSeat) { onChangeSeat = seatNow; clearTimeout(seatTimer); seatTimer = setTimeout(() => (state.compare ? cmpSlots : slots).forEach(rebuildOne), 160); }
     active().forEach(s => { if (bare()) proxy(s.man); applyLook(s.man); syncRaw(s); }); awake = 1; pose(0, !!state.compareRaw);
     // (linked: Gorge moved by hand moves the garment's Firm with it)
     if (state.firmLink && patch && patch.gorge != null) setFirm(patch.gorge / 100);

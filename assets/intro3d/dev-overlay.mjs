@@ -5,7 +5,7 @@
 // Usage: import and call `initDevOverlay(scene)` from the valley module
 // when `?lab` is in the URL.  The overlay floats over the WebGL canvas.
 
-import { getAnatomy, setAnatomy, rebuildAnatomy, migrateAnatomy, anatomyCm } from './figure.mjs';
+import { getAnatomy, setAnatomy, rebuildAnatomy, migrateAnatomy, anatomyCm, seatCm } from './figure.mjs';
 
 // the creation values, kept for "Reset defaults" (the sliders move the live
 // base with setAnatomy, so men built after a change - the lab rebuilds a
@@ -197,6 +197,28 @@ const PARTS = [
     { key: 'lobeLag',   label: 'Lag R',      min: 0,   max: 100, step: 1 },
     { key: 'density',   label: 'Density',    min: 0,   max: 100, step: 1 },
   ] },
+  { id: 'seat', label: 'Seat', params: [
+    { key: 'seatSize',   label: 'Size seat',  min: 0.5, max: 2,   step: 0.05 },
+    { key: 'seatFullL',  label: 'Fullness L', min: 0,   max: 100, step: 1 },
+    { key: 'seatFullR',  label: 'Fullness R', min: 0,   max: 100, step: 1 },
+    { key: 'seatLift',   label: 'Lift',       min: 0,   max: 100, step: 1 },
+    { key: 'seatSpread', label: 'Spread',     min: 0,   max: 100, step: 1 },
+    { key: 'seatJiggle', label: 'Jiggle',     min: 0,   max: 100, step: 1 },
+    { key: 'seatFirm',   label: 'Firm',       min: 0,   max: 100, step: 1 },
+  ] },
+  { id: 'belly', label: 'Belly', params: [
+    { key: 'bellySize',   label: 'Size belly', min: 0, max: 100, step: 1 },
+    { key: 'bellyLift',   label: 'Lift',       min: 0, max: 100, step: 1 },
+    { key: 'bellyJiggle', label: 'Jiggle',     min: 0, max: 100, step: 1 },
+    { key: 'bellyFirm',   label: 'Firm',       min: 0, max: 100, step: 1 },
+  ] },
+  { id: 'chest', label: 'Chest', params: [
+    { key: 'chestSize',   label: 'Size chest', min: 0, max: 100, step: 1 },
+    { key: 'chestSpread', label: 'Spread',     min: 0, max: 100, step: 1 },
+    { key: 'chestLift',   label: 'Lift',       min: 0, max: 100, step: 1 },
+    { key: 'chestJiggle', label: 'Jiggle',     min: 0, max: 100, step: 1 },
+    { key: 'chestFirm',   label: 'Firm',       min: 0, max: 100, step: 1 },
+  ] },
   { id: 'envelope', label: 'Envelope', params: [
     { key: 'hood',      label: 'Hood',       min: 0,   max: 100, step: 1 },
     { key: 'ring',      label: 'Ring',       min: 0,   max: 100, step: 1 },
@@ -234,6 +256,11 @@ const REALISM = {
   // is drawn all the same, for when it is turned up)
   hood: { sd: 15, mean: 55, none: 0.5, floor: 5 }, ring: { sd: 15 }, tether: { sd: 12 }, glide: { sd: 12 }, retract: { sd: 12 }, folds: { sd: 15 },
   modulus: { sd: 12 }, damping: { sd: 12 }, resist: { sd: 12 }, adhesion: { sd: 12 },
+  // (the seat: its size by the build's own variety too; the sides drawn
+  // together, a little uneven)
+  seatSize: { sd: 0.12 }, seatFullL: { sd: 10 }, seatFullR: { sd: 10, corr: ['seatFullL', 0.75] }, seatLift: { sd: 10 }, seatSpread: { sd: 8 }, seatJiggle: { sd: 12 }, seatFirm: { sd: 12 },
+  bellySize: { sd: 12 }, bellyLift: { sd: 10 }, bellyJiggle: { sd: 12 }, bellyFirm: { sd: 12 },
+  chestSize: { sd: 12 }, chestSpread: { sd: 8 }, chestLift: { sd: 10 }, chestJiggle: { sd: 12 }, chestFirm: { sd: 12 },
 };
 
 // a length for the owner's eye: inches first, the centimetres beside them
@@ -249,7 +276,7 @@ export function inCm(cm, d = 1) { return `${(cm / 2.54).toFixed(d)}″ (${cm.toF
 // slider runs its whole range, for exploring the extremes.
 const CLAMP = {
   cm: { length: [8, 16], girth: [7, 14], depth: [3, 7.5] },
-  units: { sizePouch: [0.5, 1.5], sizeLobe: [0.6, 1.5], fullnessL: [50, 80], fullnessR: [50, 80], hangL: [15, 85], hangR: [15, 85], gorge: [0, 100], sway: [0.4, 1.8] },
+  units: { seatSize: [0.7, 1.5], sizePouch: [0.5, 1.5], sizeLobe: [0.6, 1.5], fullnessL: [50, 80], fullnessR: [50, 80], hangL: [15, 85], hangR: [15, 85], gorge: [0, 100], sway: [0.4, 1.8] },
   asym: 10,   // fullness L and R at most this far apart (the natural few percent)
   via: { length: 'sizePouch', girth: 'sizePouch', depth: 'sizeLobe' },   // the size eased when a slider alone can't reach
 };
@@ -360,7 +387,7 @@ function buildOverlayUI(figures, opts = {}) {
   // (the base set's measures, in cm - each man of the line varies a little about them)
   const cmLine = document.createElement('div');
   cmLine.style.cssText = 'margin-top:4px;color:#9fd29f;font:10px/1.4 monospace;';
-  const showCm = vals => { const c = anatomyCm(vals); cmLine.textContent = `≈ length ${inCm(c.length)} · girth ${inCm(c.girth)} · depth ${inCm(c.depth)}${clampOn() ? ' · clamp on' : ''}`; };
+  const showCm = vals => { const c = anatomyCm(vals); const st = seatCm(vals); cmLine.textContent = `≈ length ${inCm(c.length)} · girth ${inCm(c.girth)} · depth ${inCm(c.depth)} · seat out ${inCm(st.depth)} wide ${inCm(st.width)} · belly ${vals.bellySize >= 50 ? '+' : '−'}${inCm(Math.abs(6 * ((vals.bellySize ?? 50) - 50) / 50))} · chest ${Math.round(100 * (1 + 0.6 * ((vals.chestSize ?? 50) - 50) / 50))}%${clampOn() ? ' · clamp on' : ''}`; };
   const apply = patch => {
     if (own) Object.assign(T.params, patch); else setAnatomy(patch);
     showCm(own ? T.params : getAnatomy());
