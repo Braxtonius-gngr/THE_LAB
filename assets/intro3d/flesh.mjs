@@ -115,8 +115,10 @@ export class FleshSim {
     const P = this.pouch, g = this.inner; if (!P || !g) return false;
     const u = g.userData, s = g.scale.x, sc = this.fig.getWorldScale(_w).x * P.scale.x * s;
     const loose = Math.max(0.2, u.sway || 1), press = Math.max(0, Math.min(1, this.fig.userData.press || 0));
-    const k = K / loose * (1 + 3 * press), c = C / Math.sqrt(loose) * (1 + 4 * press);
-    const lobeMax = LOBE.max * (u.kl || 1) * (1 - 0.5 * press), lobeK = LOBE.k * (1 + press), lobeC = LOBE.c * (1 + 2 * press);
+    // (the material: figure.mjs's damping, resist and adhesion, 50 as they were)
+    const mp = u.params || {}, damp = 0.4 + 1.2 * (mp.damping ?? 50) / 100, res = (mp.resist ?? 50) / 50, adh = (mp.adhesion ?? 50) / 50;
+    const k = K / loose * (1 + 3 * res * press), c = C / Math.sqrt(loose) * damp * (1 + 4 * adh * press);
+    const lobeMax = LOBE.max * (u.kl || 1) * (1 - 0.5 * press), lobeK = LOBE.k * (1 + press), lobeC = LOBE.c * damp * (1 + 2 * adh * press);
     // (the right lobe's lag on the left, and the lobes' sag toward the
     // ground: figure.mjs's lobeLag and density, 50 as they were)
     const ap = u.params || {}, lagR = 1 + 0.24 * (ap.lobeLag ?? 50) / 100, sag = (((ap.density ?? 50) - 50) / 50) * 0.5 * (u.kl || 1);
@@ -132,6 +134,7 @@ export class FleshSim {
       this.v[0].copy(_fw); this.v[1].copy(_fw);
       this.anchorPrev.copy(this.anchor);
       this.lobe.forEach(l => { l.o.set(0, 0, 0); l.v.set(0, 0, 0); });
+      if (u.sleeve) { u.sleeve.slide = 0; u.sleeve.vel = 0; }
       this.fresh = false; dt = 0;
     }
     this.colliders();
@@ -143,9 +146,10 @@ export class FleshSim {
     const vm = new THREE.Vector3(), jolt = new THREE.Vector3(), gDown = _down.clone().applyQuaternion(_qi);
     this.acc += dt;
     let n = 0;
+    const sl = u.sleeve, v1 = new THREE.Vector3(), ax = new THREE.Vector3();
     while (this.acc >= STEP && n < 40) {
       this.acc -= STEP; n++;
-      vm.copy(this.v[0]);
+      vm.copy(this.v[0]); v1.copy(this.v[1]);
       [0, 1].forEach(i => {
         const p = this.p[i], v = this.v[i], T = i ? T1 : T0, L = i ? L1 : L0, r = i ? r1 : r0;
         // gravity, the tissue's hold toward its rest, damping against the body's motion
@@ -173,6 +177,19 @@ export class FleshSim {
         v.subVectors(x, p).divideScalar(STEP);
         p.copy(x);
       });
+      // the envelope (figure.mjs's sleeve): a mass on the shaft along its
+      // axis - left behind when the shaft is thrown toward its tip (drawn
+      // back), carried on when it stops, a little toward the tip under
+      // gravity hanging down and back off it upside down; held by its own
+      // spring and limits (how far its ring lets it draw back)
+      if (sl) {
+        ax.subVectors(this.p[1], this.anchor).normalize();
+        const aAx = _a.subVectors(this.v[1], v1).divideScalar(STEP).dot(ax) / sc, aG = GRAV * ax.dot(_down) / sc;
+        sl.vel += (-sl.k * sl.slide - sl.c * sl.vel - 0.4 * sl.glide * aAx + 0.03 * sl.glide * aG) * STEP;
+        sl.slide += sl.vel * STEP;
+        if (sl.slide < -sl.back) { sl.slide = -sl.back; sl.vel = Math.max(0, sl.vel); }
+        if (sl.slide > sl.fwd) { sl.slide = sl.fwd; sl.vel = Math.min(0, sl.vel); }
+      }
       // the lobes: each a small spring on the sac, driven by the sac's own
       // jolts (its change of velocity - gravity it hangs against cancels out)
       jolt.subVectors(this.v[0], vm).divideScalar(STEP).applyQuaternion(_qi).divideScalar(sc);
@@ -185,7 +202,7 @@ export class FleshSim {
     this.publish(T0, T1);
     this.pose(T0, root);
     const moving = this.v[0].distanceTo(this.anchorV) + this.v[1].distanceTo(this.anchorV);
-    return moving > 0.5 || this.lobe.some(l => l.v.lengthSq() > 0.01);
+    return moving > 0.5 || this.lobe.some(l => l.v.lengthSq() > 0.01) || (u.sleeve && Math.abs(u.sleeve.vel) > 0.05);
   }
 
   // the swing vector, for the cloth: in the hips' frame and units

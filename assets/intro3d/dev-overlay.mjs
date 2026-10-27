@@ -5,7 +5,7 @@
 // Usage: import and call `initDevOverlay(scene)` from the valley module
 // when `?lab` is in the URL.  The overlay floats over the WebGL canvas.
 
-import { getAnatomy, setAnatomy, rebuildAnatomy, migrateAnatomy } from './figure.mjs';
+import { getAnatomy, setAnatomy, rebuildAnatomy, migrateAnatomy, anatomyCm } from './figure.mjs';
 
 // the creation values, kept for "Reset defaults" (the sliders move the live
 // base with setAnatomy, so men built after a change - the lab rebuilds a
@@ -197,6 +197,20 @@ const PARTS = [
     { key: 'lobeLag',   label: 'Lag R',      min: 0,   max: 100, step: 1 },
     { key: 'density',   label: 'Density',    min: 0,   max: 100, step: 1 },
   ] },
+  { id: 'envelope', label: 'Envelope', params: [
+    { key: 'hood',      label: 'Hood',       min: 0,   max: 100, step: 1 },
+    { key: 'ring',      label: 'Ring',       min: 0,   max: 100, step: 1 },
+    { key: 'tether',    label: 'Tether',     min: 0,   max: 100, step: 1 },
+    { key: 'glide',     label: 'Glide',      min: 0,   max: 100, step: 1 },
+    { key: 'retract',   label: 'Retract',    min: 0,   max: 100, step: 1 },
+    { key: 'folds',     label: 'Folds',      min: 0,   max: 100, step: 1 },
+  ] },
+  { id: 'material', label: 'Material', params: [
+    { key: 'modulus',   label: 'Modulus',    min: 0,   max: 100, step: 1 },
+    { key: 'damping',   label: 'Damping',    min: 0,   max: 100, step: 1 },
+    { key: 'resist',    label: 'Resist',     min: 0,   max: 100, step: 1 },
+    { key: 'adhesion',  label: 'Adhesion',   min: 0,   max: 100, step: 1 },
+  ] },
 ];
 const PARAMS = PARTS.flatMap(p => p.params);
 
@@ -216,7 +230,55 @@ const REALISM = {
   hangL: { sd: 10 }, hangR: { sd: 10, corr: ['hangL', 0.6] },
   taper: { sd: 10 }, elevation: { sd: 10 }, pitch: { sd: 10 }, twist: { sd: 12 },
   lobeLag: { sd: 12 }, density: { sd: 12 },
+  // (the envelope: none on about half of draws - then the rest of its cut
+  // is drawn all the same, for when it is turned up)
+  hood: { sd: 15, mean: 55, none: 0.5, floor: 5 }, ring: { sd: 15 }, tether: { sd: 12 }, glide: { sd: 12 }, retract: { sd: 12 }, folds: { sd: 15 },
+  modulus: { sd: 12 }, damping: { sd: 12 }, resist: { sd: 12 }, adhesion: { sd: 12 },
 };
+
+// ── the realism clamp: what a real man measures ──────────────────────
+// With it on, every set - moved by hand or drawn - is held inside the
+// anthropometric bounds below, in centimetres where the part has one
+// (anatomyCm: the shaft's run from its root, its girth round, how far its
+// front stands out): a slider pushed past one stops where the measure
+// meets its bound, others bound in the slider's own units. Off, every
+// slider runs its whole range, for exploring the extremes.
+const CLAMP = {
+  cm: { length: [8, 16], girth: [7, 14], depth: [3, 7.5] },
+  units: { sizePouch: [0.5, 1.5], sizeLobe: [0.6, 1.5], fullnessL: [50, 80], fullnessR: [50, 80], hangL: [15, 85], hangR: [15, 85], gorge: [0, 100], sway: [0.4, 1.8] },
+  asym: 10,   // fullness L and R at most this far apart (the natural few percent)
+  via: { length: 'sizePouch', girth: 'sizePouch', depth: 'sizeLobe' },   // the size eased when a slider alone can't reach
+};
+const CLAMP_KEY = 'dev_overlay_clamp_v1';
+export function clampOn() { try { return localStorage.getItem(CLAMP_KEY) !== '0'; } catch (_) { return true; } }
+function setClampOn(on) { try { localStorage.setItem(CLAMP_KEY, on ? '1' : '0'); } catch (_) { /* storage blocked */ } }
+// hold a set inside the bounds (a fresh object; the measures it ends at
+// as .cm). A centimetre bound is met by searching its slider - each grows
+// with its slider, the others held - after the plain bounds are applied.
+export function realismClamp(vals) {
+  const v = Object.assign({}, DEFAULTS, vals);
+  for (const [k, [lo, hi]] of Object.entries(CLAMP.units)) if (v[k] != null) v[k] = Math.min(hi, Math.max(lo, v[k]));
+  const d = v.fullnessL - v.fullnessR;
+  if (Math.abs(d) > CLAMP.asym) { const mid = (v.fullnessL + v.fullnessR) / 2, h = Math.sign(d) * CLAMP.asym / 2; v.fullnessL = Math.round(mid + h); v.fullnessR = Math.round(mid - h); }
+  for (const [k, [lo, hi]] of Object.entries(CLAMP.cm)) {
+    const at = x => anatomyCm(Object.assign({}, v, { [k]: x }))[k], now = at(v[k]);
+    if (now >= lo && now <= hi) continue;
+    const want = now < lo ? lo : hi;
+    let a = 0, b = 100;
+    for (let i = 0; i < 24; i++) { const m = (a + b) / 2; if (at(m) < want) a = m; else b = m; }
+    v[k] = Math.round(now < lo ? Math.ceil(b) : Math.floor(a));
+    // (its own slider at its end and still past: the size behind it eased
+    // in its bounds until the measure fits - depth grows with the lobes too)
+    const sz = CLAMP.via[k], got = anatomyCm(v)[k];
+    if (sz && (got < lo || got > hi)) {
+      const [s0, s1] = CLAMP.units[sz], atS = x => anatomyCm(Object.assign({}, v, { [sz]: x }))[k];
+      let x0 = s0, x1 = s1;
+      for (let i = 0; i < 24; i++) { const m = (x0 + x1) / 2; if (atS(m) < (got < lo ? lo : hi)) x0 = m; else x1 = m; }
+      v[sz] = Math.round((got < lo ? x1 : x0) * 100) / 100;
+    }
+  }
+  return v;
+}
 // a standard normal (Box-Muller), and one truncated at +-t
 export function gauss(rnd = Math.random) { let u = 0; while (!u) u = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rnd()); }
 function gaussT(t, rnd) { for (let i = 0; i < 20; i++) { const z = gauss(rnd); if (Math.abs(z) <= t) return z; } return 0; }
@@ -229,8 +291,9 @@ export function realismDraw(base = DEFAULTS, rnd = Math.random) {
     let zi = gaussT(2.2, rnd);
     if (R.corr && z[R.corr[0]] != null) { const r = R.corr[1]; zi = Math.max(-2.2, Math.min(2.2, r * z[R.corr[0]] + Math.sqrt(1 - r * r) * zi)); }
     z[p.key] = zi;
-    let v = (base[p.key] ?? (p.min + p.max) / 2) + zi * R.sd;
+    let v = (R.mean ?? base[p.key] ?? (p.min + p.max) / 2) + zi * R.sd;
     if (R.floor != null) v = Math.max(R.floor, Math.abs(v - R.floor) + R.floor);
+    if (R.none && rnd() < R.none) v = 0;
     out[p.key] = Math.min(p.max, Math.max(p.min, Math.round(v / p.step) * p.step));
   });
   return out;
@@ -290,8 +353,13 @@ function buildOverlayUI(figures, opts = {}) {
 
   const live = Object.assign({}, getAnatomy(), own ? migrateAnatomy(T.params) : {});
   const fmt = (p, v) => (p.step >= 1 ? String(Math.round(v)) : Number(v).toFixed(2));
+  // (the base set's measures, in cm - each man of the line varies a little about them)
+  const cmLine = document.createElement('div');
+  cmLine.style.cssText = 'margin-top:4px;color:#9fd29f;font:10px/1.4 monospace;';
+  const showCm = vals => { const c = anatomyCm(vals); cmLine.textContent = `≈ length ${c.length.toFixed(1)} cm · girth ${c.girth.toFixed(1)} cm · depth ${c.depth.toFixed(1)} cm${clampOn() ? ' · clamp on' : ''}`; };
   const apply = patch => {
     if (own) Object.assign(T.params, patch); else setAnatomy(patch);
+    showCm(own ? T.params : getAnatomy());
     (T.figures || figures).forEach(fig => rebuildAnatomy(fig, patch));
     if (opts.onChange) opts.onChange(patch, T);
   };
@@ -323,7 +391,12 @@ function buildOverlayUI(figures, opts = {}) {
       slider.value = live[p.key]; val.textContent = fmt(p, live[p.key]);
       slider.setAttribute('aria-label', `${T.label}: ${p.label}`);
       slider.style.cssText = 'width:100%;margin:0;height:18px;accent-color:#4af;';
-      slider.addEventListener('input', () => { const v = parseFloat(slider.value); val.textContent = fmt(p, v); apply({ [p.key]: v }); });
+      slider.addEventListener('input', () => {
+        const v = parseFloat(slider.value); val.textContent = fmt(p, v);
+        // (the clamp on: the whole set held in bounds - a size moved can
+        // carry the length with it - and every slider shown where it ended)
+        if (clampOn()) setAll(current()); else apply({ [p.key]: v });
+      });
       row.append(lbl, slider);
       box.appendChild(row);
     });
@@ -335,6 +408,8 @@ function buildOverlayUI(figures, opts = {}) {
   // set every slider at once and rebuild the men a single time
   function setAll(vals) {
     vals = migrateAnatomy(vals) || {};
+    // (the clamp on: anything set - a preset, All max, a draw - held in bounds)
+    if (clampOn()) vals = realismClamp(vals);
     const patch = {};
     sliders().forEach(sl => {
       const p = PARAMS.find(q => q.key === sl.dataset.key);
@@ -369,6 +444,16 @@ function buildOverlayUI(figures, opts = {}) {
   // (a realistic man at random: every slider off its bell curve - and the
   // host's own physical values with it, opts.onRandomize(gauss))
   tools.appendChild(mkBtn('🎲 Randomize · realism', () => { setAll(realismDraw()); if (opts.onRandomize) opts.onRandomize(gauss, T); }));
+  // (the realism clamp, for every panel at once - kept in this browser)
+  const clampBtn = mkBtn('', () => {
+    setClampOn(!clampOn());
+    document.querySelectorAll('[data-clamp-btn]').forEach(b => { b.textContent = `Realism clamp: ${clampOn() ? 'on' : 'off'}`; });
+    if (clampOn()) setAll(current()); else showCm(current());
+  });
+  clampBtn.dataset.clampBtn = '1'; clampBtn.textContent = `Realism clamp: ${clampOn() ? 'on' : 'off'}`;
+  clampBtn.title = 'On: every slider held to what a real man measures (length 8-16 cm, girth 7-14 cm round, depth 3-7.5 cm, fullness 50-80 and within 10 of each other). Off: the whole range.';
+  tools.appendChild(clampBtn);
+  body.insertBefore(cmLine, body.firstChild); showCm(current());
 
   // saved states: named sets of slider values, kept in this browser only
   const saves = document.createElement('div');

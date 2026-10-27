@@ -717,8 +717,10 @@ function buildHead(kit, o = {}) {
 //                the body rather than hanging straight down - on a build's
 //                man the more the lobes are full, big and high, the more of
 //                it shows (high Fullness and Size Lobe, low Hang: the most)
-//     gorge      0-100: as before (scales the sizes, length and girth
-//                toward 1.6x); left as it was
+//     gorge      0-100: engorgement - the shaft alone: longer (to 1.6x),
+//                thicker (to 1.3x), firmer (its sway to 0.4x, its stiff
+//                root reaching further down) and lifted (up to 40 degrees
+//                forward about its root); the lobes as they are
 //     sway       physics response amplitude (how freely it answers motion)
 //   the lobes:
 //     sizeLobe   their scale, and the sac's (0.5-3; 1 = an average man's)
@@ -739,6 +741,26 @@ function buildHead(kit, o = {}) {
 //                12% more, as it was; 0 the same, 100 24%)
 //     density    0-100: the lobes' give to gravity - over 50 they sag toward
 //                the ground (whichever way that is), under 50 they hold up
+////   the envelope (a sleeve of skin over the shaft's far half - a build's
+//   man only; hood 0 is none, the shape as it was):
+//     hood       0-100: how far it runs on past the tip (100: 1.4 x the
+//                shaft's radius), narrowing to its opening
+//     ring       0-100: how tight that opening is (0 loose, 100 a pinhole)
+//                - and the tighter, the less it can draw back
+//     tether     0-100: the frenular tether - the underside of the opening
+//                drawn back toward the body, so the rim hangs uneven
+//     glide      0-100: how freely it slides on the shaft under motion
+//     retract    0-100: how hard it springs back to where it rests
+//     folds      0-100: how finely it bunches when drawn back (3 to 10 folds)
+////   the material (50 as it was on each):
+//     modulus    0-100: the stiffness gradient - how far down the shaft its
+//                stiff root reaches before it bends (25% to 51% of its run;
+//                50: 38%) - the tip stays the flexible part
+//     damping    0-100: how fast the tissue soaks up a move (0.4x to 1.6x)
+//                - settles slower or sooner after a skip or a climb
+//     resist     0-100: how hard it pushes back on a snug garment's hold
+//                (0 to 2x the Cloth push's compression)
+//     adhesion   0-100: how much a garment's inside drags it along (0 to 2x)
 //
 // Gravity comes from the pose: the `pouch` group's orientation is set by
 // valley.mjs per figure (the sawyer hung head-down turns it end for end).
@@ -752,7 +774,9 @@ let ANATOMY = {
   fullnessL: 65, fullnessR: 60,
   hangL: 45, hangR: 55,
   gorge: 0, sway: 1.0,
-  taper: 50, elevation: 50, pitch: 50, twist: 50, lobeLag: 50, density: 50
+  taper: 50, elevation: 50, pitch: 50, twist: 50, lobeLag: 50, density: 50,
+  hood: 0, ring: 40, tether: 40, glide: 60, retract: 50, folds: 50,
+  modulus: 50, damping: 50, resist: 50, adhesion: 50
 };
 // (a set from before the parts were split - one Size, length and girth as
 // scales, depth as a scale - read as the same man)
@@ -789,8 +813,25 @@ function anatomyFor(rnd) {
     sway: ANATOMY.sway,
     // (the finer cut as the base has it - no draws of their own, so every
     // man is drawn as before)
-    taper: ANATOMY.taper, elevation: ANATOMY.elevation, pitch: ANATOMY.pitch, twist: ANATOMY.twist, lobeLag: ANATOMY.lobeLag, density: ANATOMY.density
+    taper: ANATOMY.taper, elevation: ANATOMY.elevation, pitch: ANATOMY.pitch, twist: ANATOMY.twist, lobeLag: ANATOMY.lobeLag, density: ANATOMY.density,
+    hood: ANATOMY.hood, ring: ANATOMY.ring, tether: ANATOMY.tether, glide: ANATOMY.glide, retract: ANATOMY.retract, folds: ANATOMY.folds,
+    modulus: ANATOMY.modulus, damping: ANATOMY.damping, resist: ANATOMY.resist, adhesion: ANATOMY.adhesion
   };
+}
+
+// a set's measures in centimetres, worked as buildAnatomy lays a build's
+// man out (its units are cm): the shaft's run from its root to its tip, its
+// girth round, and depth - how far its front stands out from the root
+// (the realism clamp reads them; the overlay shows them)
+export function anatomyCm(a) {
+  a = Object.assign({}, ANATOMY, migrateAnatomy(a));
+  const en = engorge(a), sL = a.sizeLobe, sP = a.sizePouch;
+  const kL = (0.5 + 1.5 * a.length / 100) * en.len, kG = (0.5 + 1.5 * a.girth / 100) * en.girth;
+  const L = 6.4 * kL * sP, r = 1.2 * kG * sP;
+  const fL = a.fullnessL / 100, fR = a.fullnessR / 100, hL = a.hangL / 100, hR = a.hangR / 100;
+  const avgLR = ((1.6 + fL * 0.45) + (1.6 + fR * 0.45)) / 2 * sL, dd = a.depth / 100;
+  const dk = (0.35 + 0.65 * (fL + fR) / 2) * (1 - 0.6 * (hL + hR) / 2) * dd * (1.311 + 1.417 * dd);
+  return { length: L + 2.6 * sL, girth: 2 * PI * r, depth: 0.6 * sL + avgLR + 0.75 * r + dk * sL + r };
 }
 
 // a tube swept along points with a radius at each (rings of n), closed at
@@ -832,9 +873,81 @@ function sweep(pts, radii, n = 12, metric, shape = null) {
   return g;
 }
 
-// gorge, as it was: at 0% the params are natural, at 100% each size, the
-// length and the girth reach 1.6x
-const gorgeAmp = a => 1 + Math.max(0, Math.min(100, a.gorge || 0)) / 100 * 0.6;
+// gorge, the engorgement, 0-1: what it does to the shaft alone - its length
+// and girth scales, how loose it hangs, how far its stiff root reaches, how
+// far it lifts (it once scaled every size and the length and girth again
+// besides, so the lobes swelled and the shaft reached 2.56x)
+const gorgeOf = a => Math.max(0, Math.min(100, a.gorge || 0)) / 100;
+const engorge = a => { const e = gorgeOf(a); return { e, len: 1 + 0.6 * e, girth: 1 + 0.3 * e, sway: 1 - 0.6 * e, bend: 0.15 * e, lift: 40 * e * PI / 180 }; };
+
+// the envelope: a sleeve of skin over the far part of the shaft's curve
+// (`path`, the live shaft's own points), running on past its tip and
+// narrowing to an opening, the underside of the rim drawn back by the
+// tether. Returns its live mesh's state with place(q, o) - turn it by q
+// about o (the shaft's root), slid by `slide` along the shaft (- drawn back
+// toward the root, + on past the tip) and bunched into folds as it is drawn
+// back - and the constants its physics reads (flesh.mjs). null at hood 0.
+function buildSleeve(path, r, sL, a, m, g) {
+  const hood = (a.hood ?? 0) / 100; if (hood <= 0) return null;
+  const ring = (a.ring ?? 40) / 100, tether = (a.tether ?? 40) / 100, folds = (a.folds ?? 50) / 100;
+  const curve = new THREE.CatmullRomCurve3(path.map(p => new THREE.Vector3(...p)));
+  const NF = 64, frames = curve.computeFrenetFrames(NF, false), arc = curve.getLength();
+  const T0 = 0.55, N = 14, NR = 14, NE = 7;
+  const ext = r * 1.4 * hood, open = r * (0.85 - 0.7 * ring), thick = r * 1.08 + 0.04 * sL;
+  const tipP = curve.getPointAt(1), tipT = frames.tangents[NF].clone();
+  // (the underside: toward the body, +z, square to the shaft at its tip)
+  const ventral = new THREE.Vector3(0, 0, 1).addScaledVector(tipT, -tipT.z).normalize();
+  const fq = 1.3 / (UVM.linen[2] || 1.3), mu = DENS * fq / UVM.linen[0], mv = DENS * fq / UVM.linen[1];
+  const pos = [], uv = [], dirs = [], idx = [], axis = [], radial = [], ringU = [];
+  const rings = [];
+  for (let j = 0; j <= NR; j++) { const t = T0 + (1 - T0) * j / NR, k = Math.round(t * NF); rings.push({ c: curve.getPointAt(t), T: frames.tangents[k], Nn: frames.normals[k], B: frames.binormals[k], rad: thick * (j < 2 ? 0.93 + 0.035 * j : 1), d: arc * (t - T0), e: 0 }); }
+  for (let e = 1; e <= NE; e++) { const sx = e / NE, sm = sx * sx * (3 - 2 * sx); rings.push({ c: tipP.clone().addScaledVector(tipT, ext * sx), T: tipT, Nn: frames.normals[NF], B: frames.binormals[NF], rad: thick + (open - thick) * sm, d: arc * (1 - T0) + ext * sx, e: sx }); }
+  // (and a lip turned in at the opening, so the rim reads as a rim)
+  rings.push({ c: tipP.clone().addScaledVector(tipT, Math.max(0, ext - 0.18 * r)), T: tipT, Nn: frames.normals[NF], B: frames.binormals[NF], rad: open * 0.72, d: arc * (1 - T0) + ext + 0.2 * r, e: 1 });
+  const total = rings[rings.length - 1].d || 1, v = new THREE.Vector3(), rd = new THREE.Vector3();
+  rings.forEach(R => {
+    for (let i = 0; i < N; i++) {
+      const ang = i / N * PI * 2;
+      rd.copy(R.Nn).multiplyScalar(Math.cos(ang)).addScaledVector(R.B, Math.sin(ang));
+      v.copy(R.c).addScaledVector(rd, R.rad);
+      // (the tether: the rim's underside drawn back along the shaft)
+      if (R.e > 0) v.addScaledVector(R.T, -tether * 0.6 * r * R.e * R.e * Math.max(0, rd.dot(ventral)));
+      pos.push(v.x, v.y, v.z); uv.push(i / N * 2 * PI * R.rad * mu, R.d * mv); dirs.push(R.T.x, R.T.y, R.T.z);
+      axis.push(R.T.x, R.T.y, R.T.z); radial.push(rd.x, rd.y, rd.z); ringU.push(R.d / total);
+    }
+  });
+  for (let j = 0; j < rings.length - 1; j++) for (let i = 0; i < N; i++) { const a0 = j * N + i, b0 = j * N + (i + 1) % N, c0 = a0 + N, d0 = b0 + N; idx.push(a0, b0, c0, b0, d0, c0); }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setAttribute('aAlong', new THREE.Float32BufferAttribute(dirs, 3));
+  geo.setIndex(idx);
+  const mesh = liveFacet(geo, m, g, 0);
+  mesh.userData.pouch = true; mesh.userData.sleeve = true;
+  const live = mesh.userData.live, R0 = live.rest, P = live.smooth.attributes.position.array;
+  const nFold = 3 + 7 * folds, foldAmp = r * (0.08 + 0.14 * folds), len = arc * (1 - T0);
+  const S = {
+    mesh, slide: 0, vel: 0,
+    // (its physics: how far it may draw back - less through a tight ring -
+    // and run on; its spring back, its damping, its glide on the shaft)
+    back: len * 0.45 * (1 - 0.6 * ring), fwd: 0.25 * r,
+    k: 60 + 340 * (a.retract ?? 50) / 100, glide: 0.2 + 0.8 * (a.glide ?? 60) / 100,
+    place(q, o) {
+      const bunch = Math.max(0, Math.min(1, -S.slide / (S.back || 1)));
+      const qq = q || new THREE.Quaternion();
+      for (let i = 0; i < ringU.length; i++) {
+        const u = ringU[i], sw = Math.min(1, u / 0.35), w = sw * sw * (3 - 2 * sw);
+        v.set(R0[3 * i], R0[3 * i + 1], R0[3 * i + 2]).addScaledVector(rd.set(axis[3 * i], axis[3 * i + 1], axis[3 * i + 2]), S.slide * w);
+        if (bunch > 0) v.addScaledVector(rd.set(radial[3 * i], radial[3 * i + 1], radial[3 * i + 2]), foldAmp * bunch * w * Math.max(0, Math.sin(u * nFold * 2 * PI)));
+        if (q) v.sub(o).applyQuaternion(qq).add(o);
+        P[3 * i] = v.x; P[3 * i + 1] = v.y; P[3 * i + 2] = v.z;
+      }
+      live.refresh();
+    }
+  };
+  S.c = 2 * Math.sqrt(S.k) * 0.35;
+  return S;
+}
 
 export function buildAnatomy(pouch, m, a) {
   a = migrateAnatomy(a);
@@ -847,11 +960,11 @@ export function buildAnatomy(pouch, m, a) {
   // (each part at its own scale: sL the lobes, the sac and the root they
   // hang from; sP the shaft's length and thickness - so one can change
   // without the other. Laid out in the pouch's own units, the group unscaled.)
-  const amp = gorgeAmp(a), sL = a.sizeLobe * amp, sP = a.sizePouch * amp;
-  const kL = (0.5 + 1.5 * a.length / 100) * amp, kG = (0.5 + 1.5 * a.girth / 100) * amp;
+  const en = engorge(a), sL = a.sizeLobe, sP = a.sizePouch;
+  const kL = (0.5 + 1.5 * a.length / 100) * en.len, kG = (0.5 + 1.5 * a.girth / 100) * en.girth;
   // (the finer cut, each 50 at the old shape: see the notes above)
   const cut = k => ((a[k] ?? 50) - 50) / 50;
-  const tp = cut('taper'), el = cut('elevation') * 1.5 * sL, pitch = cut('pitch') * 25 * PI / 180, twist = cut('twist') * 15 * PI / 180;
+  const tp = cut('taper'), el = cut('elevation') * 1.5 * sL, pitch = cut('pitch') * 25 * PI / 180 + en.lift, twist = cut('twist') * 15 * PI / 180;
   const g = new THREE.Group(); pouch.add(g);
 
   // the two lobes, each with its own fullness and hang
@@ -946,18 +1059,19 @@ export function buildAnatomy(pouch, m, a) {
   }
   // (the taper: each ring's radius by how far along it sits)
   const tapered = rs => rs.map((x, i) => x * (1 + tp * 0.3 * (1 - 2 * i / (rs.length - 1))));
-  let sh, bendShaft = null;
+  let sh, bendShaft = null, sleeve = null;
   if (pouch.userData.live) {
     // (a build's man: its root sealed into the pelvis. It runs on up and back
     // in under the skin from where it shows, drawn to a point there by an
     // exponential taper over the first ROOT of its length - no flat end, no
     // open funnel at the base - and it bends out of that root rather than
     // turning on a pin: see bendShaft)
-    const ROOT = 0.15, TAU = 0.035, BEND = 0.38;
+    const ROOT = 0.15, TAU = 0.035, BEND = 0.25 + 0.13 * (a.modulus ?? 50) / 50 + en.bend;
     const bury = [0, pts[0][1] + 1.2 * sL, pts[0][2] + 2.6 * sL];
     const taper = t => t >= ROOT ? 1 : (1 - Math.exp(-t / TAU)) / (1 - Math.exp(-ROOT / TAU));
     const geo = sweep([bury, ...pts], tapered([r * 0.9, r * 1.12, r, r * 0.98, r * 1.02, r * 0.55]), 14, UVM.linen, taper);
     sh = liveFacet(geo, m, g, 0);
+    sleeve = buildSleeve([bury, ...pts], r, sL, a, m, g);
     // turn it by q about its root as the physics asks (null: at rest) - the
     // root's run held where it is, the turn growing to all of q by BEND along
     // it: past that it is the rigid turn it was, so the tip lands where the
@@ -972,6 +1086,9 @@ export function buildAnatomy(pouch, m, a) {
         P[3 * i] = v.x; P[3 * i + 1] = v.y; P[3 * i + 2] = v.z;
       }
       live.refresh();
+      // (the envelope lies past the bend's reach: turned whole by q, slid
+      // and bunched as its own physics has it)
+      if (sleeve) sleeve.place(q, o);
     };
   } else sh = facet(sweep(pts, tapered([r * 1.08, r, r * 0.98, r * 1.02, r * 0.55]), 14, UVM.linen), m, g, 0);
   sh.userData.pouch = true; sh.userData.shaft = true;
@@ -979,7 +1096,7 @@ export function buildAnatomy(pouch, m, a) {
   // roots and ends, their radii; all in this group's own units; kl, the
   // lobes' scale, for their jiggle)
   lobes.forEach(l => { l.userData.p0 = l.position.clone(); });
-  g.userData = { lobes, sac, shaft: sh, sway: a.sway, params: a, mass: [0, -avgDrop + el, -0.6 * sL], shaftRoot: pts[0], shaftTip: pts[pts.length - 1], lobeR: avgLR, shaftR: r, kl: sL, updateSac, bendShaft };
+  g.userData = { lobes, sac, shaft: sh, sleeve, sway: a.sway * en.sway, params: a, mass: [0, -avgDrop + el, -0.6 * sL], shaftRoot: pts[0], shaftTip: pts[pts.length - 1], lobeR: avgLR, shaftR: r, kl: sL, updateSac, bendShaft };
   return g;
 }
 
