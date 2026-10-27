@@ -87,7 +87,7 @@ uniform float u_uvEps;      // The step the normal is differenced over (uv)
 #define UC_SITES 8
 uniform float u_siteCount;  // Soft sites in use
 uniform vec4 u_site[UC_SITES];      // u, v, radius, amp (each a Gaussian bell)
-uniform float u_sitePulse[UC_SITES]; // each site's pulse, -1..1 of its amp
+uniform vec4 u_sitePulse[2]; // each site's pulse, -1..1 of its amp, four to a vec4
 attribute vec3 clothDu;     // d position / d u (prepareClothGeometry)
 attribute vec3 clothDv;     // d position / d v
 #ifdef UC_CUSTOM_UV
@@ -99,16 +99,21 @@ attribute vec2 UC_UV;       // the uv the shape is read off, when not the mesh's
 attribute float UC_MASK;    // 0 off, 1 on: where the cloth may move at all
 #endif
 
-// the soft sites' pulses at p, summed
+// the soft sites' pulses at p, summed - written out site by site, every
+// index a constant: an Adreno 730 (Chrome on Android, under ANGLE) failed to
+// link any program that looped over the sites' arrays - the skin and every
+// snug garment were never drawn, with an empty log (the lab's ?probe found it)
+float ucSite(vec2 p, vec4 site, float pulse, float k) {
+  float on = step(k + 0.5, u_siteCount);
+  float d = length(p - site.xy), sg = max(site.z * 0.5, 1e-5);
+  return on * site.w * pulse * exp(-(d * d) / (2.0 * sg * sg));
+}
 float ucSites(vec2 p) {
-  float h = 0.0;
-  for (int i = 0; i < UC_SITES; i++) {
-    if (float(i) >= u_siteCount) break;
-    vec4 site = u_site[i];
-    float d = length(p - site.xy), sg = max(site.z * 0.5, 1e-5);
-    h += site.w * u_sitePulse[i] * exp(-(d * d) / (2.0 * sg * sg));
-  }
-  return h;
+  vec4 a = u_sitePulse[0], b = u_sitePulse[1];
+  return ucSite(p, u_site[0], a.x, 0.0) + ucSite(p, u_site[1], a.y, 1.0)
+       + ucSite(p, u_site[2], a.z, 2.0) + ucSite(p, u_site[3], a.w, 3.0)
+       + ucSite(p, u_site[4], b.x, 4.0) + ucSite(p, u_site[5], b.y, 5.0)
+       + ucSite(p, u_site[6], b.z, 6.0) + ucSite(p, u_site[7], b.w, 7.0);
 }
 
 // Rigid / piercing: crisp and unyielding - flat to its edge, then a smoothstep
@@ -278,7 +283,7 @@ function patch(mat, uniforms, normals, uvName, maskName) {
     shader.vertexShader = shader.vertexShader.replace('#include <skinning_vertex>', MAIN);
   };
   const key = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-  mat.customProgramCacheKey = () => key() + '|uc-cloth-6' + (normals ? 'n' : '') + (uvName || '') + '|' + (maskName || '');
+  mat.customProgramCacheKey = () => key() + '|uc-cloth-7' + (normals ? 'n' : '') + (uvName || '') + '|' + (maskName || '');
   // (a clone keeps the patch, on the same uniforms: a scene that gives each
   // figure its own copy of a plate - the valley's ownMats - keeps the cloth)
   mat.clone = function () { return patch(new this.constructor().copy(this), uniforms, normals, uvName, maskName); };
@@ -330,7 +335,7 @@ export class UniversalClothMaterial {
       for (const [k, v] of Object.entries(DEFAULTS)) this.uniforms[k] = { value: Array.isArray(v) ? new THREE.Vector2(...v) : v };
       this.uniforms.u_siteCount = { value: 0 };
       this.uniforms.u_site = { value: Array.from({ length: SITES }, () => new THREE.Vector4(0, 0, 1, 0)) };
-      this.uniforms.u_sitePulse = { value: new Float32Array(SITES) };
+      this.uniforms.u_sitePulse = { value: [new THREE.Vector4(), new THREE.Vector4()] };
     }
     this.set(params);
     this.material = patch(base.clone(), this.uniforms, true, this.uvName, this.maskName);
@@ -348,7 +353,7 @@ export class UniversalClothMaterial {
         v.slice(0, SITES).forEach((st, i) => arr[i].set(st.u ?? 0, st.v ?? 0, st.radius ?? 1, st.amp ?? 0));
         continue;
       }
-      if (k === 'pulse' && v && v.length != null) { const arr = this.uniforms.u_sitePulse.value; for (let i = 0; i < SITES; i++) arr[i] = i < v.length ? Math.max(-1, Math.min(1, v[i] || 0)) : 0; continue; }
+      if (k === 'pulse' && v && v.length != null) { const arr = this.uniforms.u_sitePulse.value; for (let i = 0; i < SITES; i++) arr[i >> 2].setComponent(i & 3, i < v.length ? Math.max(-1, Math.min(1, v[i] || 0)) : 0); continue; }
       const u = this.uniforms['u_' + k]; if (!u || v === undefined) continue;
       if (u.value && u.value.isVector2) { if (Array.isArray(v)) u.value.set(v[0] ?? u.value.x, v[1] ?? u.value.y); else if (v && v.isVector2) u.value.copy(v); }
       else u.value = v ?? u.value;

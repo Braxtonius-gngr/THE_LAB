@@ -125,7 +125,6 @@ const PROBES = [
   ['as is', v => v],
   ['no mask', v => v.replace(/#define UC_CUSTOM_MASK\n/, '').replace(/#define UC_MASK \w+\n/, '')],
   ['no sites', v => v.replace('+ ucSites(p)', '')],
-  ['sites, no break', v => v.replace('if (float(i) >= u_siteCount) break;', '').replace('h += site.w', 'h += step(float(i) + 0.5, u_siteCount) * site.w')],
   ['no skin matrix', v => v.replace(/mat4 ucSkin = [^;]*;/, 'mat4 ucSkin = mat4(1.0);')],
   ['no mask, no sites', v => v.replace(/#define UC_CUSTOM_MASK\n/, '').replace(/#define UC_MASK \w+\n/, '').replace('+ ucSites(p)', '')],
   ['no cloth at all', null],
