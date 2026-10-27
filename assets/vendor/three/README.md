@@ -18,7 +18,8 @@ Everything else in the app stays classic scripts with no dependencies.
 - `three.addons.js`: the addons the scene uses - the postprocessing chain
   (EffectComposer, RenderPass, UnrealBloomPass, OutputPass) and the CSS3D
   renderer (CSS3DRenderer, CSS3DObject) that lays the table's cards and
-  controls into the scene as page elements - bundled into one file,
+  controls into the scene as page elements, and the GLTFLoader (the lab's imported
+  bodies, `assets/intro3d/rare/bodies/`) - bundled into one file,
   importing three from `./three.module.js`, so no import map is needed.
 
 To update, from a scratch directory:
@@ -33,6 +34,7 @@ export { RenderPass } from './package/examples/jsm/postprocessing/RenderPass.js'
 export { UnrealBloomPass } from './package/examples/jsm/postprocessing/UnrealBloomPass.js';
 export { OutputPass } from './package/examples/jsm/postprocessing/OutputPass.js';
 export { CSS3DRenderer, CSS3DObject } from './package/examples/jsm/renderers/CSS3DRenderer.js';
+export { GLTFLoader } from './package/examples/jsm/loaders/GLTFLoader.js';
 EOF
 npx esbuild addons-entry.js --bundle --format=esm --minify --external:three --outfile=three.addons.js
 sed -i 's#from"three"#from"./three.module.js"#g' three.addons.js
