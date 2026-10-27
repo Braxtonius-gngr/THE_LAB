@@ -37,6 +37,18 @@ const K = 640, C = 9;
 // (the cloth's hold: an upright man's never swings further than this from
 // its rest - hung head down, gravity and the belly decide)
 const CONE = 65 * Math.PI / 180;
+// (the hold is a soft wall, not a stop: past `on` of its angle the fabric
+// pushes it back toward its rest, harder the further it goes (quadratic),
+// as hard at the hold's angle as the fabric is snug - a snug one beats
+// gravity, so it keeps its shape turned upside down; a loose one gives way
+// to it - and only well past that, where the cloth has stretched as far as
+// it can, a stop. A loose fabric (`slip`) holds by its weight and drape,
+// not its stretch: a soft wall, so hung head down gravity takes it on past
+// its angle toward the belly. With nothing on, the root's own ligaments: a
+// wall from 60 degrees, so a jolt can't fold it over onto the belly while
+// he is upright - faded out as he turns over, so hung head down gravity
+// still lays it there)
+const WALL = { on: 0.6, nude: { on: 60, lim: 120, hard: 175, w: 1.5 } };
 const LOBE = { k: 900, c: 24, max: 1.2 };   // each lobe's own spring on the sac (1/s^2, 1/s; max offset, its group's units)
 const _down = new THREE.Vector3(0, -1, 0), _fw = new THREE.Vector3();
 
@@ -159,6 +171,13 @@ export class FleshSim {
     this.acc += dt;
     let n = 0;
     const sl = u.sleeve, v1 = new THREE.Vector3(), ax = new THREE.Vector3();
+    // (the hold's wall: where it starts, its angle, the stop past it and how
+    // hard it pushes at its angle - see WALL)
+    const sup = this.fig.userData.support, H = this.fig.userData.hold, cling = (H && H.cling) || 0, D2R = Math.PI / 180;
+    const nude = !sup || sup >= 180, N = WALL.nude;
+    const wLim = (nude ? N.lim : sup) * D2R, wOn = nude ? N.on * D2R : wLim * WALL.on;
+    const wHard = Math.min(175 * D2R, nude ? N.hard * D2R : wLim * (1.25 + 0.5 * (1 - cling)));
+    const wPush = GRAV * (nude ? N.w : H && H.slip ? 0.2 + cling : 0.6 + 2.4 * cling);
     while (this.acc >= STEP && n < 40) {
       this.acc -= STEP; n++;
       vm.copy(this.v[0]); v1.copy(this.v[1]);
@@ -168,14 +187,34 @@ export class FleshSim {
         _v.subVectors(T, p).multiplyScalar((i ? kTip : k) / Math.max(1, L));
         _v.y -= i ? gTip : GRAV;
         _w.subVectors(v, this.anchorV).multiplyScalar(-(i ? cTip : c));
-        v.addScaledVector(_v.add(_w), STEP);
+        _v.add(_w);
+        // the hold's soft wall: back toward the rest, along the arc, past `on`
+        // (the valley's men with no hold keep the old upright cone alone)
+        if (sup) {
+          _b.subVectors(T, this.anchor).normalize(); _c.subVectors(p, this.anchor).normalize();
+          const cosT = Math.max(-1, Math.min(1, _c.dot(_b))), th = Math.acos(cosT);
+          if (th > wOn) {
+            const x = Math.min(2, (th - wOn) / Math.max(1e-3, wLim - wOn));
+            _d.copy(_b).addScaledVector(_c, -cosT); const dl = _d.length();
+            // (the ligaments' wall fades as the rest turns from down)
+            const up = nude ? Math.max(0, Math.min(1, 1.25 * _b.dot(_down))) : 1;
+            if (dl > 1e-4 && up > 0) {
+              _v.addScaledVector(_d.divideScalar(dl), wPush * x * x * up);
+              // (and the fabric soaks up the move into it - no bounce off it)
+              const out = -_w.subVectors(v, this.anchorV).dot(_d);
+              if (out > 0) _v.addScaledVector(_d, out * 6 * Math.min(1, x) * up);
+            }
+          }
+        }
+        v.addScaledVector(_v, STEP);
         const x = p.clone().addScaledVector(v, STEP);
         // held to its root (a short rod - tissue barely stretches)
         _a.subVectors(x, this.anchor); const d = _a.length() || 1; _a.divideScalar(d);
-        // the cloth's hold: what he wears holds it within `support` degrees
-        // of its rest, in any orientation; with none, the 65deg while upright
+        // the stop past the hold's soft wall: what he wears holds it within
+        // the stretch of its `support` angle, in any orientation (nothing on:
+        // the ligaments' stop); the valley's men with no hold, 65deg upright
         _b.subVectors(T, this.anchor).normalize();
-        const sup = this.fig.userData.support, cone = sup ? sup * Math.PI / 180 : CONE;
+        const cone = sup ? wHard : CONE;
         if (sup || _b.dot(_down) > 0.2) {
           const cosA = _a.dot(_b);
           if (cosA < Math.cos(cone)) {
