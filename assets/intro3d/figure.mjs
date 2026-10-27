@@ -719,8 +719,9 @@ function buildHead(kit, o = {}) {
 //                it shows (high Fullness and Size Lobe, low Hang: the most)
 //     gorge      0-100: engorgement - the shaft alone: longer (to 1.6x),
 //                thicker (to 1.3x), firmer (its sway to 0.4x, its stiff
-//                root reaching further down) and lifted (up to 40 degrees
-//                forward about its root); the lobes as they are
+//                root reaching further down) and lifted (up to 75 degrees
+//                forward about its root, and held there against gravity:
+//                flesh.mjs stiffens the tip with it); the lobes as they are
 //     sway       physics response amplitude (how freely it answers motion)
 //   the lobes:
 //     sizeLobe   their scale, and the sac's (0.5-3; 1 = an average man's)
@@ -878,7 +879,7 @@ function sweep(pts, radii, n = 12, metric, shape = null) {
 // far it lifts (it once scaled every size and the length and girth again
 // besides, so the lobes swelled and the shaft reached 2.56x)
 const gorgeOf = a => Math.max(0, Math.min(100, a.gorge || 0)) / 100;
-const engorge = a => { const e = gorgeOf(a); return { e, len: 1 + 0.6 * e, girth: 1 + 0.3 * e, sway: 1 - 0.6 * e, bend: 0.15 * e, lift: 40 * e * PI / 180 }; };
+const engorge = a => { const e = gorgeOf(a); return { e, len: 1 + 0.6 * e, girth: 1 + 0.3 * e, sway: 1 - 0.6 * e, bend: 0.15 * e, lift: 75 * Math.pow(e, 1.5) * PI / 180 }; };
 
 // the envelope: a sleeve of skin over the far part of the shaft's curve
 // (`path`, the live shaft's own points), running on past its tip and

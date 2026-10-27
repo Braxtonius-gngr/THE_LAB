@@ -59,6 +59,7 @@ export class FleshSim {
     this.anchor = new THREE.Vector3(); this.anchorPrev = new THREE.Vector3(); this.anchorV = new THREE.Vector3();
     this.lobe = [{ o: new THREE.Vector3(), v: new THREE.Vector3() }, { o: new THREE.Vector3(), v: new THREE.Vector3() }];
     this.rest = 0;              // rest bias, radians forward
+    this.restShaft = null;      // the shaft's own, when set apart from the lobes' (null: the same)
     this.capsules = [];         // [{a, b, r}] in world, rebuilt each step
     this.boxes = [];            // extra solids: [{min, max}] in world (a seat), tops only
     this.floor = 0;
@@ -72,11 +73,17 @@ export class FleshSim {
   // where each particle rests on the body right now (world), with the rest bias
   targets(out0, out1, root) {
     const P = this.pouch, g = this.inner, u = g.userData, s = g.scale.x;
+    // (the tip's rest first, at the shaft's own bias if it has one; then the
+    // mass's at the lobes', which the group is left turned to)
+    if (this.restShaft != null) {
+      P.quaternion.setFromAxisAngle(_x, this.restShaft + (this.fig.userData.lift || 0)); P.updateMatrixWorld(true);
+      out1.set(u.shaftTip[0] * s, u.shaftTip[1] * s, u.shaftTip[2] * s); P.localToWorld(out1);
+    }
     _restQ.setFromAxisAngle(_x, this.restAll());
     P.quaternion.copy(_restQ); P.updateMatrixWorld(true);
     P.getWorldPosition(this.anchor);
     out0.set(u.mass[0] * s, u.mass[1] * s, u.mass[2] * s); P.localToWorld(out0);
-    out1.set(u.shaftTip[0] * s, u.shaftTip[1] * s, u.shaftTip[2] * s); P.localToWorld(out1);
+    if (this.restShaft == null) { out1.set(u.shaftTip[0] * s, u.shaftTip[1] * s, u.shaftTip[2] * s); P.localToWorld(out1); }
     if (root) { root.set(u.shaftRoot[0] * s, u.shaftRoot[1] * s, u.shaftRoot[2] * s); P.localToWorld(root); }
   }
 
@@ -118,6 +125,11 @@ export class FleshSim {
     // (the material: figure.mjs's damping, resist and adhesion, 50 as they were)
     const mp = u.params || {}, damp = 0.4 + 1.2 * (mp.damping ?? 50) / 100, res = (mp.resist ?? 50) / 50, adh = (mp.adhesion ?? 50) / 50;
     const k = K / loose * (1 + 3 * res * press), c = C / Math.sqrt(loose) * damp * (1 + 4 * adh * press);
+    // (engorged - figure.mjs's gorge - the shaft is a stiff beam on its root,
+    // not a hanging mass: its tip held to its rest the harder and carried
+    // against gravity, so at full it stands out where it is set; the lobes
+    // hang as they always do)
+    const eg = Math.max(0, Math.min(100, mp.gorge || 0)) / 100, kTip = k * (1 + 30 * eg * eg), gTip = GRAV * (1 - 0.85 * eg), cTip = c * (1 + 2 * eg);
     const lobeMax = LOBE.max * (u.kl || 1) * (1 - 0.5 * press), lobeK = LOBE.k * (1 + press), lobeC = LOBE.c * damp * (1 + 2 * adh * press);
     // (the right lobe's lag on the left, and the lobes' sag toward the
     // ground: figure.mjs's lobeLag and density, 50 as they were)
@@ -153,9 +165,9 @@ export class FleshSim {
       [0, 1].forEach(i => {
         const p = this.p[i], v = this.v[i], T = i ? T1 : T0, L = i ? L1 : L0, r = i ? r1 : r0;
         // gravity, the tissue's hold toward its rest, damping against the body's motion
-        _v.subVectors(T, p).multiplyScalar(k / Math.max(1, L));
-        _v.y -= GRAV;
-        _w.subVectors(v, this.anchorV).multiplyScalar(-c);
+        _v.subVectors(T, p).multiplyScalar((i ? kTip : k) / Math.max(1, L));
+        _v.y -= i ? gTip : GRAV;
+        _w.subVectors(v, this.anchorV).multiplyScalar(-(i ? cTip : c));
         v.addScaledVector(_v.add(_w), STEP);
         const x = p.clone().addScaledVector(v, STEP);
         // held to its root (a short rod - tissue barely stretches)

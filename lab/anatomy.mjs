@@ -64,7 +64,15 @@ const REST_FIXED = { stand: 0, walk: 0, jog: 0, rope: 0, jump: 0, climb: 0, seat
 const VARS = Object.keys(FACE_VARIANTS);
 const state = {
   look: 'ink', pose: 'stand', outfit: 'loin', face: 'auto', focus: -1, frame: 'all', physics: true,
-  rest: Object.assign({}, REST), restFixed: Object.assign({}, REST_FIXED), hungMode: 'physics', paused: false,
+  rest: Object.assign({}, REST), restFixed: Object.assign({}, REST_FIXED),
+  // the rest bias of the pouch (the shaft) on its own, when it is unlinked
+  // from the lobes' (Link off): each its own slider and its own target in
+  // the physics; linked, the pouch takes the lobes' value
+  // where his hands go standing: 'behind' (clasped at the small of his back,
+  // out of a close-up's way - the default), 'folded' (across his chest) or
+  // 'sides' (slack, as they were - in front of the fork from three-quarters)
+  hands: 'behind',
+  restLink: true, restShaft: Object.assign({}, REST), restShaftFixed: Object.assign({}, REST_FIXED), hungMode: 'physics', paused: false,
   // the GPU cloth's hydrostatic state over the fork, 0 slack to 1 firm (the Firm slider)
   firm: 0.4,
   // how the outfit is drawn over the anatomy: 'normal', 'semi' (a quarter
@@ -91,6 +99,7 @@ const state = {
   models: [{ man: 2, face: 'plain', params: getAnatomy() }, { man: 2, face: 'square', params: getAnatomy() }]
 };
 const restOf = () => (state.physics && !(state.pose === 'hung' && state.hungMode === 'valley') ? state.rest : state.restFixed);
+const restShaftOf = () => state.restLink ? restOf() : (state.physics && !(state.pose === 'hung' && state.hungMode === 'valley') ? state.restShaft : state.restShaftFixed);
 
 // ---------- renderer, scene ----------
 const canvas = document.getElementById('labCanvas');
@@ -471,6 +480,14 @@ function stillFlesh(u) {
   // (no swing: the cloth hangs at its rest)
   u.swing = null;
 }
+// the standing man's hands, by the Hands chip ([sh x, y, z, elbow] for his
+// left; the right mirrored - see state.hands)
+const HANDS = { behind: [-0.42, 1.25, 0.08, 1.5], folded: [0.0, 1.35, 0.55, 1.9] };
+function standHands(u, tilt) {
+  const a = HANDS[state.hands]; if (!a) return;
+  u.arms.l.sh.rotation.set(a[0], a[1], a[2] - tilt); u.arms.r.sh.rotation.set(a[0], -a[1], -a[2] - tilt);
+  u.arms.l.el.rotation.x = a[3]; u.arms.r.el.rotation.x = a[3];
+}
 // (age carries the head forward and eases the knees; the face is lifted
 // back to look ahead)
 function posture(u, kneeToo) {
@@ -495,7 +512,7 @@ function poseMan(s, t) {
   rest(u);
   s.seat.visible = P === 'seat'; s.gal.visible = P === 'hung'; s.lad.visible = P === 'climb'; s.rope.visible = P === 'rope';
   u.ropes.forEach(r => { r.visible = P === 'hung'; });
-  const restA = restOf()[P] * DEG;
+  const restA = restOf()[P] * DEG, restS = restShaftOf()[P] * DEG;
   const ph0 = s.i * 0.37;   // (each man a little out of step with the next)
   if (P === 'stand') {
     // at ease, his weight on one leg: the free hip dropped and that knee
@@ -504,6 +521,7 @@ function poseMan(s, t) {
     u.hips.position.y = BODY_HIPS - 1.8; u.hips.rotation.z = tilt;
     u.arms.l.sh.rotation.set(0.06, 0, 0.1 - tilt); u.arms.r.sh.rotation.set(0.1, 0, -0.12 - tilt);
     u.arms.l.el.rotation.x = 0.28; u.arms.r.el.rotation.x = 0.35;
+    standHands(u, tilt);
     u.legs.l.hip.rotation.set(0.24, 0, 0.05 - tilt); u.legs.l.kn.rotation.x = KNEE_BACK * 0.45; u.legs.l.foot.rotation.x = -0.28;
     u.legs.r.hip.rotation.set(-0.03, 0, -0.03 - tilt);
     posture(u, true);
@@ -611,8 +629,13 @@ function poseMan(s, t) {
   if (u.pouch) {
     const valley = P === 'hung' && state.hungMode === 'valley';
     if (valley) { stillFlesh(u); u.pouch.rotation.set(0.14, 0, PI); u.pouch.position.set(0, -13.0, -11.0); }
-    else if (!state.physics) { stillFlesh(u); const lift = u.lift || 0; if (P !== 'walk') u.pouch.rotation.x = restA + lift; else u.pouch.rotation.x += restA + lift; }
-    else if (s.sim) s.sim.rest = restA;
+    else if (!state.physics) {
+      stillFlesh(u); const lift = u.lift || 0; if (P !== 'walk') u.pouch.rotation.x = restA + lift; else u.pouch.rotation.x += restA + lift;
+      // (the pouch held at its own angle, turned about its root off the lobes')
+      const d = u.pouch.children[0] && u.pouch.children[0].userData;
+      if (restS !== restA && d && d.bendShaft) d.bendShaft(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), restS - restA));
+    }
+    else if (s.sim) { s.sim.rest = restA; s.sim.restShaft = restS; }
   }
   updateSleeves(man);
 }
@@ -667,7 +690,7 @@ function pose(dt, fresh) {
     if (state.pose === 'seat') { s.seat.updateMatrixWorld(true); s.sim.boxes.push(new THREE.Box3().setFromObject(s.seat)); }
     if (s.sim.step(fresh ? 0 : dt)) awake = 0.6;
     if (s.raw) {
-      const r = s.raw.sim; r.rest = s.sim.rest; r.floor = s.sim.floor; r.boxes = s.sim.boxes;
+      const r = s.raw.sim; r.rest = s.sim.rest; r.restShaft = s.sim.restShaft; r.floor = s.sim.floor; r.boxes = s.sim.boxes;
       if (fresh) r.reset();
       if (r.step(fresh ? 0 : dt)) awake = Math.max(awake, 0.6);
     }
@@ -807,11 +830,17 @@ const ui = {
     const add = html => { const d = document.createElement('div'); d.innerHTML = html; while (d.firstChild) box.appendChild(d.firstChild); };
     if (ANIMATED[p]) add(`<button type="button" class="chip" id="pause">${state.paused ? '▶ Play' : '❚❚ Pause'}</button>`);
     add(`<button type="button" class="chip ${state.physics ? 'on' : ''}" id="phys">Physics ${state.physics ? 'on' : 'off'}</button>`);
+    if (p === 'stand') add(`<button type="button" class="chip" id="handsB" title="Where his hands go standing: behind his back (out of a close-up's way), folded across his chest, or at his sides">Hands: ${{ behind: 'behind', folded: 'folded', sides: 'at sides' }[state.hands]}</button>`);
     add(`<button type="button" class="chip ${state.clothPush ? 'on' : ''}" id="clothPush" title="The garment pushes back on the anatomy: compression and adhesion, by the fabric's cling">Cloth push ${state.clothPush ? 'on' : 'off'}</button>`);
     add(`<button type="button" class="chip ${state.compareRaw ? 'on' : ''}" id="rawCmp" title="The same anatomy in no garment, simulated beside his own, as a pink ghost">Compare raw</button>`);
     if (p === 'hung') add(`<span class="seg"><button type="button" data-hm="physics" class="${state.hungMode === 'physics' ? 'on' : ''}">Falls</button><button type="button" data-hm="valley" class="${state.hungMode === 'valley' ? 'on' : ''}">Valley flip</button></span>`);
     const live = !(p === 'hung' && state.hungMode === 'valley'), R = restOf();
-    if (live) add(`<label>${state.physics ? 'Rest bias' : 'Rest angle'} <input type="range" id="restA" min="0" max="180" step="1" value="${R[p]}"><output id="restO">${R[p]}°</output></label>`);
+    if (live) {
+      const nm = state.physics ? 'Rest bias' : 'Rest angle', RS = restShaftOf();
+      add(`<button type="button" class="chip ${state.restLink ? 'on' : ''}" id="restLink" title="Linked: one rest for the lobes and the pouch together. Unlinked: each its own">${state.restLink ? '🔗 Linked' : '⛓ Unlinked'}</button>`);
+      add(`<label>${nm}${state.restLink ? '' : ' · lobes'} <input type="range" id="restA" min="0" max="180" step="1" value="${R[p]}"><output id="restO">${R[p]}°</output></label>`);
+      if (!state.restLink) add(`<label>${nm} · pouch <input type="range" id="restS" min="0" max="180" step="1" value="${RS[p]}"><output id="restSO">${RS[p]}°</output></label>`);
+    }
     // (a snug fabric: the cloth's hydrostatic state over the fork)
     if (active().some(s => s.man && s.man.userData.cloth && s.man.userData.cloth.covers)) add(`<label>Firm <input type="range" id="firmA" min="0" max="1" step="0.01" value="${state.firm}"><output id="firmO">${state.firm.toFixed(2)}</output></label>`);
     add(`<span class="lbl" id="hold" style="text-transform:none;letter-spacing:0;flex:1 1 100%"></span>`);
@@ -820,10 +849,18 @@ const ui = {
     box.classList.toggle('hidden', !box.children.length);
     const pz = $('#pause'); if (pz) pz.onclick = () => { state.paused = !state.paused; ui.tools(); };
     const ph = $('#phys'); if (ph) ph.onclick = () => { state.physics = !state.physics; ui.tools(); pose(0, true); };
+    const hb = $('#handsB'); if (hb) hb.onclick = () => { const o = ['behind', 'folded', 'sides']; state.hands = o[(o.indexOf(state.hands) + 1) % o.length]; ui.tools(); pose(0); };
     const cp = $('#clothPush'); if (cp) cp.onclick = () => setClothPush(!state.clothPush);
     const rc = $('#rawCmp'); if (rc) rc.onclick = () => setCompareRaw(!state.compareRaw);
     box.querySelectorAll('[data-hm]').forEach(b => { b.onclick = () => { state.hungMode = b.dataset.hm; ui.tools(); pose(0, true); }; });
     const ra = $('#restA'); if (ra) ra.oninput = () => { restOf()[p] = +ra.value; $('#restO').textContent = ra.value + '°'; awake = 1; pose(0); };
+    const rs = $('#restS'); if (rs) rs.oninput = () => { restShaftOf()[p] = +rs.value; $('#restSO').textContent = rs.value + '°'; awake = 1; pose(0); };
+    // (unlinking starts the pouch where the lobes are, in every pose)
+    const rl = $('#restLink'); if (rl) rl.onclick = () => {
+      state.restLink = !state.restLink;
+      if (!state.restLink) { Object.assign(state.restShaft, state.rest); Object.assign(state.restShaftFixed, state.restFixed); }
+      ui.tools(); awake = 1; pose(0);
+    };
     const fa = $('#firmA'); if (fa) fa.oninput = () => { state.firm = +fa.value; $('#firmO').textContent = state.firm.toFixed(2); active().forEach(s => { const c = s.man && s.man.userData.cloth; if (c && c.setState) c.setState(state.firm); }); dirty = true; };
   }
 };
@@ -1007,6 +1044,8 @@ initDevOverlay(figures, {
     state.firm = Math.round(Math.min(1, Math.max(0, 0.4 + 0.15 * t())) * 100) / 100;
     active().forEach(s => { const c = s.man && s.man.userData.cloth; if (c && c.setState) c.setState(state.firm); });
     const R = restOf(), p = state.pose; R[p] = Math.round(Math.min(180, Math.abs((state.physics ? REST : REST_FIXED)[p] + 8 * t())));
+    // (unlinked: the pouch's own about the lobes', a little apart)
+    if (!state.restLink) restShaftOf()[p] = Math.round(Math.min(180, Math.abs(R[p] + 6 * t())));
     ui.tools(); awake = 1; pose(0, true);
   }
 });
