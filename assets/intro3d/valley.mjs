@@ -78,6 +78,7 @@ import * as THREE from '../vendor/three/three.module.js';
 import { CSS3DRenderer, CSS3DObject } from '../vendor/three/three.addons.js';
 import { tableKit as K } from './table.mjs';
 import { engravingMaterial, outlineOf, burinTick, BONE, INK, BLOOD, BLOOD_WET } from './burin.mjs';
+import { UC_MODE } from './universal-cloth-material.mjs';
 import { buildFigure, buildDeath, buildSkull, BODY_HIPS, GRIP, hold, reach, setArm, lerp3, setHalo, skinRigid } from './figure.mjs';
 // dev overlay for live anatomy tuning (loaded dynamically, only on ?lab)
 const devOverlayP = (new URLSearchParams(window.location.search)).has('lab')
@@ -2103,7 +2104,7 @@ export async function prepareTable(opts) {
       if (now - perfScanAt > 3000) { perfScanAt = now; perfPlates = perfScan(); }
       const s = perfWin.slice().sort((x, y) => x - y), med = s[s.length >> 1] * 1000, avg = perfWin.reduce((a, b) => a + b, 0) / perfWin.length;
       const r = world.renderer, inf = r.info.render, dpr = r.getPixelRatio(), el = r.domElement;
-      perfEl.textContent = `valley seat  t${tNow.toFixed(0)}s\n` +
+      perfEl.textContent = `valley seat  t${tNow.toFixed(0)}s  ${(window.APP_BUILD_ID || '')}  uc:${UC_MODE}\n` +
         `median ${med.toFixed(1)}ms  ${(1 / avg).toFixed(0)}fps  worst ${(s[s.length - 1] * 1000).toFixed(0)}ms  >50ms: ${perfWin.filter(x => x > 0.05).length}/${perfWin.length}\n` +
         `frame: ${inf.calls} calls  ${Math.round(inf.triangles / 1000)}k tris  programs ${r.info.programs.length}\n` +
         `buffer ${el.width}x${el.height} @${dpr.toFixed(2)}x\n` + perfPlates;

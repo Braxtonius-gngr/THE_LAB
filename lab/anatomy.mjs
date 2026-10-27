@@ -31,6 +31,7 @@ import { valleyKit, KEY_SEAT } from '../assets/intro3d/valley.mjs';
 import { buildFigure, BODY_HIPS, getAnatomy, updateSleeves, FACE_VARIANTS } from '../assets/intro3d/figure.mjs';
 import { FleshSim } from '../assets/intro3d/flesh.mjs';
 import { burinTick, engravingMaterial, paperMaterial, BONE } from '../assets/intro3d/burin.mjs';
+import { UC_MODE } from '../assets/intro3d/universal-cloth-material.mjs';
 import { initDevOverlay } from '../assets/intro3d/dev-overlay.mjs';
 
 const PI = Math.PI, DEG = PI / 180;
@@ -740,6 +741,8 @@ function open() {
   if (window.ResizeObserver) { const ro = new ResizeObserver(() => { aimIntoBand(); dirty = true; }); ro.observe($('#dock')); }
   requestAnimationFrame(loop);
 }
+// (the build and the cloth's mode, so a phone's screenshot says which it was)
+fetch('../sw.js', { cache: 'no-cache' }).then(r => r.text()).then(t => { const m = /CACHE_NAME = '([^']+)'/.exec(t); const el = document.getElementById('stamp'); if (el) el.textContent = `· ${m ? m[1] : '?'} · uc:${UC_MODE}`; }).catch(() => {});
 initDevOverlay(figures, {
   top: 'calc(max(10px, env(safe-area-inset-top)) + 46px)',
   compact: true,

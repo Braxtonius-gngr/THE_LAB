@@ -253,6 +253,9 @@ try { UC_PROBE = new URLSearchParams(window.location.search).get('uc') || ''; } 
 // scale. ?uc=norm asks for it anyway, to test a phone that can.)
 let UC_MOBILE = false;
 try { UC_MOBILE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent); } catch (e) { /* no navigator */ }
+// what the cloth is doing on this device, for a readout: off, nonorm (the
+// mesh's own normal - every phone, or asked for) or norm (the tilt)
+export const UC_MODE = UC_PROBE === 'off' ? 'off' : (UC_PROBE === 'nonorm' || (UC_MOBILE && UC_PROBE !== 'norm')) ? 'nonorm' : 'norm';
 function patch(mat, uniforms, normals, uvName, maskName) {
   if (UC_PROBE === 'off') return mat;
   if (UC_PROBE === 'nonorm' || (UC_MOBILE && UC_PROBE !== 'norm')) normals = false;
