@@ -22,6 +22,7 @@ import * as THREE from '../assets/vendor/three/three.module.js';
 import { GLTFLoader } from '../assets/vendor/three/three.addons.js';
 import { valleyKit, KEY_SEAT } from '../assets/intro3d/valley.mjs';
 import { buildFigure, BODY_HIPS } from '../assets/intro3d/figure.mjs';
+import { FleshSim } from '../assets/intro3d/flesh.mjs';
 import { burinTick, engravingMaterial, paperMaterial, outlineOf } from '../assets/intro3d/burin.mjs';
 import { initDevOverlay } from '../assets/intro3d/dev-overlay.mjs';
 
@@ -66,11 +67,35 @@ function mkSlot(x, opts) {
   return { g, man, u: man.userData, seat };
 }
 // (the camera looks down +z, so screen-left is +x: the procedural man on the left)
-const ref = mkSlot(50, { under: 'boxerBriefs' });
+const ref = mkSlot(50, { nude: true });
 const rod = mkSlot(-50, { nude: true });
 const ALL = [ref, rod];
 // the Rodin slot's own meshes are not drawn - only its bones are used
-rod.man.traverse(o => { if (o.isMesh) o.visible = false; });
+rod.man.traverse(o => { if (o.isMesh && !inPouch(o, rod.u.pouch)) o.visible = false; });
+
+// the anatomy as the lab draws it with nothing on: see-through shapes, the
+// mass orange and the lobes blue (left) and red (right), moving as the
+// simulation moves them - a readout of the physics, not a body
+const proxyMat = (c, e) => new THREE.MeshStandardMaterial({ color: c, emissive: e, transparent: true, opacity: 0.5, depthWrite: false, roughness: 0.6 });
+const wireMat = c => new THREE.MeshBasicMaterial({ color: c, wireframe: true, transparent: true, opacity: 0.55 });
+const PROXY = { orange: proxyMat(0xff7a1a, 0x5a2200), L: proxyMat(0x2f7bff, 0x0a2260), R: proxyMat(0xff2f2f, 0x5a0808) };
+const PROXY_WIRE = { orange: wireMat(0xffb070), L: wireMat(0x8fb8ff), R: wireMat(0xff9a9a) };
+function inPouch(o, P) { for (let c = o; c; c = c.parent) if (c === P) return true; return false; }
+function proxify(man) {
+  const P = man.userData.pouch; if (!P) return;
+  P.traverse(o => {
+    if (!o.isMesh || o.userData.wire === true) return;
+    if (o.userData.outline) { o.visible = false; return; }
+    const part = o.userData.side || 'orange';
+    o.material = PROXY[part]; o.visible = true;
+    if (!o.userData.wire) { const w = new THREE.Mesh(o.geometry, PROXY_WIRE[part]); w.userData.wire = true; o.userData.wire = w; o.add(w); }
+  });
+  man.userData.pouch0 = P.position.clone();
+}
+proxify(ref.man); proxify(rod.man);
+// (the lab's rest angles, forward off the vertical: sitting carries it 40°)
+const REST = { stand: 0, walk: 0, jog: 0, crouch: 0, reach: 0, seat: 40 };
+ALL.forEach(sl => { sl.sim = new FleshSim(sl.man); });
 
 // ---------- the mesh to the rig ----------
 const _v = new THREE.Vector3();
@@ -129,7 +154,7 @@ function geodesicLabels(mesh, seedOf) {
       if (nd < dist[w]) { dist[w] = nd; lab[w] = lab[v]; heap.push(nd, w); }
     }
   }
-  return lab;
+  return { lab, dist };
 }
 function segDist(p, a, b) {
   const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], ap = [p[0] - a[0], p[1] - a[1], p[2] - a[2]];
@@ -137,6 +162,41 @@ function segDist(p, a, b) {
   return Math.hypot(ap[0] - t * ab[0], ap[1] - t * ab[1], ap[2] - t * ab[2]);
 }
 const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+
+// The mesh was made in a pair of shorts, and the front of its pelvis keeps
+// their shape: a bump at the fork. The lab's anatomy is its own object, drawn
+// and simulated from the hips, so the body under it wants the plain surface
+// a body has there - the belly's line carried down to the thighs'. Each point
+// in the bump is drawn back to that surface, eased out at the bump's edge.
+// (File frame, metres: +z the front. The bump spans |x| < 0.075, y 0.82-0.94.)
+const FLAT = { x: 0.075, y0: 0.80, y1: 0.945, zc: [[0.95, 0.083], [0.88, 0.076], [0.82, 0.068], [0.72, 0.050]], k: 4 };
+function flatZ(y) {
+  const c = FLAT.zc;
+  if (y >= c[0][0]) return c[0][1];
+  for (let i = 0; i < c.length - 1; i++) if (y >= c[i + 1][0]) { const t = (y - c[i + 1][0]) / (c[i][0] - c[i + 1][0]); return c[i + 1][1] + t * (c[i][1] - c[i + 1][1]); }
+  return c[c.length - 1][1];
+}
+function flattenPelvis(P) {
+  for (let i = 0; i < P.length / 3; i++) {
+    const x = Math.abs(P[3 * i]), y = P[3 * i + 1], z = P[3 * i + 2];
+    if (z < 0.02 || x > FLAT.x * 1.25 || y < FLAT.y0 - 0.03 || y > FLAT.y1 + 0.03) continue;
+    const mx = 1 - smooth01((x - FLAT.x * 0.7) / (FLAT.x * 0.55)), my = smooth01((y - (FLAT.y0 - 0.03)) / 0.03) * (1 - smooth01((y - FLAT.y1) / 0.03));
+    const zt = flatZ(y) - FLAT.k * x * x, over = z - zt;
+    if (over > 0) P[3 * i + 2] = z - over * mx * my;
+  }
+}
+// what the anatomy's simulation wants of this body: the thigh's round, and how
+// far the trunk's front stands from the hips' axis (cm), as figure.mjs keeps
+// them for its own (`colliders`)
+function measureBody(P, SH) {
+  const n = P.length / 3; let thMax = -1, thMin = 1, belly = -1;
+  for (let i = 0; i < n; i++) {
+    const x = P[3 * i], y = P[3 * i + 1], z = P[3 * i + 2];
+    if (y > 0.70 && y < 0.78 && x > 0.02 && x < 0.22) { thMax = Math.max(thMax, x); thMin = Math.min(thMin, x); }
+    if (y > 1.00 && y < 1.08 && Math.abs(x) < 0.04) belly = Math.max(belly, z);
+  }
+  return { thighR: (thMax - thMin) / 2 * SH, bellyR: belly * SH };
+}
 
 function fitBody(srcGeo, slot) {
   const u = slot.u, rig = u.rig, bi = rig.index;
@@ -160,11 +220,14 @@ function fitBody(srcGeo, slot) {
   const toLab = (x, y, z) => [-x * SH, warpY(y), -z * SH];   // (turned to face -z; + x is the man's left)
 
   const mesh = weldMesh(srcGeo), N = mesh.n, P = mesh.pos;
+  if (state.flat) flattenPelvis(P);
+  const meas = measureBody(P, SH);
   // seeds, by the file's own frame; the man's left is the file's - x side
   const arm = { c: [LM.S, LM.E, LM.W, LM.H] }, A1 = lerp3(LM.S, LM.E, 0.35);
   const seedOf = i => {
     const x = P[3 * i], y = P[3 * i + 1], z = P[3 * i + 2], ax = Math.abs(x), left = x < 0;
     if (y > LM.head) return 1;
+    if (ax > 0.26 && y > 0.55 && y < 1.0) return left ? 2 : 3;   // (the hand: it rests against the thigh, so the surface alone would give its fingers to the leg)
     if (ax > 0.15) {
       const q = [ax, y, z], d = Math.min(segDist(q, A1, LM.E), segDist(q, LM.E, LM.W), segDist(q, LM.W, LM.H));
       if (d < 0.035) return left ? 2 : 3;
@@ -173,7 +236,26 @@ function fitBody(srcGeo, slot) {
     if (ax > LM.leg.x && y > LM.leg.y0 && y < LM.leg.y1) return left ? 4 : 5;
     return -1;
   };
-  const lab = geodesicLabels(mesh, seedOf);
+  const lab = geodesicLabels(mesh, seedOf).lab;
+  // the shoulder is graded, not cut: how much a point belongs to the arm
+  // rather than the trunk is a smooth step on how much nearer the arm's
+  // seed is along the surface than the trunk's (a cut at the Voronoi seam
+  // tears the deltoid, since the arm is laid down and the trunk is not)
+  const dT = geodesicLabels(mesh, i => (seedOf(i) === 0 || seedOf(i) === 1 ? 0 : -1)).dist;
+  const dA = { L: geodesicLabels(mesh, i => (seedOf(i) === 2 ? 0 : -1)).dist, R: geodesicLabels(mesh, i => (seedOf(i) === 3 ? 0 : -1)).dist };
+  // (the hip likewise: a thigh's share of a point is a smooth step on how much
+  // nearer the thigh's seed is than the trunk's, whichever thigh is nearer)
+  const dLeg = { L: geodesicLabels(mesh, i => (seedOf(i) === 4 ? 0 : -1)).dist, R: geodesicLabels(mesh, i => (seedOf(i) === 5 ? 0 : -1)).dist };
+  const HIP_BLEND = 0.12;
+  const legShare = i => {
+    const K = dLeg.L[i] <= dLeg.R[i] ? 'L' : 'R';
+    return { K, t: smooth01(0.5 + (dT[i] - dLeg[K][i]) / (2 * HIP_BLEND)) };
+  };
+  const SHOULDER_BLEND = 0.2;
+  const armShare = i => {
+    const K = P[3 * i] < 0 ? 'L' : 'R';
+    return smooth01(0.5 + (dT[i] - dA[K][i]) / (2 * SHOULDER_BLEND));
+  };
   // (the bone of each point, by its region)
   const own = new Int32Array(N), at = new Float32Array(N * 3);
   const sideOf = i => (P[3 * i] < 0 ? 'L' : 'R');
@@ -210,10 +292,8 @@ function fitBody(srcGeo, slot) {
     { a: bi.hips, b: bi.neck, P: J.neck, R0: 0, R: 6 }
   ];
   ['L', 'R'].forEach(K => {
-    Jb.push({ a: bi.hips, b: bi['sh' + K], P: new THREE.Vector3(...armFit[K].Sa), R0: 0, R: 10 });
-    Jb.push({ a: bi['sh' + K], b: bi['el' + K], P: new THREE.Vector3(...armFit[K].Ea), R0: 4.4, R: 8 });
-    Jb.push({ a: bi.hips, b: bi['leg' + K], P: J['leg' + K], R0: 0, R: 13.5 });
-    Jb.push({ a: bi['leg' + K], b: bi['knee' + K], P: J['knee' + K], R0: 5.7, R: 10 });
+    Jb.push({ a: bi['sh' + K], b: bi['el' + K], P: new THREE.Vector3(...armFit[K].Ea), R0: 4.4, R: 8, axial: true });
+    Jb.push({ a: bi['leg' + K], b: bi['knee' + K], P: J['knee' + K], R0: 5.7, R: 10, axial: true });
   });
   const nb = BONES.length, W4i = new Uint16Array(N * 4), W4w = new Float32Array(N * 4), rest = new Float32Array(N * 3), col = new Float32Array(N * 3);
   const HUE = BONES.map((_, i) => new THREE.Color().setHSL(i / nb, 0.75, 0.5));
@@ -222,9 +302,23 @@ function fitBody(srcGeo, slot) {
   for (let i = 0; i < N; i++) {
     const X = at[3 * i], Y = at[3 * i + 1], Z = at[3 * i + 2], o = own[i];
     w.fill(0); w[o] = 1; counts[o]++;
+    if (lab[i] !== 4 && lab[i] !== 5) {
+      const K = P[3 * i] < 0 ? 'L' : 'R', t = armShare(i);
+      if (t > 0) {
+        const q = [Math.abs(P[3 * i]) - LM.E[0], P[3 * i + 1] - LM.E[1], P[3 * i + 2] - LM.E[2]];
+        const arm = (q[0] * dirSE[0] + q[1] * dirSE[1] + q[2] * dirSE[2]) > 0 ? bi['el' + K] : bi['sh' + K];
+        const trunk = (o === bi.neck || o === bi.hips) ? o : bi.hips;
+        w.fill(0); w[trunk] = 1 - t; w[arm] += t;
+      }
+    }
+    if (lab[i] === 0 || lab[i] === 4 || lab[i] === 5) {
+      const { K, t } = legShare(i), leg = P[3 * i + 1] < LM.knee ? bi['knee' + K] : bi['leg' + K];
+      if (lab[i] !== 0) { w.fill(0); w[bi.hips] = 1; }
+      const h = w[bi.hips]; w[bi.hips] = h * (1 - t); w[leg] += h * t;
+    }
     for (const j of Jb) {
       if (j.a !== o && j.b !== o) continue;
-      const other = j.a === o ? j.b : j.a, d = Math.hypot(X - j.P.x, Y - j.P.y, Z - j.P.z), share = 0.5 * smooth01((j.R - d) / (j.R - j.R0));
+      const other = j.a === o ? j.b : j.a, d = j.axial ? Math.abs(Y - j.P.y) : Math.hypot(X - j.P.x, Y - j.P.y, Z - j.P.z), share = 0.5 * smooth01((j.R - d) / (j.R - j.R0));
       w[o] -= share; w[other] += share;
     }
     // (the four heaviest, made one)
@@ -251,7 +345,7 @@ function fitBody(srcGeo, slot) {
   geo.setAttribute('aAlong', new THREE.BufferAttribute(Float32Array.from({ length: N * 3 }, (_, k) => (k % 3 === 1 ? 1 : 0)), 3));
   geo.setIndex(new THREE.BufferAttribute(mesh.idx, 1));
   geo.computeVertexNormals();
-  return { geo, counts, SH, top, tris: mesh.idx.length / 3 };
+  return { geo, counts, SH, top, tris: mesh.idx.length / 3, meas };
 }
 
 const MATS = {
@@ -267,7 +361,12 @@ function mountBody(srcGeo) {
   rod.man.updateMatrixWorld(true);
   mesh.bind(new THREE.Skeleton(rod.u.rig.skeleton.bones.slice()));
   outlineOf(mesh, 1.6);
-  body = mesh; info = { verts: fit.geo.attributes.position.count, tris: fit.tris, perBone: Object.fromEntries(BONES.map((b, i) => [b, fit.counts[i]])), height: fit.top };
+  // (the anatomy rooted on this body's skin at the fork's front, as figure.mjs
+  // roots it on its own: the surface's depth there, less a hair)
+  const root = rod.u.pouch; root.position.z = -(state.flat ? flatZ(0.81) : fit.meas.bellyR / fit.SH) * fit.SH - 0.3; rod.u.pouch0 = root.position.clone();
+  rod.sim.reset();
+  rod.u.colliders = Object.assign({}, rod.u.colliders, { thighR: fit.meas.thighR, bellyR: fit.meas.bellyR });
+  body = mesh; info = { meas: fit.meas, flat: state.flat,  verts: fit.geo.attributes.position.count, tris: fit.tris, perBone: Object.fromEntries(BONES.map((b, i) => [b, fit.counts[i]])), height: fit.top };
   setLook(state.look);
 }
 
@@ -275,6 +374,7 @@ function mountBody(srcGeo) {
 const clamp01 = x => Math.max(0, Math.min(1, x));
 function rest(u) {
   u.hips.position.y = BODY_HIPS; u.hips.rotation.set(0, 0, 0); u.neck.rotation.set(0, 0, 0); u.head.rotation.set(0, 0, 0);
+  if (u.pouch) { u.pouch.position.copy(u.pouch0); u.pouch.rotation.set(0, 0, 0); }
   ['l', 'r'].forEach(s => {
     u.arms[s].sh.rotation.set(0, 0, 0); u.arms[s].el.rotation.set(0, 0, 0); u.arms[s].hand.rotation.set(0, 0, 0);
     u.legs[s].hip.rotation.set(0, 0, 0); u.legs[s].kn.rotation.set(0, 0, 0); u.legs[s].foot.rotation.set(0, 0, 0);
@@ -328,7 +428,7 @@ function poseOne(slot, P, t) {
 const ANIMATED = { walk: 1, jog: 1 };
 
 // ---------- view ----------
-const state = { pose: 'stand', look: 'ink', paused: false, t: 0 };
+const state = { pose: 'stand', look: 'ink', paused: false, t: 0, flat: !/[?&]flat=0/.test(location.search) };
 const view = { yaw: 0, pitch: 0.08, zoom: 1, target: new THREE.Vector3(0, 90, 0) };
 let dirty = true;
 function distFor() { const a = camera.aspect; return Math.max(300, 100 / (Math.tan(18 * PI / 180) * a)) * view.zoom; }
@@ -352,7 +452,7 @@ function setLook(l) {
 function setPose(p) {
   state.pose = p; state.t = 0;
   document.querySelectorAll('[data-pose]').forEach(b => b.classList.toggle('on', b.dataset.pose === p));
-  applyPose(); dirty = true;
+  applyPose(); stepFlesh(0, true); for (let k = 0; k < 90; k++) stepFlesh(1 / 60, false); dirty = true;
 }
 function setYaw(deg) {
   view.yaw = deg * PI / 180;
@@ -360,6 +460,19 @@ function setYaw(deg) {
   dirty = true;
 }
 function applyPose() { ALL.forEach(s => poseOne(s, state.pose, state.t)); scene.updateMatrixWorld(true); }
+// the anatomy's physics, as the lab steps it: the rest angle of the pose, the
+// seat to rest on, and a settle under gravity when a pose is newly taken
+let settle = false;
+function stepFlesh(dt, fresh) {
+  ALL.forEach(sl => {
+    const sim = sl.sim; if (!sim) return;
+    sim.rest = REST[state.pose] * PI / 180; sim.restShaft = null;
+    sim.boxes.length = 0;
+    if (state.pose === 'seat') { sl.seat.updateMatrixWorld(true); sim.boxes.push(new THREE.Box3().setFromObject(sl.seat)); }
+    if (fresh) sim.reset();
+    if (sim.step(fresh ? 0 : dt)) dirty = true;
+  });
+}
 
 // drag to turn, wheel and pinch to zoom
 {
@@ -389,6 +502,7 @@ let last = performance.now();
 function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (ANIMATED[state.pose] && !state.paused) { state.t += dt; applyPose(); dirty = true; }
+  stepFlesh(dt, false);
   if (dirty) {
     placeCamera();
     burinTick(scene, camera, renderer, 0, labKey.copy(KEY_SEAT).applyAxisAngle(UP, view.yaw));
@@ -406,7 +520,7 @@ function open() {
   new GLTFLoader().load(BODY_URL, gltf => {
     let geo = null; gltf.scene.traverse(o => { if (!geo && o.isMesh) geo = o.geometry; });
     if (!geo) { console.error('rodin: no mesh in', BODY_URL); return; }
-    mountBody(geo); applyPose(); dirty = true;
+    mountBody(geo); setPose(state.pose);
   }, undefined, err => console.error('rodin: could not load', BODY_URL, err));
   requestAnimationFrame(loop);
 }
