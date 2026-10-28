@@ -90,7 +90,7 @@ function proxify(man) {
     o.material = PROXY[part]; o.visible = true;
     if (!o.userData.wire) { const w = new THREE.Mesh(o.geometry, PROXY_WIRE[part]); w.userData.wire = true; o.userData.wire = w; o.add(w); }
   });
-  man.userData.pouch0 = P.position.clone();
+  if (!man.userData.pouch0) man.userData.pouch0 = P.position.clone();
 }
 proxify(ref.man); proxify(rod.man);
 // (the lab's rest angles, forward off the vertical: sitting carries it 40°)
@@ -524,5 +524,17 @@ function open() {
   }, undefined, err => console.error('rodin: could not load', BODY_URL, err));
   requestAnimationFrame(loop);
 }
-initDevOverlay([], { onAuthed(api) { try { api.clear(); } catch (e) { /* no panel */ } open(); } });
+// the lab's own panel: its sliders act on both men's anatomy and its physics
+// (the trunk's and limbs' lofts it also carries are the procedural man's
+// alone - the Rodin body's shape is its mesh's)
+initDevOverlay([ref.man, rod.man], {
+  top: 'calc(max(10px, env(safe-area-inset-top)) + 46px)',
+  compact: true, dock: 'right',
+  ink: { root: scene, dock: 'left' },
+  onAuthed(api) { open(); if (api.ink) setTimeout(() => api.ink.rescan(), 1500); },
+  onFold() { dirty = true; },
+  // (a slider moved: the overlay rebuilt each man's anatomy in place - paint
+  // the new pieces as the proxy, and let the physics settle into the pose)
+  onChange() { ALL.forEach(sl => proxify(sl.man)); setPose(state.pose); }
+});
 window.__rodin = { state, setPose, setLook, setYaw, redraw: () => { dirty = true; }, info: () => info, scene, camera, view, applyPose, ref, rod, step: dt => { state.t += dt; applyPose(); dirty = true; } };
