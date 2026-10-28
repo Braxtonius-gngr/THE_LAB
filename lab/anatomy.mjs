@@ -935,6 +935,22 @@ $('#next').addEventListener('click', () => goTo(state.frame === 'all' ? 'full' :
 document.querySelectorAll('[data-paint]').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('[data-paint]').forEach(x => x.classList.toggle('on', x === b)); setPaint(b.dataset.paint);
 }));
+// Cut or uncut: the anatomy panel's Hood slider (0 is cut), set from a chip -
+// Uncut back to the last uncut value it held (55 at first, Randomize's mean);
+// the slider moved by hand moves the chips with it
+{
+  const hoodSlider = () => document.querySelector('.dev-anatomy-panel input[data-key="hood"]');
+  let lastUncut = 55;
+  const syncHood = () => { const sl = hoodSlider(), v = sl ? +sl.value : getAnatomy().hood || 0; if (v > 0) lastUncut = v; document.querySelectorAll('[data-hood]').forEach(x => x.classList.toggle('on', (x.dataset.hood === 'cut') === !(v > 0))); };
+  document.querySelectorAll('[data-hood]').forEach(b => b.addEventListener('click', () => {
+    const sl = hoodSlider(); if (!sl) return;
+    sl.value = b.dataset.hood === 'cut' ? 0 : lastUncut;
+    sl.dispatchEvent(new Event('input', { bubbles: true })); sl.dispatchEvent(new Event('change', { bubbles: true }));
+    syncHood();
+  }));
+  document.addEventListener('input', e => { if (e.target && e.target.dataset && e.target.dataset.key === 'hood') syncHood(); });
+  setTimeout(syncHood, 1500);
+}
 // the line's face variants: each his own, or one for all
 {
   const row = $('#shapeRow');
