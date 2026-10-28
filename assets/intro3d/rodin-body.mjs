@@ -296,6 +296,39 @@ function fitBody(srcGeo, man, opts = {}) {
   return { geo, counts, SH, top, tris: mesh.idx.length / 3, meas };
 }
 
+// The anatomy's root is made to sit in the procedural body's pelvis: its top
+// buried under the pubic mound and the fork closed round it. The Rodin mesh's
+// pelvis is shaped otherwise (flatter above, the fork open and higher), so the
+// root showed through as a block. Where the procedural skin (the man's own,
+// hidden) stands in front of the Rodin skin round the root, the Rodin skin is
+// brought out to it, eased off at the edges - the same mound and fork the
+// anatomy was made for - and the anatomy keeps the man's own rooting.
+function moundFromProcedural(man, geo) {
+  const u = man.userData; let skin = null;
+  man.traverse(o => { if (!skin && o.isSkinnedMesh && o.userData.skin) skin = o; });
+  if (!skin || !u.pouch) return false;
+  man.updateMatrixWorld(true);
+  const root = man.worldToLocal(u.pouch.getWorldPosition(new THREE.Vector3()));
+  const pa = geo.attributes.position, ray = new THREE.Raycaster(), o = new THREE.Vector3(), d = new THREE.Vector3(0, 0, 1);
+  const smooth = t => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
+  const Y0 = root.y - 7, Y1 = root.y + 13, XW = 6.5, REACH = 5;
+  let moved = 0;
+  for (let i = 0; i < pa.count; i++) {
+    const X = pa.getX(i), Y = pa.getY(i), Z = pa.getZ(i);
+    if (Math.abs(X) > XW || Y < Y0 || Y > Y1 || Z > 2) continue;
+    const m = (1 - smooth((Math.abs(X) - XW * 0.6) / (XW * 0.4))) * smooth((Y - Y0) / 3) * (1 - smooth((Y - (Y1 - 8)) / 8));
+    if (m <= 0) continue;
+    ray.set(man.localToWorld(o.set(X, Y, -60)), d.set(0, 0, 1).transformDirection(man.matrixWorld));
+    const hit = ray.intersectObject(skin, false)[0]; if (!hit) continue;
+    const zp = man.worldToLocal(hit.point.clone()).z;
+    // (no further than REACH: past it the ray has met his thigh, not his fork)
+    if (zp < Z && Z - zp < REACH * 2) { pa.setZ(i, Z + Math.max(zp - Z, -REACH) * m); moved++; }
+  }
+  if (!moved) return false;
+  pa.needsUpdate = true; geo.computeVertexNormals();
+  return true;
+}
+
 // Put the body on `man` (a figure.mjs man built with `build`, at height 1):
 // his procedural body hidden (his garments and his anatomy kept), the mesh
 // bound to his skeleton, his anatomy rooted on it and his physics' colliders
@@ -304,6 +337,7 @@ export function attachRodin(man, srcGeo, opts = {}) {
   const u = man.userData;
   const inPouch = o => { for (let c = o; c; c = c.parent) if (c === u.pouch) return true; return false; };
   const fit = fitBody(srcGeo, man, opts);
+  const mound = opts.mound !== false && moundFromProcedural(man, fit.geo);
   // (his own body away: every mesh that is neither his clothes nor his anatomy)
   man.traverse(o => { if (o.isMesh && !o.userData.garment && !inPouch(o)) { o.visible = false; o.userData.proxyHidden = true; } });
   const mesh = new THREE.SkinnedMesh(fit.geo, opts.material || u.kitFlesh || new THREE.MeshStandardMaterial({ color: 0xb8a28c }));
@@ -313,7 +347,7 @@ export function attachRodin(man, srcGeo, opts = {}) {
   if (opts.outline !== false) outlineOf(mesh, 1.6);
   // (the anatomy rooted on this body's skin at the fork's front, as figure.mjs
   // roots it on its own: the surface's depth there, less a hair)
-  if (u.pouch) { u.pouch.position.z = -(opts.flat !== false ? flatZ(0.81) : fit.meas.bellyR / fit.SH) * fit.SH - 0.3; u.pouch0 = u.pouch.position.clone(); }
+  if (u.pouch && !mound) { u.pouch.position.z = -(opts.flat !== false ? flatZ(0.81) : fit.meas.bellyR / fit.SH) * fit.SH - 0.3; u.pouch0 = u.pouch.position.clone(); }
   if (u.colliders) u.colliders = Object.assign({}, u.colliders, { thighR: fit.meas.thighR, bellyR: fit.meas.bellyR });
   // (the mesh kept off the enumerable fields: three.js copies userData as JSON)
   u.rodin = { meas: fit.meas, flat: opts.flat !== false, verts: fit.geo.attributes.position.count, tris: fit.tris, perBone: Object.fromEntries(BONES.map((b, i) => [b, fit.counts[i]])), height: fit.top };
