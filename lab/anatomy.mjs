@@ -284,7 +284,7 @@ function build(s) {
   u.ropes = ['l', 'r'].map(k => { const r = new THREE.Mesh(new THREE.TorusGeometry(6.4, 0.9, 6, 12), kit.rope); r.position.y = 2; r.rotation.x = PI / 2; r.visible = false; u.legs[k].foot.add(r); return r; });
   s.g.add(man); s.man = man;
   if (m.rodin) {
-    if (rodinGeo) attachRodin(man, rodinGeo, { material: kit.flesh });
+    if (rodinGeo) attachRodin(man, rodinGeo, { material: kit.flesh, studio: STUDIO.flesh });
     else loadRodinGeometry().then(g => { rodinGeo = g; if (s.man === man) rebuildOne(s); }, e => console.error('lab: the Rodin body could not load', e));
   }
   if (u.cloth && u.cloth.setState) u.cloth.setState(state.firm);

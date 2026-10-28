@@ -170,6 +170,38 @@ function fitBody(srcGeo, man, opts = {}) {
   const mesh = weldMesh(srcGeo), N = mesh.n, P = mesh.pos;
   if (opts.flat !== false) flattenPelvis(P);
   const meas = measureBody(P, SH);
+  // The legs' joints moved onto this body's own: the procedural man's knee
+  // stands some centimetres in front of where this mesh's knee is (its legs
+  // set further back under it), and a knee bent about a pivot off its own
+  // centre slides its shin past its thigh - a rim at the front of the knee.
+  // Each joint is set, across and front to back, to the middle of the mesh's
+  // limb at its height (the hip at the thigh's top, the knee, the ankle);
+  // heights stay the lab's, which the warp has already matched.
+  if (opts.refitLegs !== false) {
+    const mid = (y0, side) => {
+      let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9, n = 0;
+      for (let i = 0; i < N; i++) {
+        const x = P[3 * i], y = P[3 * i + 1], z = P[3 * i + 2];
+        if (Math.abs(y - y0) > 0.008 || x * side < 0.025 || Math.abs(x) > 0.25) continue;
+        x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); n++;
+      }
+      return n ? toLab((x0 + x1) / 2, y0, (z0 + z1) / 2) : null;
+    };
+    const place = (g, c) => {
+      if (!c) return;
+      g.updateMatrixWorld(true);
+      const at = man.worldToLocal(g.getWorldPosition(new THREE.Vector3()));
+      g.position.copy(g.parent.worldToLocal(man.localToWorld(new THREE.Vector3(c[0], at.y, c[2]))));
+      man.updateMatrixWorld(true);
+    };
+    ['l', 'r'].forEach(k => {
+      const side = k === 'l' ? -1 : 1, L = u.legs[k];   // (the man's left is the file's - x)
+      place(L.hip, mid(LM.hip - 0.09, side));
+      place(L.kn, mid(LM.knee, side));
+      if (L.foot) place(L.foot, mid(0.075, side));
+      const K = k.toUpperCase(); J['leg' + K] = W(L.hip); J['knee' + K] = W(L.kn);
+    });
+  }
   // seeds, by the file's own frame; the man's left is the file's - x side
   const arm = { c: [LM.S, LM.E, LM.W, LM.H] }, A1 = lerp3(LM.S, LM.E, 0.35);
   const seedOf = i => {
@@ -226,12 +258,16 @@ function fitBody(srcGeo, man, opts = {}) {
   ['L', 'R'].forEach(K => {
     const sg = K === 'L' ? -1 : 1;
     const Sa = toLab(sg * LM.S[0], LM.S[1], LM.S[2]), Ea = toLab(sg * LM.E[0], LM.E[1], LM.E[2]), Wa = toLab(sg * LM.H[0], LM.H[1], LM.H[2]);
-    const d1 = [Ea[0] - Sa[0], Ea[1] - Sa[1]], d2 = [Wa[0] - Ea[0], Wa[1] - Ea[1]];
-    const lab1 = J['el' + K].clone().sub(J['sh' + K]).length(), lab2 = J['hand' + K].clone().sub(J['el' + K]).length();
+    // (each segment turned in 3D onto the lab's - the mesh's forearm reaches
+    // forward as well as out, and left so it bent the elbow before any pose
+    // did - then stretched along it to the lab's length)
+    const d1 = new THREE.Vector3(Ea[0] - Sa[0], Ea[1] - Sa[1], Ea[2] - Sa[2]), d2 = new THREE.Vector3(Wa[0] - Ea[0], Wa[1] - Ea[1], Wa[2] - Ea[2]);
+    const l1 = J['el' + K].clone().sub(J['sh' + K]), l2 = J['hand' + K].clone().sub(J['el' + K]);
+    const n1 = l1.clone().normalize(), n2 = l2.clone().normalize();
     armFit[K] = {
-      Sa, Ea, Wa, Sl: J['sh' + K], El: J['el' + K],
-      phi1: -PI / 2 - Math.atan2(d1[1], d1[0]), phi2: -PI / 2 - Math.atan2(d2[1], d2[0]),
-      k1: lab1 / Math.hypot(d1[0], d1[1]), k2: lab2 / Math.hypot(d2[0], d2[1])
+      Sa, Ea, Wa, Sl: J['sh' + K], El: J['el' + K], n1, n2,
+      q1: new THREE.Quaternion().setFromUnitVectors(d1.clone().normalize(), n1), q2: new THREE.Quaternion().setFromUnitVectors(d2.clone().normalize(), n2),
+      k1: l1.length() / d1.length(), k2: l2.length() / d2.length()
     };
   });
   // the joint blends: as figure.mjs's skin (a point near a joint is shared
@@ -239,14 +275,18 @@ function fitBody(srcGeo, man, opts = {}) {
   const Jb = [
     { a: bi.hips, b: bi.neck, P: J.neck, R0: 0, R: 6 }
   ];
+  // (the elbow and the knee a short, smooth ramp across the joint's own
+  // plane: figure.mjs's wide half-and-half band, on this mesh's thicker
+  // limbs, bent into a sleeve standing off the joint - the knee's shelf)
   ['L', 'R'].forEach(K => {
-    Jb.push({ a: bi['sh' + K], b: bi['el' + K], P: new THREE.Vector3(...armFit[K].Ea), R0: 4.4, R: 8, axial: true });
-    Jb.push({ a: bi['leg' + K], b: bi['knee' + K], P: J['knee' + K], R0: 5.7, R: 10, axial: true });
+    Jb.push({ a: bi['sh' + K], b: bi['el' + K], P: new THREE.Vector3(...armFit[K].Ea), R0: 0.5, R: 6, axial: true });
+    Jb.push({ a: bi['leg' + K], b: bi['knee' + K], P: J['knee' + K], R0: 0.5, R: 7, axial: true });
   });
   const nb = BONES.length, W4i = new Uint16Array(N * 4), W4w = new Float32Array(N * 4), rest = new Float32Array(N * 3), col = new Float32Array(N * 3);
   const HUE = BONES.map((_, i) => new THREE.Color().setHSL(i / nb, 0.75, 0.5));
   const w = new Float32Array(nb), counts = new Array(nb).fill(0);
-  const rot = (phi, x, y) => [x * Math.cos(phi) - y * Math.sin(phi), x * Math.sin(phi) + y * Math.cos(phi)];
+  const _r = new THREE.Vector3();
+  const lay = (q, n, k, from, to, X, Y, Z) => { _r.set(X - from[0], Y - from[1], Z - from[2]).applyQuaternion(q); _r.addScaledVector(n, _r.dot(n) * (k - 1)); return [to.x + _r.x, to.y + _r.y, to.z + _r.z]; };
   for (let i = 0; i < N; i++) {
     const X = at[3 * i], Y = at[3 * i + 1], Z = at[3 * i + 2], o = own[i];
     w.fill(0); w[o] = 1; counts[o]++;
@@ -278,8 +318,8 @@ function fitBody(srcGeo, man, opts = {}) {
     order.forEach(b => {
       const wt = w[b] / sum; let q = [X, Y, Z];
       const name = BONES[b], K = name.slice(-1);
-      if (name.startsWith('sh')) { const f = armFit[K], r = rot(f.phi1, X - f.Sa[0], Y - f.Sa[1]); q = [f.Sl.x + r[0], f.Sl.y + r[1] * f.k1, f.Sl.z + (Z - f.Sa[2])]; }
-      else if (name.startsWith('el')) { const f = armFit[K], r = rot(f.phi2, X - f.Ea[0], Y - f.Ea[1]); q = [f.El.x + r[0], f.El.y + r[1] * f.k2, f.El.z + (Z - f.Ea[2])]; }
+      if (name.startsWith('sh')) { const f = armFit[K]; q = lay(f.q1, f.n1, f.k1, f.Sa, f.Sl, X, Y, Z); }
+      else if (name.startsWith('el')) { const f = armFit[K]; q = lay(f.q2, f.n2, f.k2, f.Ea, f.El, X, Y, Z); }
       px += wt * q[0]; py += wt * q[1]; pz += wt * q[2];
       cr += wt * HUE[b].r; cg += wt * HUE[b].g; cb += wt * HUE[b].b;
     });
@@ -294,6 +334,77 @@ function fitBody(srcGeo, man, opts = {}) {
   geo.setIndex(new THREE.BufferAttribute(mesh.idx, 1));
   geo.computeVertexNormals();
   return { geo, counts, SH, top, tris: mesh.idx.length / 3, meas };
+}
+
+// Dual-quaternion skinning, for this body's materials only: linear blending
+// (three.js's) averages the bones' matrices, so a joint bent or twisted far -
+// the elbow folded behind the back, the arm turned in at the shoulder, the
+// knee in a crouch - collapses and pinches (the candy wrapper). Blending the
+// bones as rigid motions keeps the volume. A material is patched as a twin
+// (its uniforms shared, so the burin's per-frame values still reach it).
+const DQS_PARS = `
+vec4 dqsQuat(mat3 m) {
+  float t = m[0][0] + m[1][1] + m[2][2]; float s;
+  if (t > 0.0) { s = sqrt(t + 1.0) * 2.0; return vec4((m[1][2] - m[2][1]) / s, (m[2][0] - m[0][2]) / s, (m[0][1] - m[1][0]) / s, 0.25 * s); }
+  if (m[0][0] > m[1][1] && m[0][0] > m[2][2]) { s = sqrt(1.0 + m[0][0] - m[1][1] - m[2][2]) * 2.0; return vec4(0.25 * s, (m[1][0] + m[0][1]) / s, (m[2][0] + m[0][2]) / s, (m[1][2] - m[2][1]) / s); }
+  if (m[1][1] > m[2][2]) { s = sqrt(1.0 + m[1][1] - m[0][0] - m[2][2]) * 2.0; return vec4((m[1][0] + m[0][1]) / s, 0.25 * s, (m[2][1] + m[1][2]) / s, (m[2][0] - m[0][2]) / s); }
+  s = sqrt(1.0 + m[2][2] - m[0][0] - m[1][1]) * 2.0; return vec4((m[2][0] + m[0][2]) / s, (m[2][1] + m[1][2]) / s, 0.25 * s, (m[0][1] - m[1][0]) / s);
+}
+vec4 dqsMul(vec4 a, vec4 b) { return vec4(a.w * b.xyz + b.w * a.xyz + cross(a.xyz, b.xyz), a.w * b.w - dot(a.xyz, b.xyz)); }
+void dqsOf(mat4 M, out vec4 r, out vec4 d) { mat3 R = mat3(M); R[0] = normalize(R[0]); R[1] = normalize(R[1]); R[2] = normalize(R[2]); r = dqsQuat(R); d = 0.5 * dqsMul(vec4(M[3].xyz, 0.0), r); }
+void dqsAdd(mat4 M, float w, vec4 r0, inout vec4 R, inout vec4 D) { vec4 r, d; dqsOf(M, r, d); if (dot(r, r0) < 0.0) { r = -r; d = -d; } R += w * r; D += w * d; }
+vec3 dqsRot(vec4 q, vec3 v) { return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v); }
+`;
+const DQS_BASE = `
+  vec4 dqR = vec4(0.0), dqD = vec4(0.0);
+  { vec4 r0, d0; dqsOf(boneMatX, r0, d0);
+    dqsAdd(boneMatX, skinWeight.x, r0, dqR, dqD); dqsAdd(boneMatY, skinWeight.y, r0, dqR, dqD);
+    dqsAdd(boneMatZ, skinWeight.z, r0, dqR, dqD); dqsAdd(boneMatW, skinWeight.w, r0, dqR, dqD);
+    float L = length(dqR); dqR /= L; dqD /= L; }
+`;
+// (three's own runs first - it leaves its skinMatrix for a shader that reads
+// it, the burin's grain direction - then the normal is made over by the rigid
+// blend from what it was before)
+const DQS_NORMAL_PRE = `
+  vec3 dqN0 = objectNormal;
+  #ifdef USE_TANGENT
+  vec3 dqT0 = objectTangent.xyz;
+  #endif
+`;
+const DQS_NORMAL = `
+  objectNormal = (bindMatrixInverse * vec4(dqsRot(dqR, (bindMatrix * vec4(dqN0, 0.0)).xyz), 0.0)).xyz;
+  #ifdef USE_TANGENT
+  objectTangent.xyz = (bindMatrixInverse * vec4(dqsRot(dqR, (bindMatrix * vec4(dqT0, 0.0)).xyz), 0.0)).xyz;
+  #endif
+`;
+const DQS_POS = `
+  { vec3 p = (bindMatrix * vec4(transformed, 1.0)).xyz;
+    vec3 tr = 2.0 * (dqR.w * dqD.xyz - dqD.w * dqR.xyz + cross(dqR.xyz, dqD.xyz));
+    transformed = (bindMatrixInverse * vec4(dqsRot(dqR, p) + tr, 1.0)).xyz; }
+`;
+function patchDqs(m) {
+  if (m.userData && m.userData.dqs) return m;
+  const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey;
+  m.onBeforeCompile = (sh, r) => {
+    if (prev) prev.call(m, sh, r);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <skinning_pars_vertex>', '#include <skinning_pars_vertex>\n#ifdef USE_SKINNING\n' + DQS_PARS + '\n#endif')
+      .replace('#include <skinbase_vertex>', '#include <skinbase_vertex>\n#ifdef USE_SKINNING\n' + DQS_BASE + '\n#endif')
+      .replace('#include <skinnormal_vertex>', '#ifdef USE_SKINNING\n' + DQS_NORMAL_PRE + '\n#endif\n#include <skinnormal_vertex>\n#ifdef USE_SKINNING\n' + DQS_NORMAL + '\n#endif')
+      .replace('#include <skinning_vertex>', '#ifdef USE_SKINNING\n' + DQS_POS + '\n#endif');
+  };
+  m.customProgramCacheKey = () => (prevKey ? prevKey.call(m) : '') + '|dqs';
+  m.userData = Object.assign({}, m.userData, { dqs: true });
+  m.needsUpdate = true;
+  return m;
+}
+const DQS_TWIN = new WeakMap();
+// (a twin of `mat` that skins by dual quaternions; one per material)
+export function dqsTwin(mat) {
+  if (!mat || (mat.userData && mat.userData.dqs)) return mat;
+  let t = DQS_TWIN.get(mat); if (t) return t;
+  t = mat.clone(); if (mat.uniforms) t.uniforms = mat.uniforms;
+  patchDqs(t); DQS_TWIN.set(mat, t); return t;
 }
 
 // The anatomy's root is made to sit in the procedural body's pelvis: its top
@@ -340,11 +451,14 @@ export function attachRodin(man, srcGeo, opts = {}) {
   const mound = opts.mound !== false && moundFromProcedural(man, fit.geo);
   // (his own body away: every mesh that is neither his clothes nor his anatomy)
   man.traverse(o => { if (o.isMesh && !o.userData.garment && !inPouch(o)) { o.visible = false; o.userData.proxyHidden = true; } });
-  const mesh = new THREE.SkinnedMesh(fit.geo, opts.material || u.kitFlesh || new THREE.MeshStandardMaterial({ color: 0xb8a28c }));
+  const ink = dqsTwin(opts.material || new THREE.MeshStandardMaterial({ color: 0xb8a28c }));
+  const mesh = new THREE.SkinnedMesh(fit.geo, ink);
+  // (its own plates for the lab's two looks - see applyLook)
+  mesh.userData.ink = ink; if (opts.studio) mesh.userData.studio = dqsTwin(opts.studio);
   mesh.frustumCulled = false; mesh.userData.rodinBody = true; man.add(mesh);
   man.updateMatrixWorld(true);
   mesh.bind(new THREE.Skeleton(u.rig.skeleton.bones.slice()));
-  if (opts.outline !== false) outlineOf(mesh, 1.6);
+  if (opts.outline !== false) { const ol = outlineOf(mesh, 1.6); patchDqs(ol.material); }
   // (the anatomy rooted on this body's skin at the fork's front, as figure.mjs
   // roots it on its own: the surface's depth there, less a hair)
   if (u.pouch && !mound) { u.pouch.position.z = -(opts.flat !== false ? flatZ(0.81) : fit.meas.bellyR / fit.SH) * fit.SH - 0.3; u.pouch0 = u.pouch.position.clone(); }
