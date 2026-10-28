@@ -63,6 +63,7 @@ function closest(p, a, b, out) {
   return out.copy(a).addScaledVector(_d, t);
 }
 
+const NO_TUNE = {};
 export class FleshSim {
   constructor(fig) {
     this.fig = fig;
@@ -101,7 +102,10 @@ export class FleshSim {
 
   reset() { this.fresh = true; }
   // (the rest bias, plus the lift what he wears gives it)
-  restAll() { return this.rest + (this.fig.userData.lift || 0); }
+  // (a man's own tuning, `fleshTune` - the Rodin man's: rest a little back
+  // against him, a looser swing, a slower settle; 0 and 1 for every other)
+  get tune() { return this.fig.userData.fleshTune || NO_TUNE; }
+  restAll() { return this.rest + (this.fig.userData.lift || 0) + (this.tune.rest || 0); }
 
   colliders() {
     const d = this.fig.userData, c = d.colliders, sc = this.fig.getWorldScale(_w).x;
@@ -133,9 +137,9 @@ export class FleshSim {
   step(dt) {
     const P = this.pouch, g = this.inner; if (!P || !g) return false;
     const u = g.userData, s = g.scale.x, sc = this.fig.getWorldScale(_w).x * P.scale.x * s;
-    const loose = Math.max(0.2, u.sway || 1), press = Math.max(0, Math.min(1, this.fig.userData.press || 0));
+    const loose = Math.max(0.2, (u.sway || 1) * (this.tune.sway || 1)), press = Math.max(0, Math.min(1, this.fig.userData.press || 0));
     // (the material: figure.mjs's damping, resist and adhesion, 50 as they were)
-    const mp = u.params || {}, damp = 0.4 + 1.2 * (mp.damping ?? 50) / 100, res = (mp.resist ?? 50) / 50, adh = (mp.adhesion ?? 50) / 50;
+    const mp = u.params || {}, damp = (0.4 + 1.2 * (mp.damping ?? 50) / 100) * (this.tune.damp || 1), res = (mp.resist ?? 50) / 50, adh = (mp.adhesion ?? 50) / 50;
     const k = K / loose * (1 + 3 * res * press), c = C / Math.sqrt(loose) * damp * (1 + 4 * adh * press);
     // (engorged - figure.mjs's gorge - the shaft is a stiff beam on its root,
     // not a hanging mass: its tip held to its rest the harder and carried
