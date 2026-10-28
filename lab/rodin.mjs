@@ -24,7 +24,7 @@ import { buildFigure, BODY_HIPS } from '../assets/intro3d/figure.mjs';
 import { FleshSim } from '../assets/intro3d/flesh.mjs';
 import { burinTick, engravingMaterial, paperMaterial } from '../assets/intro3d/burin.mjs';
 import { initDevOverlay } from '../assets/intro3d/dev-overlay.mjs';
-import { loadRodinGeometry, attachRodin, RODIN_BUILD } from '../assets/intro3d/rodin-body.mjs';
+import { loadRodinGeometry, attachRodin, dqsTwin, RODIN_BUILD } from '../assets/intro3d/rodin-body.mjs';
 
 const PI = Math.PI, KNEE_BACK = -1, UP = new THREE.Vector3(0, 1, 0);
 
@@ -171,7 +171,7 @@ window.addEventListener('resize', size);
 function setLook(l) {
   state.look = l;
   if (body) {
-    body.material = MATS[l];
+    body.material = dqsTwin(MATS[l]);
     body.children.forEach(c => { if (c.userData.outline) c.visible = l === 'ink'; });
   }
   document.querySelectorAll('[data-look]').forEach(b => b.classList.toggle('on', b.dataset.look === l));
