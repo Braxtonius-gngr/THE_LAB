@@ -101,6 +101,9 @@ const state = {
   // (None's paint: 'orange' see-through, 'split' lobes blue/red and the
   // pouch orange, 'brown' opaque - nothing bare in a physics test)
   paint: 'orange',
+  // (the Rodin man's own anatomy tuning - flesh.mjs's fleshTune: swing and
+  // settle as multiples of every man's, and his lean out at rest, radians)
+  rodinTune: { sway: 1, damp: 1, rest: 0.1 },
   // (the line's faces: 'auto' each man his own variant, or one for all)
   shape: 'auto',
   // two models side by side, each with its own build, face and values
@@ -284,7 +287,7 @@ function build(s) {
   u.ropes = ['l', 'r'].map(k => { const r = new THREE.Mesh(new THREE.TorusGeometry(6.4, 0.9, 6, 12), kit.rope); r.position.y = 2; r.rotation.x = PI / 2; r.visible = false; u.legs[k].foot.add(r); return r; });
   s.g.add(man); s.man = man;
   if (m.rodin) {
-    if (rodinGeo) attachRodin(man, rodinGeo, { material: kit.flesh, studio: STUDIO.flesh });
+    if (rodinGeo) attachRodin(man, rodinGeo, { material: kit.flesh, studio: STUDIO.flesh, fleshTune: state.rodinTune });
     else loadRodinGeometry().then(g => { rodinGeo = g; if (s.man === man) rebuildOne(s); }, e => console.error('lab: the Rodin body could not load', e));
   }
   if (u.cloth && u.cloth.setState) u.cloth.setState(state.firm);
@@ -877,6 +880,14 @@ const ui = {
     // is seen; Firm's slider with a snug garment or the link on)
     add(`<button type="button" class="chip ${state.firmLink ? 'on' : ''}" id="firmLink" title="Linked: Firm and the anatomy's Gorge move together - the body's own state, shown with or without a garment. Unlinked: Firm is the garment's alone">${state.firmLink ? '🔗 Firm = Gorge' : '⛓ Firm alone'}</button>`);
     if (snug || state.firmLink) add(`<label>${state.firmLink ? 'State' : 'Firm'} <input type="range" id="firmA" min="0" max="1" step="0.01" value="${state.firm}"><output id="firmO">${state.firm.toFixed(2)}</output></label>`);
+    // (the Rodin man's own tuning: his anatomy's swing and settle against
+    // every man's, and how far out it rests - always shown, as he is in the line)
+    {
+      const T = state.rodinTune;
+      add(`<label title="The Rodin man's swing: a multiple of every man's looseness">Rodin · swing <input type="range" id="rtSway" min="0.2" max="4" step="0.05" value="${T.sway}"><output id="rtSwayO">${T.sway.toFixed(2)}×</output></label>`);
+      add(`<label title="The Rodin man's settle: a multiple of every man's damping (lower settles slower)">Rodin · settle <input type="range" id="rtDamp" min="0.2" max="3" step="0.05" value="${T.damp}"><output id="rtDampO">${T.damp.toFixed(2)}×</output></label>`);
+      add(`<label title="The Rodin man's anatomy at rest: degrees out from his body (negative: back against him)">Rodin · lean out <input type="range" id="rtRest" min="-30" max="60" step="1" value="${Math.round(T.rest * 180 / Math.PI)}"><output id="rtRestO">${Math.round(T.rest * 180 / Math.PI)}°</output></label>`);
+    }
     add(`<span class="lbl" id="hold" style="text-transform:none;letter-spacing:0;flex:1 1 100%"></span>`);
     add(`<span class="lbl" id="push" style="text-transform:none;letter-spacing:0;flex:1 1 100%"></span>`);
     add(`<span class="lbl" id="rawcmp" style="text-transform:none;letter-spacing:0;flex:1 1 100%"></span>`);
@@ -896,6 +907,13 @@ const ui = {
       ui.tools(); awake = 1; pose(0);
     };
     const fa = $('#firmA'); if (fa) fa.oninput = () => { setFirm(+fa.value); if (state.firmLink) gorgeTo(state.firm); };
+    // (each a live change to his tuning - flesh.mjs reads it every step)
+    const rt = (id, key, fmt, k = 1) => { const el = $('#' + id); if (!el) return; el.oninput = () => {
+      state.rodinTune[key] = +el.value * k; $('#' + id + 'O').textContent = fmt(+el.value);
+      active().forEach(s => { if (s.man && s.man.userData.rodin) s.man.userData.fleshTune = Object.assign({}, state.rodinTune); });
+      awake = 1; pose(0);
+    }; };
+    rt('rtSway', 'sway', v => v.toFixed(2) + '×'); rt('rtDamp', 'damp', v => v.toFixed(2) + '×'); rt('rtRest', 'rest', v => v + '°', Math.PI / 180);
     const fl = $('#firmLink'); if (fl) fl.onclick = () => { state.firmLink = !state.firmLink; if (state.firmLink) gorgeTo(state.firm); ui.tools(); };
   }
 };
