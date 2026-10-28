@@ -33,6 +33,7 @@ import { FleshSim } from '../assets/intro3d/flesh.mjs';
 import { burinTick, engravingMaterial, paperMaterial, BONE } from '../assets/intro3d/burin.mjs';
 import { UC_MODE } from '../assets/intro3d/universal-cloth-material.mjs';
 import { initDevOverlay, inCm } from '../assets/intro3d/dev-overlay.mjs';
+import { loadRodinGeometry, attachRodin, RODIN_BUILD } from '../assets/intro3d/rodin-body.mjs';
 
 const PI = Math.PI, DEG = PI / 180;
 const KNEE_BACK = -1;
@@ -47,8 +48,12 @@ const MEN = [
   { name: 'Elderly', build: { height: 0.95, mass: 0.15, muscle: -0.4, age: 1 }, grey: true, recede: 0.9, beard: true },
   { name: 'Big & tall', build: { height: 1.1, mass: 0.45, muscle: 0.85, age: 0.2 } },
   { name: 'Heavy', build: { height: 1.0, mass: 1, muscle: 0.2, age: 0.3 }, beard: true },
-  { name: 'Small', build: { height: 0.88, mass: 0.05, muscle: 0.1, age: 0.1 } }
+  { name: 'Small', build: { height: 0.88, mass: 0.05, muscle: 0.1, age: 0.1 } },
+  // (a body made in Rodin, on this man's skeleton: his poses, his anatomy and
+  // its physics on its mesh - see rodin-body.mjs; garments are not yet fitted to it)
+  { name: 'Rodin (lean)', build: RODIN_BUILD, rodin: true }
 ];
+let rodinGeo = null;   // (the Rodin body's mesh, once loaded)
 // (tightest hold to loosest; see FABRIC in figure.mjs)
 const OUTFITS = { compression: { under: 'compression' }, minimal: { brief: true }, hose: { hose: true }, both: { shirt: true, hose: true }, boxerBriefs: { under: 'boxerBriefs' }, longJohns: { under: 'longJohns' }, boxers: { under: 'boxers' }, loin: {}, shirt: { shirt: true }, none: { nude: true } };
 // (with no fabric at all - None - the anatomy is drawn as the physics proxy,
@@ -278,6 +283,10 @@ function build(s) {
   // the ropes round his ankles, for the gallows
   u.ropes = ['l', 'r'].map(k => { const r = new THREE.Mesh(new THREE.TorusGeometry(6.4, 0.9, 6, 12), kit.rope); r.position.y = 2; r.rotation.x = PI / 2; r.visible = false; u.legs[k].foot.add(r); return r; });
   s.g.add(man); s.man = man;
+  if (m.rodin) {
+    if (rodinGeo) attachRodin(man, rodinGeo, { material: kit.flesh });
+    else loadRodinGeometry().then(g => { rodinGeo = g; if (s.man === man) rebuildOne(s); }, e => console.error('lab: the Rodin body could not load', e));
+  }
   if (u.cloth && u.cloth.setState) u.cloth.setState(state.firm);
   s.sim = u.pouch ? new FleshSim(man) : null;
   u.press = pressOf(u);
