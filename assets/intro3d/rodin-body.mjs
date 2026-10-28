@@ -462,10 +462,10 @@ export function attachRodin(man, srcGeo, opts = {}) {
   // (the anatomy rooted on this body's skin at the fork's front, as figure.mjs
   // roots it on its own: the surface's depth there, less a hair)
   if (u.pouch && !mound) { u.pouch.position.z = -(opts.flat !== false ? flatZ(0.81) : fit.meas.bellyR / fit.SH) * fit.SH - 0.3; u.pouch0 = u.pouch.position.clone(); }
-  // (his anatomy's own tuning, as the owner asked of it: it hangs low, so a
-  // bigger swing; a slower settle; and at rest a little back, against him -
-  // flesh.mjs reads it; every other man has none)
-  u.fleshTune = Object.assign({ sway: 2.8, damp: 0.6, rest: -0.05 }, opts.fleshTune);
+  // (his anatomy's own tuning - flesh.mjs reads it; every other man has none:
+  // swing and settle as every man's, and at rest carried a little out from
+  // him, hanging low and forward of his body rather than against it)
+  u.fleshTune = Object.assign({ sway: 1, damp: 1, rest: 0.1 }, opts.fleshTune);
   if (u.colliders) u.colliders = Object.assign({}, u.colliders, { thighR: fit.meas.thighR, bellyR: fit.meas.bellyR });
   // (the mesh kept off the enumerable fields: three.js copies userData as JSON)
   u.rodin = { meas: fit.meas, flat: opts.flat !== false, verts: fit.geo.attributes.position.count, tris: fit.tris, perBone: Object.fromEntries(BONES.map((b, i) => [b, fit.counts[i]])), height: fit.top };
