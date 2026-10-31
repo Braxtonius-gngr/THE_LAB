@@ -1093,7 +1093,7 @@ function open() {
 }
 // (the build and the cloth's mode, so a phone's screenshot says which it was)
 let STAMP = `uc:${UC_MODE}`;
-fetch('../sw.js', { cache: 'no-cache' }).then(r => r.text()).then(t => { const m = /CACHE_NAME = '([^']+)'/.exec(t); STAMP = `${m ? m[1].replace('almanac-', '') : '?'} uc:${UC_MODE}`; const el = document.getElementById('stamp'); if (el) el.textContent = '· ' + STAMP; }).catch(() => {});
+fetch('../VERSION', { cache: 'no-cache' }).then(r => r.text()).then(t => { STAMP = `${t.trim() || '?'} uc:${UC_MODE}`; const el = document.getElementById('stamp'); if (el) el.textContent = '· ' + STAMP; }).catch(() => {});
 initDevOverlay(figures, {
   top: 'calc(max(10px, env(safe-area-inset-top)) + 46px)',
   compact: true,
