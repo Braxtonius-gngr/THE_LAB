@@ -1,1 +1,13 @@
-[]
+[
+  {
+    "id": "adult-base-01",
+    "name": "Adult base 01",
+    "source": "Meshy AI 7.1 image-to-3D, auto-rigged (Mixamo template), 2026-11-01",
+    "pose": "A-pose",
+    "heightM": 1.70,
+    "rigged": true,
+    "notes": "28-bone rig (no finger bones). Briefs are baked into the mesh; boxer cut-out + lab anatomy is the next step. Armpit bunches when the arm lifts high (auto-rig weights).",
+    "desktop": "adult-base-01/desktop.glb",
+    "mobile": "adult-base-01/mobile.glb"
+  }
+]

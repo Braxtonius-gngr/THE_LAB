@@ -20,6 +20,7 @@
   <button class="chip" data-q="desktop">Desktop</button>
   <button class="chip" data-q="mobile">Mobile</button>
   <button class="chip" id="ruler">Ruler</button>
+  <button class="chip" id="pose">Pose test</button>
 </div>
 <div id="info">Loading…</div>
 <script type="module">
@@ -91,6 +92,7 @@ for (const b of list) pick.add(new Option(b.name, b.id));
 let quality = isPhone ? 'mobile' : 'desktop', current = null;
 
 async function show() {
+  posed = false; document.getElementById('pose')?.classList.remove('on');
   const b = list.find(x => x.id === pick.value);
   document.querySelectorAll('[data-q]').forEach(el => el.classList.toggle('on', el.dataset.q === quality));
   info.textContent = 'Loading…';
@@ -107,6 +109,19 @@ async function show() {
 }
 pick.onchange = show;
 document.querySelectorAll('[data-q]').forEach(el => el.onclick = () => { quality = el.dataset.q; show(); });
+// pose test: bend a few bones to check the rig and skin weights
+let posed = false, rest = null;
+document.getElementById('pose').onclick = e => {
+  if (!current) return;
+  const bones = ['LeftArm','RightArm','RightForeArm','LeftUpLeg','LeftLeg','Spine01','Head'];
+  if (!posed) {
+    rest = bones.map(n => current.getObjectByName(n)?.quaternion.clone());
+    const b = n => current.getObjectByName(n);
+    b('LeftArm')?.rotateZ(0.5); b('RightArm')?.rotateZ(-0.9); b('RightForeArm')?.rotateY(-1.2);
+    b('LeftUpLeg')?.rotateX(-0.9); b('LeftLeg')?.rotateX(1.2); b('Spine01')?.rotateY(0.3); b('Head')?.rotateY(-0.4);
+  } else bones.forEach((n, i) => { const o = current.getObjectByName(n); if (o && rest[i]) o.quaternion.copy(rest[i]); });
+  posed = !posed; e.target.classList.toggle('on', posed);
+};
 document.getElementById('ruler').onclick = e => { ruler.visible = !ruler.visible; e.target.classList.toggle('on', ruler.visible); };
 if (list.length) await show(); else info.textContent = 'No imported bodies yet.';
 r.setAnimationLoop(() => { place(); r.render(scene, cam); });
