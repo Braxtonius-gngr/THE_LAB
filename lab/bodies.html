@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>THE_LAB · Bodies</title>
+<style>
+  :root{--bg:#1b1a18;--panel:#2c2a27;--ink:#eee;--dim:#a49c8c;--gold:#d8b25a}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px system-ui,sans-serif;overflow:hidden;touch-action:none}
+  canvas{display:block}
+  #bar{position:fixed;top:12px;left:12px;right:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;pointer-events:none}
+  #bar>*{pointer-events:auto}
+  .chip{background:var(--panel);border:0;color:var(--ink);padding:9px 14px;border-radius:999px;font:inherit;cursor:pointer}
+  .chip.on{background:var(--gold);color:#1b1a18}
+  a.chip{text-decoration:none}
+  #info{position:fixed;left:12px;bottom:12px;right:12px;max-width:520px;background:var(--panel);border-radius:12px;padding:10px 14px;color:var(--dim);line-height:1.45}
+  #info b{color:var(--ink)}
+</style></head><body>
+<div id="bar">
+  <a class="chip" href="../">← Lab</a>
+  <select id="pick" class="chip"></select>
+  <button class="chip" data-q="desktop">Desktop</button>
+  <button class="chip" data-q="mobile">Mobile</button>
+  <button class="chip" id="ruler">Ruler</button>
+</div>
+<div id="info">Loading…</div>
+<script type="module">
+import * as THREE from '../assets/vendor/three/three.module.js';
+import { GLTFLoader } from '../assets/vendor/three/three.addons.js';
+
+const isPhone = matchMedia('(pointer:coarse)').matches || innerWidth < 800;
+const r = new THREE.WebGLRenderer({ antialias: true });
+r.setPixelRatio(Math.min(devicePixelRatio, isPhone ? 2 : 1.5));
+r.setSize(innerWidth, innerHeight);
+r.outputColorSpace = THREE.SRGBColorSpace;
+r.toneMapping = THREE.ACESFilmicToneMapping;
+r.shadowMap.enabled = true;
+document.body.prepend(r.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x24221f);
+scene.add(new THREE.HemisphereLight(0xfff4e6, 0x3a3530, 1.1));
+const key = new THREE.DirectionalLight(0xffffff, 2.0);
+key.position.set(2.5, 4, 3); key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+Object.assign(key.shadow.camera, { left: -1.5, right: 1.5, top: 2.5, bottom: -0.5 });
+scene.add(key);
+const rim = new THREE.DirectionalLight(0xbcd0ff, 0.8); rim.position.set(-3, 2.5, -3); scene.add(rim);
+const floor = new THREE.Mesh(new THREE.CircleGeometry(3, 64), new THREE.MeshStandardMaterial({ color: 0x3a3631, roughness: 0.95 }));
+floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+
+// height ruler: 10 cm ticks, labelled every 50 cm
+const ruler = new THREE.Group(); ruler.visible = false; scene.add(ruler);
+{ const m = new THREE.LineBasicMaterial({ color: 0xd8b25a });
+  const pts = [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 2, 0)];
+  for (let i = 0; i <= 20; i++) { const w = i % 5 ? 0.03 : 0.08; pts.push(new THREE.Vector3(0, i / 10, 0), new THREE.Vector3(w, i / 10, 0)); }
+  const g = new THREE.BufferGeometry().setFromPoints(pts);
+  const l = new THREE.LineSegments(g, m); ruler.add(l); ruler.position.set(-1.05, 0, 0); }
+
+const cam = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, 0.05, 50);
+let yaw = 0.35, pitch = 0.08, dist = isPhone ? 6.2 : 5.0, target = new THREE.Vector3(0, 0.95, 0);
+function place() {
+  cam.position.set(target.x + dist * Math.sin(yaw) * Math.cos(pitch), target.y + dist * Math.sin(pitch), target.z + dist * Math.cos(yaw) * Math.cos(pitch));
+  cam.lookAt(target);
+}
+// drag to orbit, two-finger pinch / wheel to zoom, vertical drag with 2 fingers pans height
+const ptrs = new Map(); let lastPinch = 0, lastMidY = 0;
+addEventListener('pointerdown', e => { if (e.target.closest('#bar,#info')) return; ptrs.set(e.pointerId, e); });
+addEventListener('pointerup', e => ptrs.delete(e.pointerId));
+addEventListener('pointercancel', e => ptrs.delete(e.pointerId));
+addEventListener('pointermove', e => {
+  if (!ptrs.has(e.pointerId)) return;
+  const p = ptrs.get(e.pointerId);
+  if (ptrs.size === 1) {
+    yaw -= (e.clientX - p.clientX) * 0.008;
+    pitch = THREE.MathUtils.clamp(pitch + (e.clientY - p.clientY) * 0.005, -0.4, 1.2);
+  }
+  ptrs.set(e.pointerId, e);
+  if (ptrs.size === 2) {
+    const [a, b] = [...ptrs.values()];
+    const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), my = (a.clientY + b.clientY) / 2;
+    if (lastPinch) { dist = THREE.MathUtils.clamp(dist * lastPinch / d, 0.6, 10); target.y = THREE.MathUtils.clamp(target.y + (my - lastMidY) * 0.003, 0.1, 1.9); }
+    lastPinch = d; lastMidY = my;
+  } else lastPinch = 0;
+});
+addEventListener('wheel', e => { dist = THREE.MathUtils.clamp(dist * (1 + e.deltaY * 0.001), 0.6, 10); }, { passive: true });
+addEventListener('resize', () => { r.setSize(innerWidth, innerHeight); cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); });
+
+const info = document.getElementById('info'), pick = document.getElementById('pick');
+const loader = new GLTFLoader();
+const list = await (await fetch('../assets/bodies/bodies.json')).json();
+for (const b of list) pick.add(new Option(b.name, b.id));
+let quality = isPhone ? 'mobile' : 'desktop', current = null;
+
+async function show() {
+  const b = list.find(x => x.id === pick.value);
+  document.querySelectorAll('[data-q]').forEach(el => el.classList.toggle('on', el.dataset.q === quality));
+  info.textContent = 'Loading…';
+  const t0 = performance.now();
+  const gltf = await loader.loadAsync('../assets/bodies/' + b[quality]);
+  if (current) { scene.remove(current); current.traverse(o => { o.geometry?.dispose(); }); }
+  current = gltf.scene;
+  let tris = 0;
+  current.traverse(o => { if (o.isMesh) { o.castShadow = true; tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; } });
+  scene.add(current);
+  const box = new THREE.Box3().setFromObject(current), h = box.max.y - box.min.y;
+  const ft = h / 0.3048, inch = Math.round((ft % 1) * 12);
+  info.innerHTML = `<b>${b.name}</b> · ${quality}<br>${(h * 100).toFixed(0)} cm (${Math.floor(ft)}′${inch}″) · ${Math.round(tris).toLocaleString()} triangles · ${b.rigged ? 'rigged' : 'not rigged'} · loaded in ${((performance.now() - t0) / 1000).toFixed(1)} s<br>${b.notes || ''}`;
+}
+pick.onchange = show;
+document.querySelectorAll('[data-q]').forEach(el => el.onclick = () => { quality = el.dataset.q; show(); });
+document.getElementById('ruler').onclick = e => { ruler.visible = !ruler.visible; e.target.classList.toggle('on', ruler.visible); };
+await show();
+r.setAnimationLoop(() => { place(); r.render(scene, cam); });
+</script>
+</body></html>
