@@ -816,6 +816,11 @@ export function initDevOverlay(figures, opts = {}) {
     const api = { panels, ink: inkEl, make: (T, o = {}) => make(T, o), clear() { panels.splice(0).forEach(el => el.remove()); } };
     if (opts.onAuthed) opts.onAuthed(api);
   };
+  // THE_LAB: the whole site sits behind Cloudflare Access, which is the lock.
+  // The DRO sign-in + biometric gate below is skipped here; it only applies
+  // on DRO's own addresses, where this file is a pinned copy.
+  if (!/(^|\.)dailyrollover\.com$|social-casino-bliss/.test(location.hostname)) { open(); return; }
+
   // already have a valid session?
   if (hasSession()) { open(); return; }
 
