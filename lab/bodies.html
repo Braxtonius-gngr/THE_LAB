@@ -108,7 +108,7 @@ async function show() {
 pick.onchange = show;
 document.querySelectorAll('[data-q]').forEach(el => el.onclick = () => { quality = el.dataset.q; show(); });
 document.getElementById('ruler').onclick = e => { ruler.visible = !ruler.visible; e.target.classList.toggle('on', ruler.visible); };
-await show();
+if (list.length) await show(); else info.textContent = 'No imported bodies yet.';
 r.setAnimationLoop(() => { place(); r.render(scene, cam); });
 </script>
 </body></html>
