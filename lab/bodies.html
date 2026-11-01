@@ -21,11 +21,14 @@
   <button class="chip" data-q="mobile">Mobile</button>
   <button class="chip" id="ruler">Ruler</button>
   <button class="chip" id="pose">Pose test</button>
+  <button class="chip" id="anat" hidden>Anatomy</button>
+  <select class="chip" id="preset" hidden><option value="">Anatomy: lab baseline</option></select>
 </div>
 <div id="info">Loading…</div>
 <script type="module">
 import * as THREE from '../assets/vendor/three/three.module.js';
 import { GLTFLoader } from '../assets/vendor/three/three.addons.js';
+import { attachAnatomy } from '../world/attach-anatomy.mjs';
 
 const isPhone = matchMedia('(pointer:coarse)').matches || innerWidth < 800;
 const r = new THREE.WebGLRenderer({ antialias: true });
@@ -89,7 +92,19 @@ const info = document.getElementById('info'), pick = document.getElementById('pi
 const loader = new GLTFLoader();
 const list = await (await fetch('../assets/bodies/bodies.json')).json();
 for (const b of list) pick.add(new Option(b.name, b.id));
-let quality = isPhone ? 'mobile' : 'desktop', current = null;
+let quality = isPhone ? 'mobile' : 'desktop', current = null, anat = null, anatOn = true;
+const anatBtn = document.getElementById('anat'), presetSel = document.getElementById('preset');
+// presets saved by the Measure tool / the anatomy lab (this browser only)
+function readPresets() { try { return JSON.parse(localStorage.getItem('dev_overlay_presets_v1') || '{}') || {}; } catch (_) { return {}; } }
+function fillPresets() {
+  const all = readPresets(), keep = presetSel.value;
+  presetSel.length = 1;
+  for (const k of Object.keys(all).sort()) presetSel.add(new Option('Anatomy: ' + k, k));
+  presetSel.value = all[keep] ? keep : '';
+}
+presetSel.onfocus = fillPresets;
+presetSel.onchange = () => { if (anat) anat.rebuild(readPresets()[presetSel.value] || {}); };
+anatBtn.onclick = () => { anatOn = !anatOn; anat?.setVisible(anatOn); anatBtn.classList.toggle('on', anatOn); };
 
 async function show() {
   posed = false; document.getElementById('pose')?.classList.remove('on');
@@ -98,8 +113,15 @@ async function show() {
   info.textContent = 'Loading…';
   const t0 = performance.now();
   const gltf = await loader.loadAsync('../assets/bodies/' + b[quality]);
+  if (anat) { anat.dispose(); anat = null; }
   if (current) { scene.remove(current); current.traverse(o => { o.geometry?.dispose(); }); }
   current = gltf.scene;
+  if (b.anatomy) {
+    fillPresets();
+    anat = attachAnatomy(current, b.anatomy, readPresets()[presetSel.value] || {});
+    anat.setVisible(anatOn);
+  }
+  anatBtn.hidden = presetSel.hidden = !b.anatomy; anatBtn.classList.toggle('on', anatOn);
   let tris = 0;
   current.traverse(o => { if (o.isMesh) { o.castShadow = true; tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; } });
   scene.add(current);
@@ -113,17 +135,20 @@ document.querySelectorAll('[data-q]').forEach(el => el.onclick = () => { quality
 let posed = false, rest = null;
 document.getElementById('pose').onclick = e => {
   if (!current) return;
-  const bones = ['LeftArm','RightArm','RightForeArm','LeftUpLeg','LeftLeg','Spine01','Head'];
+  const bones = ['Hips','LeftArm','RightArm','RightForeArm','LeftUpLeg','LeftLeg','Spine01','Head'];
   if (!posed) {
     rest = bones.map(n => current.getObjectByName(n)?.quaternion.clone());
     const b = n => current.getObjectByName(n);
-    b('LeftArm')?.rotateZ(0.5); b('RightArm')?.rotateZ(-0.9); b('RightForeArm')?.rotateY(-1.2);
+    b('Hips')?.rotateX(0.35); b('Spine01')?.rotateX(-0.3); b('LeftArm')?.rotateZ(0.5); b('RightArm')?.rotateZ(-0.9); b('RightForeArm')?.rotateY(-1.2);
     b('LeftUpLeg')?.rotateX(-0.9); b('LeftLeg')?.rotateX(1.2); b('Spine01')?.rotateY(0.3); b('Head')?.rotateY(-0.4);
   } else bones.forEach((n, i) => { const o = current.getObjectByName(n); if (o && rest[i]) o.quaternion.copy(rest[i]); });
   posed = !posed; e.target.classList.toggle('on', posed);
 };
 document.getElementById('ruler').onclick = e => { ruler.visible = !ruler.visible; e.target.classList.toggle('on', ruler.visible); };
 if (list.length) await show(); else info.textContent = 'No imported bodies yet.';
-r.setAnimationLoop(() => { place(); r.render(scene, cam); });
+// (for tests and links: set the view)
+window.__view = (y, p, d, t) => { yaw = y; pitch = p; dist = d; target.y = t; };
+window.__lab = { get anat() { return anat; }, get model() { return current; } };
+r.setAnimationLoop(() => { place(); anat?.update(); r.render(scene, cam); });
 </script>
 </body></html>
