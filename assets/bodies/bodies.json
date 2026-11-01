@@ -1,13 +1,1 @@
-[
-  {
-    "id": "meshy-arms-out",
-    "name": "Meshy · arms out",
-    "source": "Meshy AI (FBX), 2026-11-01",
-    "pose": "arms outstretched (near T-pose)",
-    "heightM": 1.88,
-    "rigged": false,
-    "notes": "Static mesh; boxer briefs are baked into the body mesh (not a separate garment layer).",
-    "desktop": "meshy-arms-out/desktop.glb",
-    "mobile": "meshy-arms-out/mobile.glb"
-  }
-]
+[]
