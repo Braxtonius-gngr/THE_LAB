@@ -38,7 +38,9 @@ d /= np.linalg.norm(d, axis=1, keepdims=True) + 1e-9
 HAIR = np.array([88, 52, 33], np.float32)
 layerP = np.zeros((h, w), np.float32); layerB = np.zeros((h, w), np.float32)   # coarse pubic hair / fine body hair
 
-tris = np.where(fillv[I].all(1))[0]
+band = np.load('band_w.npy') if __import__('os').path.exists('band_w.npy') else np.zeros(len(W), bool)
+dens = np.where(band & ~fillv, np.minimum(dens, 3.0), dens)          # the smooth strip outside the old waistband: fine hair like the belly
+tris = np.where(fillv[I].all(1) | band[I].all(1))[0]
 P3 = W[I[tris]] * 100.0; Q2 = UV[I[tris]] * [w, h]
 area = 0.5 * np.linalg.norm(np.cross(P3[:, 1] - P3[:, 0], P3[:, 2] - P3[:, 0]), axis=1)
 dt = dens[I[tris]].mean(1); n_h = rng.poisson(area * dt)
