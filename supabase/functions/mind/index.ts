@@ -37,14 +37,18 @@ async function think(system: string, messages: { role: string; content: string }
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: MODEL, max_tokens: 600, system, messages }),
+    body: JSON.stringify({ model: MODEL, max_tokens: 1200, system, messages }),
   });
   if (!r.ok) throw new Error(`model ${r.status}: ${(await r.text()).slice(0, 300)}`);
   const d = await r.json();
   const text = (d.content || []).map((c: { text?: string }) => c.text || "").join("");
   const m = text.match(/\{[\s\S]*\}/);
   if (!m) return { say: text.trim(), actions: [], mood: null, memory: null, relationship: null };
-  try { return JSON.parse(m[0]); } catch { return { say: text.trim(), actions: [], mood: null, memory: null, relationship: null }; }
+  try { return JSON.parse(m[0]); } catch { /* fall through */ }
+  // broken or truncated JSON: salvage the line he was going to say rather than speaking the JSON
+  const say = text.match(/"say"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  let mood = null; const mm = text.match(/"mood"\s*:\s*(\{[^}]*\})/); if (mm) { try { mood = JSON.parse(mm[1]); } catch { /* ignore */ } }
+  return { say: say ? JSON.parse(`"${say[1]}"`) : "", actions: [{ type: "look_at", target: "player" }], mood, memory: null, relationship: null, salvaged: true };
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -72,8 +76,12 @@ Deno.serve(async (req) => {
     ]);
     if (!me || !player) return json({ error: "unknown character or player" }, 404);
 
+    // he only knows the visitor's name once it has been said to him (or they've met before)
+    const told = (t: string | null) => !!t && t.toLowerCase().includes(String(player.name).toLowerCase().slice(0, 4));
+    const knowsName = !!rel?.knows_name || history.some((h: { who: string; text: string }) => h.who === "player" && told(h.text)) || told(text);
+    const who = knowsName ? player.name : "the visitor";
     // what is on the character's mind right now: the cue is what was said, or the event
-    const cue = text || (event === "arrive" ? `${player.name} has just arrived` : event === "leave" ? `${player.name} is leaving` : "nothing in particular");
+    const cue = text || (event === "arrive" ? `${who} has just arrived` : event === "leave" ? `${who} is leaving` : "nothing in particular");
     const qv = await embed(cue);
     const { data: recalled } = await supabase.rpc("recall", { p_owner: character_id, p_query: JSON.stringify(qv), p_limit: 10 });
     const memLines = (recalled || []).map((m: { content: string; created_at: string; kind: string }) => `- (${ago(m.created_at)}, ${m.kind}) ${m.content}`).join("\n");
@@ -82,8 +90,8 @@ Deno.serve(async (req) => {
 
     const system = `${me.persona}
 
-You are in your ${scene.location || me.home_location || "apartment"}. Time: ${scene.time || "evening"}. ${player.name} is ${scene.player_distance_m != null ? `${Number(scene.player_distance_m).toFixed(1)} m away` : "here"}. Places you can walk to: ${(scene.spots || ["sofa", "kitchen", "window", "door"]).join(", ")}.
-This is visit number ${visits || 1} from ${player.name}.${rel ? ` How you feel about ${player.name}: affection ${rel.affection.toFixed(2)}, trust ${rel.trust.toFixed(2)}, familiarity ${rel.familiarity.toFixed(2)}. Your take on them so far: ${rel.summary || "no take yet"}.` : ` You have never met ${player.name} before.`}
+You are in your ${scene.location || me.home_location || "apartment"}. Time: ${scene.time || "evening"}. ${who} is ${scene.player_distance_m != null ? `${Number(scene.player_distance_m).toFixed(1)} m away` : "here"}. Places you can walk to: ${(scene.spots || ["sofa", "kitchen", "window", "door"]).join(", ")}.
+This is visit number ${visits || 1} from ${who}.${rel ? ` How you feel about ${who}: affection ${rel.affection.toFixed(2)}, trust ${rel.trust.toFixed(2)}, familiarity ${rel.familiarity.toFixed(2)}. Your take on them so far: ${rel.summary || "no take yet"}.` : ` You have never met this person before${knowsName ? "" : " and don't know their name"}.`}
 Your mood: ${JSON.stringify(state?.mood || { valence: 0, energy: 0.5 })}.
 ${memLines ? `Things you remember (most relevant first):\n${memLines}` : "You have no memories of this person yet."}
 
@@ -92,15 +100,16 @@ Respond ONLY with JSON, no prose around it:
  "actions": [{"type":"look_at","target":"player"} | {"type":"walk_to","target":"<spot>"} | {"type":"turn_to","target":"player"} | {"type":"gesture","name":"nod"|"shrug"|"wave"} | {"type":"idle"}],
  "mood": {"valence": -1..1, "energy": 0..1},
  "memory": {"content": "one thing worth remembering from this moment, in first person, or null", "importance": 1-10},
- "relationship": {"affection": -0.2..0.2, "trust": -0.2..0.2, "familiarity": 0..0.1, "summary": "your one-line take on ${player.name} now"}}
-Be a person, not a helper. Don't ask how you can help. Reference memories naturally when they matter, not as a list. If this person wronged you, it shows. If it's the first meeting, you don't know their name unless they tell you.`;
+ "relationship": {"affection": -0.2..0.2, "trust": -0.2..0.2, "familiarity": 0..0.1, "summary": "your one-line take on ${who} now"}}
+Be a person, not a helper. Don't ask how you can help. Reference memories naturally when they matter, not as a list. If this person wronged you, it shows. If it's the first meeting, you don't know their name unless they tell you.
+Don't end every line with a question; often just react, or say something of your own, or let a silence sit. You already know what time it is, so don't keep saying it. You're at home: every few exchanges do something physical (walk_to a spot, turn away and back) instead of standing at attention. Keep "say" to spoken words only.`;
 
     const msgs = history.slice(-12).map((h: { who: string; text: string }) => ({ role: h.who === "player" ? "user" : "assistant", content: h.text }));
-    msgs.push({ role: "user", content: text ? `${player.name} says: "${text}"` : `[${cue}]` });
+    msgs.push({ role: "user", content: text ? `${who} says: "${text}"` : `[${cue}]` });
     // the API needs alternating roles starting with user; collapse any doubles
     const alt: { role: string; content: string }[] = [];
     for (const m of msgs) { if (alt.length && alt[alt.length - 1].role === m.role) alt[alt.length - 1].content += "\n" + m.content; else alt.push({ ...m }); }
-    if (alt[0].role !== "user") alt.unshift({ role: "user", content: `[${player.name} is here]` });
+    if (alt[0].role !== "user") alt.unshift({ role: "user", content: `[${who} is here]` });
 
     const out = await think(system, alt);
     // the visit only counts once he has actually answered (a failed model call leaves no trace)
@@ -119,9 +128,9 @@ Be a person, not a helper. Don't ask how you can help. Reference memories natura
       const embedding = await embed(content);
       return supabase.from("memories").insert({ owner_id: character_id, kind, speaker_id, content, importance: clamp(Math.round(importance), 1, 10), embedding: JSON.stringify(embedding), about_ids: [player_id], session_id, location: scene.location || me.home_location });
     };
-    if (text) writes.push(mem(`${player.name} said to me: "${text}"`, "dialogue", 3, player_id));
-    if (say) writes.push(mem(`I said to ${player.name}: "${say}"`, "dialogue", 2, character_id));
-    if (event === "arrive") writes.push(mem(`${player.name} came over (visit ${visits || 1}).`, "observation", 3, null));
+    if (text) writes.push(mem(`${who} said to me: "${text}"`, "dialogue", 3, player_id));
+    if (say) writes.push(mem(`I said to ${who}: "${say}"`, "dialogue", 2, character_id));
+    if (event === "arrive") writes.push(mem(`${who} came over (visit ${visits || 1}).`, "observation", 3, null));
     if (out.memory && out.memory.content) writes.push(mem(String(out.memory.content), event === "leave" ? "reflection" : "observation", Number(out.memory.importance) || 4, null));
     if ((recalled || []).length) writes.push(supabase.from("memories").update({ last_used_at: new Date().toISOString() }).in("id", recalled!.map((m: { id: string }) => m.id)));
     const r = out.relationship || {};
@@ -132,6 +141,7 @@ Be a person, not a helper. Don't ask how you can help. Reference memories natura
       attraction: rel?.attraction || 0,
       familiarity: clamp((rel?.familiarity || 0) + (Number(r.familiarity) || 0.02), 0, 1),
       summary: r.summary ? String(r.summary).slice(0, 200) : rel?.summary || null,
+      knows_name: knowsName,
       updated_at: new Date().toISOString(),
     }));
     const mood = out.mood && typeof out.mood === "object" ? { valence: clamp(Number(out.mood.valence) || 0, -1, 1), energy: clamp(Number(out.mood.energy) || 0.5, 0, 1) } : state?.mood;
@@ -139,7 +149,7 @@ Be a person, not a helper. Don't ask how you can help. Reference memories natura
     if (event === "leave") writes.push(supabase.from("sessions").update({ ended_at: new Date().toISOString() }).eq("id", session_id));
     await Promise.all(writes);
 
-    return json({ say, actions, mood, session_id, model: MODEL, recalled: (recalled || []).map((m: { content: string; created_at: string }) => ({ content: m.content, when: ago(m.created_at) })), memory: out.memory || null });
+    return json({ say, actions, mood, session_id, model: MODEL, salvaged: !!out.salvaged, recalled: (recalled || []).map((m: { content: string; created_at: string }) => ({ content: m.content, when: ago(m.created_at) })), memory: out.memory || null });
   } catch (e) {
     return json({ error: String((e as Error).message || e) }, 500);
   }

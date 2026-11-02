@@ -160,7 +160,7 @@ function placeBubble() {
 function sceneState() { return { time: timeOfDay(), player_distance_m: +player.pos.distanceTo(marco.position).toFixed(2), spots: Object.keys(SPOTS) }; }
 function showMemories(d) {
   if (!d) return;
-  memEl.innerHTML = `<b>model</b> ${d.model || ''}<br><b>mood</b> ${JSON.stringify(d.mood)}<br><b>remembered now</b> ${d.memory && d.memory.content ? `(${d.memory.importance}) ${d.memory.content}` : '–'}<br><b>recalled</b><br>` + (d.recalled || []).map(m => `· ${m.content} <i>(${m.when})</i>`).join('<br>');
+  memEl.innerHTML = `<b>model</b> ${d.model || ''}${d.salvaged ? ' <i>(reply was cut short; line salvaged)</i>' : ''}<br><b>mood</b> ${JSON.stringify(d.mood)}<br><b>remembered now</b> ${d.memory && d.memory.content ? `(${d.memory.importance}) ${d.memory.content}` : '–'}<br><b>recalled</b><br>` + (d.recalled || []).map(m => `· ${m.content} <i>(${m.when})</i>`).join('<br>');
 }
 async function talk(opts) {
   status.textContent = 'thinking…';
@@ -173,6 +173,8 @@ async function talk(opts) {
     showMemories(d); status.textContent = `visit · ${mind.history.length} turns`;
   } catch (e) { say('sys', 'Marco is out of reach: ' + e.message); status.textContent = 'offline'; }
 }
+// on a phone the keyboard's Enter/Go key sends half-typed lines; there, only the Send button sends
+if (isPhone) document.getElementById('say').addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
 document.getElementById('form').addEventListener('submit', async e => {
   e.preventDefault(); const inp = document.getElementById('say'); const t = inp.value.trim(); if (!t || mind.busy) return;
   inp.value = ''; say('me', t); await talk({ text: t });
