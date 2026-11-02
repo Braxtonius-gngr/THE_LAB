@@ -154,7 +154,7 @@ const marco = g.scene; marco.traverse(o => { if (o.isMesh) { o.castShadow = true
 scene.add(marco);
 // (rest capture and the anatomy attach read the model at the origin; place him after)
 const reflex = new Reflexes(marco, { rest: captureRest(pack.scene, { allNodes: true }), clips: pack.animations });
-const anat = attachAnatomy(marco, spec.anatomy);
+const anat = attachAnatomy(marco, spec.anatomy, {}, { seed: 'marco' });   // the same man every visit
 marco.position.copy(SPOTS.kitchen); marco.rotation.y = Math.PI / 2 - 0.5;   // at the counter
 const mind = new Mind(CHARACTERS.marco);
 let bubbleUntil = 0;

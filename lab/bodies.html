@@ -24,6 +24,7 @@
   <button class="chip" id="motion">Motion</button>
   <select class="chip" id="anim"><option value="">Animation: none</option></select>
   <button class="chip" id="anat" hidden>Anatomy</button>
+  <button class="chip" id="reroll" hidden title="Same body, a new man drawn about his baseline">🎲 New roll</button>
   <button class="chip on" id="phys" hidden>Physics</button>
   <select class="chip" id="preset" hidden><option value="">Anatomy: lab baseline</option></select>
 </div>
@@ -31,7 +32,7 @@
 <script type="module">
 import * as THREE from '../assets/vendor/three/three.module.js';
 import { GLTFLoader } from '../assets/vendor/three/three.addons.js';
-import { attachAnatomy } from '../world/attach-anatomy.mjs';
+import { attachAnatomy, rollAnatomy } from '../world/attach-anatomy.mjs';
 import { captureRest, retargetClip, clipLabel } from '../world/retarget.mjs';
 
 const isPhone = matchMedia('(pointer:coarse)').matches || innerWidth < 800;
@@ -120,6 +121,8 @@ animSel.onchange = () => {
   anat?.sim.reset();
 };
 const anatBtn = document.getElementById('anat'), presetSel = document.getElementById('preset'), physBtn = document.getElementById('phys');
+const rerollBtn = document.getElementById('reroll'); let rollSeed = null;
+rerollBtn.onclick = () => { if (!anat || presetSel.value) return; rollSeed = Math.floor(Math.random() * 1e6); anat.rebuild(rollAnatomy(list.find(x => x.id === pick.value).anatomy.base, rollSeed)); rerollBtn.title = 'roll ' + rollSeed; };
 physBtn.onclick = () => { if (!anat) return; anat.setPhysics(!anat.physics); physBtn.classList.toggle('on', anat.physics); };
 // presets saved by the Measure tool / the anatomy lab (this browser only)
 function readPresets() { try { return JSON.parse(localStorage.getItem('dev_overlay_presets_v1') || '{}') || {}; } catch (_) { return {}; } }
@@ -149,10 +152,12 @@ async function show() {
   bodyRest = captureRest(current); mixer = new THREE.AnimationMixer(current); animSel.value = '';
   if (b.anatomy) {
     fillPresets();
-    anat = attachAnatomy(current, b.anatomy, readPresets()[presetSel.value] || {});
+    // a saved preset if one is picked, else this body's baseline rolled with a seed (?seed= pins one)
+    rollSeed = rollSeed ?? (+new URLSearchParams(location.search).get('seed') || Math.floor(Math.random() * 1e6));
+    anat = attachAnatomy(current, b.anatomy, readPresets()[presetSel.value] || {}, { seed: rollSeed });
     anat.setVisible(anatOn);
   }
-  anatBtn.hidden = presetSel.hidden = physBtn.hidden = !b.anatomy; physBtn.classList.add('on'); anatBtn.classList.toggle('on', anatOn);
+  anatBtn.hidden = presetSel.hidden = physBtn.hidden = rerollBtn.hidden = !b.anatomy; physBtn.classList.add('on'); anatBtn.classList.toggle('on', anatOn);
   let tris = 0;
   current.traverse(o => { if (o.isMesh) { o.castShadow = true; tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; } });
   scene.add(current);

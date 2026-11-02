@@ -23,7 +23,29 @@
         3355,
         2085,
         256
-      ]
+      ],
+      "base": {
+        "sizePouch": 1,
+        "sizeLobe": 1.05,
+        "length": 57,
+        "girth": 33,
+        "depth": 17,
+        "fullnessL": 80,
+        "fullnessR": 77,
+        "hangL": 53,
+        "hangR": 34,
+        "taper": 60,
+        "pitch": 61,
+        "twist": 52,
+        "curve": 37,
+        "glans": 55,
+        "veins": 33,
+        "veinSeed": 183,
+        "density": 36,
+        "hood": 0,
+        "ring": 61,
+        "tether": 36
+      }
     }
   },
   {
@@ -49,7 +71,29 @@
         1364,
         1561,
         256
-      ]
+      ],
+      "base": {
+        "sizePouch": 1.05,
+        "sizeLobe": 1.05,
+        "length": 38,
+        "girth": 68,
+        "depth": 26,
+        "fullnessL": 77,
+        "fullnessR": 67,
+        "hangL": 53,
+        "hangR": 41,
+        "taper": 52,
+        "pitch": 45,
+        "twist": 44,
+        "curve": 31,
+        "glans": 56,
+        "veins": 44,
+        "veinSeed": 187,
+        "density": 40,
+        "hood": 0,
+        "ring": 35,
+        "tether": 32
+      }
     }
   },
   {
@@ -65,7 +109,7 @@
     "anatomy": {
       "bone": "Pelvis",
       "root": [
-        0.0,
+        0,
         0.865,
         0.054
       ],
@@ -75,7 +119,29 @@
         571,
         2289,
         256
-      ]
+      ],
+      "base": {
+        "sizePouch": 1.05,
+        "sizeLobe": 1.15,
+        "length": 65,
+        "girth": 45,
+        "depth": 28,
+        "fullnessL": 65,
+        "fullnessR": 71,
+        "hangL": 47,
+        "hangR": 37,
+        "taper": 62,
+        "pitch": 53,
+        "twist": 37,
+        "curve": 52,
+        "glans": 43,
+        "veins": 20,
+        "veinSeed": 929,
+        "density": 53,
+        "hood": 62,
+        "ring": 45,
+        "tether": 38
+      }
     }
   },
   {
@@ -101,7 +167,29 @@
         2672,
         1477,
         256
-      ]
+      ],
+      "base": {
+        "sizePouch": 0.95,
+        "sizeLobe": 1.1,
+        "length": 52,
+        "girth": 36,
+        "depth": 33,
+        "fullnessL": 65,
+        "fullnessR": 58,
+        "hangL": 56,
+        "hangR": 53,
+        "taper": 37,
+        "pitch": 68,
+        "twist": 38,
+        "curve": 64,
+        "glans": 68,
+        "veins": 40,
+        "veinSeed": 763,
+        "density": 47,
+        "hood": 0,
+        "ring": 28,
+        "tether": 28
+      }
     }
   },
   {
@@ -127,7 +215,29 @@
         2125,
         1404,
         256
-      ]
+      ],
+      "base": {
+        "sizePouch": 1.05,
+        "sizeLobe": 1,
+        "length": 54,
+        "girth": 63,
+        "depth": 31,
+        "fullnessL": 50,
+        "fullnessR": 50,
+        "hangL": 57,
+        "hangR": 38,
+        "taper": 60,
+        "pitch": 52,
+        "twist": 40,
+        "curve": 34,
+        "glans": 73,
+        "veins": 59,
+        "veinSeed": 894,
+        "density": 36,
+        "hood": 58,
+        "ring": 30,
+        "tether": 48
+      }
     }
   },
   {
@@ -153,7 +263,29 @@
         1865,
         15,
         256
-      ]
+      ],
+      "base": {
+        "sizePouch": 1,
+        "sizeLobe": 1,
+        "length": 50,
+        "girth": 72,
+        "depth": 45,
+        "fullnessL": 62,
+        "fullnessR": 59,
+        "hangL": 53,
+        "hangR": 73,
+        "taper": 50,
+        "pitch": 58,
+        "twist": 47,
+        "curve": 67,
+        "glans": 38,
+        "veins": 51,
+        "veinSeed": 957,
+        "density": 53,
+        "hood": 66,
+        "ring": 39,
+        "tether": 32
+      }
     }
   },
   {
@@ -179,7 +311,29 @@
         1608,
         1849,
         256
-      ]
+      ],
+      "base": {
+        "sizePouch": 1.05,
+        "sizeLobe": 0.95,
+        "length": 53,
+        "girth": 36,
+        "depth": 20,
+        "fullnessL": 62,
+        "fullnessR": 57,
+        "hangL": 62,
+        "hangR": 61,
+        "taper": 53,
+        "pitch": 62,
+        "twist": 69,
+        "curve": 67,
+        "glans": 70,
+        "veins": 44,
+        "veinSeed": 40,
+        "density": 33,
+        "hood": 54,
+        "ring": 56,
+        "tether": 41
+      }
     }
   }
 ]

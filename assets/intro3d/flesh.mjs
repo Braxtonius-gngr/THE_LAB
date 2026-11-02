@@ -137,6 +137,18 @@ export class FleshSim {
     if (p.y < this.floor + r) p.y = this.floor + r;
   }
 
+  collideRod(tip, r, len0) {
+    for (let pass = 0; pass < 2; pass++) for (const f of [0.35, 0.55, 0.75]) {
+      _d.copy(this.anchor).lerp(tip, f);
+      for (const k of this.capsules) {
+        closest(_d, k.a, k.b, _a); _b.subVectors(_d, _a); const L = _b.length(), R = k.r + r;
+        if (L < R && L > 1e-4) { tip.addScaledVector(_b.divideScalar(L), (R - L) / f); _d.copy(this.anchor).lerp(tip, f); }
+      }
+    }
+    // (back to its length from the root)
+    const len = tip.distanceTo(this.anchor); if (len > 1e-6) { _d.subVectors(tip, this.anchor).setLength(len0 ?? len); tip.copy(this.anchor).add(_d); }
+  }
+
   // advance dt seconds and pose the anatomy from the particles
   step(dt) {
     const P = this.pouch, g = this.inner; if (!P || !g) return false;
@@ -234,6 +246,10 @@ export class FleshSim {
         }
         x.copy(this.anchor).addScaledVector(_a, L);
         this.collide(x, r);
+        // (the shaft is a rod, not a point at its tip: a thigh caught along its
+        // middle pushes the tip out too - each sample's push scaled up by how
+        // far toward the root it sits, the lever it acts on)
+        if (i) this.collideRod(x, r, L);
         v.subVectors(x, p).divideScalar(STEP);
         p.copy(x);
       });

@@ -743,6 +743,15 @@ function buildHead(kit, o = {}) {
 //                12% more, as it was; 0 the same, 100 24%)
 //     density    0-100: the lobes' give to gravity - over 50 they sag toward
 //                the ground (whichever way that is), under 50 they hold up
+//     curve      0-100: a bend along its length to his left (under 50) or
+//                right, growing toward the tip - at rest, +-22% of its run
+//                sideways at the tip (twist leans it at the root; this bends it)
+//   the surface (a build's man; 50 / 35 as below):
+//     glans      0-100: the head's size - its length and the corona's flare
+//                (50: about 2.2 x the shaft's radius long, the rim 7% proud)
+//     veins      0-100: how much the superficial veins stand up from the
+//                shaft at rest (0 none; 100 about 6% of its radius) - each
+//                man's run their own course (drawn from `veinSeed`)
 ////   the envelope (a sleeve of skin over the shaft's far half - a build's
 //   man only; hood 0 is none, the shape as it was):
 //     hood       0-100: how far it runs on past the tip (100: 1.4 x the
@@ -805,6 +814,7 @@ let ANATOMY = {
   hangL: 45, hangR: 55,
   gorge: 0, sway: 1.0,
   taper: 50, elevation: 50, pitch: 50, twist: 50, lobeLag: 50, density: 50,
+  curve: 50, glans: 50, veins: 35, veinSeed: 1,
   hood: 0, ring: 40, tether: 40, glide: 60, retract: 50, folds: 50,
   modulus: 50, damping: 50, resist: 50, adhesion: 50,
   seatSize: 1, seatFullL: 50, seatFullR: 50, seatLift: 50, seatSpread: 50, seatJiggle: 50, seatFirm: 50,
@@ -848,6 +858,7 @@ function anatomyFor(rnd) {
     // (the finer cut as the base has it - no draws of their own, so every
     // man is drawn as before)
     taper: ANATOMY.taper, elevation: ANATOMY.elevation, pitch: ANATOMY.pitch, twist: ANATOMY.twist, lobeLag: ANATOMY.lobeLag, density: ANATOMY.density,
+    curve: ANATOMY.curve, glans: ANATOMY.glans, veins: ANATOMY.veins, veinSeed: ANATOMY.veinSeed,
     bellySize: ANATOMY.bellySize, bellyLift: ANATOMY.bellyLift, bellyJiggle: ANATOMY.bellyJiggle, bellyFirm: ANATOMY.bellyFirm,
     chestSize: ANATOMY.chestSize, chestSpread: ANATOMY.chestSpread, chestLift: ANATOMY.chestLift, chestJiggle: ANATOMY.chestJiggle, chestFirm: ANATOMY.chestFirm,
     armSize: ANATOMY.armSize, forearmSize: ANATOMY.forearmSize, handSize: ANATOMY.handSize, thighSize: ANATOMY.thighSize, calfSize: ANATOMY.calfSize, footSize: ANATOMY.footSize,
@@ -874,7 +885,7 @@ export function anatomyCm(a) {
 
 // a tube swept along points with a radius at each (rings of n), closed at
 // both ends, with UVs laid in world units so the hatch matches the body
-function sweep(pts, radii, n = 12, metric, shape = null) {
+function sweep(pts, radii, n = 12, metric, shape = null, shapeA = null, colorAt = null) {
   const c = new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(...p)));
   const S = Math.max(8, pts.length * 4), pos = [], uv = [], idx = [], dirs = [];
   const frames = c.computeFrenetFrames(S, false);
@@ -885,22 +896,25 @@ function sweep(pts, radii, n = 12, metric, shape = null) {
   // arc length along the curve for v-coordinate
   const vAt = [0]; let runLen = 0;
   for (let j = 1; j <= S; j++) { runLen += c.getPointAt(j / S).distanceTo(c.getPointAt((j - 1) / S)); vAt.push(runLen); }
+  const col = colorAt ? [] : null;
   for (let j = 0; j <= S; j++) {
     const t = j / S, p = c.getPointAt(t), r = rAt(t) * (shape ? shape(t) : 1), N = frames.normals[j], B = frames.binormals[j], Tg = frames.tangents[j];
     const circ = 2 * PI * r;
     for (let i = 0; i < n; i++) {
-      const a = i / n * PI * 2;
-      pos.push(p.x + r * (Math.cos(a) * N.x + Math.sin(a) * B.x), p.y + r * (Math.cos(a) * N.y + Math.sin(a) * B.y), p.z + r * (Math.cos(a) * N.z + Math.sin(a) * B.z));
+      const a = i / n * PI * 2, ra = shapeA ? r * shapeA(t, a) : r;
+      pos.push(p.x + ra * (Math.cos(a) * N.x + Math.sin(a) * B.x), p.y + ra * (Math.cos(a) * N.y + Math.sin(a) * B.y), p.z + ra * (Math.cos(a) * N.z + Math.sin(a) * B.z));
+      if (col) { const k = colorAt(t, a); col.push(k[0], k[1], k[2]); }
       uv.push(metric ? (i / n) * circ * mu : i / n, metric ? vAt[j] * mv : j / S);
       dirs.push(Tg.x, Tg.y, Tg.z);   // (the curve's own direction: see loft's aAlong)
     }
   }
   for (let j = 0; j < S; j++) for (let i = 0; i < n; i++) { const a = j * n + i, b = j * n + (i + 1) % n, c2 = a + n, d = b + n; idx.push(a, b, c2, b, d, c2); }
-  [0, S].forEach((j, k) => { const p = c.getPointAt(k), ci = pos.length / 3, Tg = frames.tangents[j]; pos.push(p.x, p.y, p.z); uv.push(0.5, k ? vAt[S] * mv : 0); dirs.push(Tg.x, Tg.y, Tg.z); for (let i = 0; i < n; i++) { const a = j * n + i, b = j * n + (i + 1) % n; if (k) idx.push(ci, a, b); else idx.push(ci, b, a); } });
+  [0, S].forEach((j, k) => { const p = c.getPointAt(k), ci = pos.length / 3, Tg = frames.tangents[j]; pos.push(p.x, p.y, p.z); uv.push(0.5, k ? vAt[S] * mv : 0); dirs.push(Tg.x, Tg.y, Tg.z); if (col) { const q = colorAt(k, 0); col.push(q[0], q[1], q[2]); } for (let i = 0; i < n; i++) { const a = j * n + i, b = j * n + (i + 1) % n; if (k) idx.push(ci, a, b); else idx.push(ci, b, a); } });
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   g.setAttribute('aAlong', new THREE.Float32BufferAttribute(dirs, 3));
+  if (col) g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.setIndex(idx);
   // (each point's share of the way along, 0 at the start, 1 at the end - the
   // rings are laid at even arc lengths - for a bend that grows along it)
@@ -925,23 +939,28 @@ const engorge = a => { const e = gorgeOf(a); return { e, len: 1 + 0.6 * e, girth
 // about o (the shaft's root), slid by `slide` along the shaft (- drawn back
 // toward the root, + on past the tip) and bunched into folds as it is drawn
 // back - and the constants its physics reads (flesh.mjs). null at hood 0.
-function buildSleeve(path, r, sL, a, m, g) {
+function buildSleeve(path, r, sL, a, m, g, prof = null) {
   const hood = (a.hood ?? 0) / 100; if (hood <= 0) return null;
   const ring = (a.ring ?? 40) / 100, tether = (a.tether ?? 40) / 100, folds = (a.folds ?? 50) / 100;
   const curve = new THREE.CatmullRomCurve3(path.map(p => new THREE.Vector3(...p)));
   const NF = 64, frames = curve.computeFrenetFrames(NF, false), arc = curve.getLength();
   const T0 = 0.55, N = 14, NR = 14, NE = 7;
-  const ext = r * 1.4 * hood, open = r * (0.85 - 0.7 * ring), thick = r * 1.08 + 0.04 * sL;
+  // (with a head under it (prof: the shaft's radius share along its run) the
+  // skin follows the head's dome and gathers past the tip to a small opening;
+  // without, the old straight sleeve)
+  const ext = prof ? r * 0.3 * hood : r * 1.4 * hood, open = prof ? r * (0.1 + 0.3 * (1 - ring)) : r * (0.85 - 0.7 * ring), thick = r * 1.08 + 0.04 * sL;
+  const radAt = t => prof ? r * prof(t) + 0.08 * r + 0.04 * sL : thick;
   const tipP = curve.getPointAt(1), tipT = frames.tangents[NF].clone();
   // (the underside: toward the body, +z, square to the shaft at its tip)
   const ventral = new THREE.Vector3(0, 0, 1).addScaledVector(tipT, -tipT.z).normalize();
   const fq = 1.3 / (UVM.linen[2] || 1.3), mu = DENS * fq / UVM.linen[0], mv = DENS * fq / UVM.linen[1];
   const pos = [], uv = [], dirs = [], idx = [], axis = [], radial = [], ringU = [];
   const rings = [];
-  for (let j = 0; j <= NR; j++) { const t = T0 + (1 - T0) * j / NR, k = Math.round(t * NF); rings.push({ c: curve.getPointAt(t), T: frames.tangents[k], Nn: frames.normals[k], B: frames.binormals[k], rad: thick * (j < 2 ? 0.93 + 0.035 * j : 1), d: arc * (t - T0), e: 0 }); }
-  for (let e = 1; e <= NE; e++) { const sx = e / NE, sm = sx * sx * (3 - 2 * sx); rings.push({ c: tipP.clone().addScaledVector(tipT, ext * sx), T: tipT, Nn: frames.normals[NF], B: frames.binormals[NF], rad: thick + (open - thick) * sm, d: arc * (1 - T0) + ext * sx, e: sx }); }
+  for (let j = 0; j <= NR; j++) { const t = T0 + (1 - T0) * j / NR, k = Math.round(t * NF); rings.push({ c: curve.getPointAt(t), T: frames.tangents[k], Nn: frames.normals[k], B: frames.binormals[k], rad: prof ? r * prof(t) * 1.03 + (radAt(t) - r * prof(t) * 1.03) * Math.min(1, j / 4) : radAt(t) * (j < 2 ? 0.93 + 0.035 * j : 1), d: arc * (t - T0), e: 0 }); }
+  const endR = radAt(1);
+  for (let e = 1; e <= NE; e++) { const sx = e / NE, sm = sx * sx * (3 - 2 * sx); rings.push({ c: tipP.clone().addScaledVector(tipT, ext * sx), T: tipT, Nn: frames.normals[NF], B: frames.binormals[NF], rad: endR + (Math.min(open, endR) - endR) * sm, d: arc * (1 - T0) + ext * sx, e: sx }); }
   // (and a lip turned in at the opening, so the rim reads as a rim)
-  rings.push({ c: tipP.clone().addScaledVector(tipT, Math.max(0, ext - 0.18 * r)), T: tipT, Nn: frames.normals[NF], B: frames.binormals[NF], rad: open * 0.72, d: arc * (1 - T0) + ext + 0.2 * r, e: 1 });
+  rings.push({ c: tipP.clone().addScaledVector(tipT, Math.max(0, ext - 0.18 * r)), T: tipT, Nn: frames.normals[NF], B: frames.binormals[NF], rad: Math.min(open, endR) * 0.72, d: arc * (1 - T0) + ext + 0.2 * r, e: 1 });
   const total = rings[rings.length - 1].d || 1, v = new THREE.Vector3(), rd = new THREE.Vector3();
   rings.forEach(R => {
     for (let i = 0; i < N; i++) {
@@ -1089,6 +1108,8 @@ export function buildAnatomy(pouch, m, a) {
     [0, -avgDrop - avgLR * 0.2, front - 0.15 * sL],
     [0, -2.0 * sL - L, front + 0.5 * sL]
   ];
+  // (curve: bent to a side along its run, nothing at the root, most at the tip)
+  { const cv = cut('curve'); [0, 0, 0.3, 0.6, 1].forEach((f, i) => { pts[i][0] += cv * 0.22 * L * f * f; }); }
   // (raised or dropped with the rest; then turned about its root - pitched
   // forward or back about x, leaned to a side about z)
   {
@@ -1107,9 +1128,47 @@ export function buildAnatomy(pouch, m, a) {
     const ROOT = 0.15, TAU = 0.035, BEND = 0.25 + 0.13 * (a.modulus ?? 50) / 50 + en.bend;
     const bury = [0, pts[0][1] + 1.2 * sL, pts[0][2] + 2.6 * sL];
     const taper = t => t >= ROOT ? 1 : (1 - Math.exp(-t / TAU)) / (1 - Math.exp(-ROOT / TAU));
-    const geo = sweep([bury, ...pts], tapered([r * 0.9, r * 1.12, r, r * 0.98, r * 1.02, r * 0.55]), 14, UVM.linen, taper);
-    sh = liveFacet(geo, m, g, 0);
-    sleeve = buildSleeve([bury, ...pts], r, sL, a, m, g);
+    // (the head: the last stretch of the run, its rim (the corona) standing a
+    // little proud of the shaft with a shallow groove behind it, then domed to
+    // the tip - its own tone where the material can carry one. Under an
+    // envelope it is covered; with none (cut) it shows, with a faint line
+    // where the skin was joined)
+    const run = new THREE.CatmullRomCurve3([bury, ...pts].map(p => new THREE.Vector3(...p))).getLength();
+    const gk = 0.6 + 0.8 * (a.glans ?? 50) / 100, glen = Math.min(0.3 * run, 2.2 * r * gk), tg = 1 - glen / run;
+    const flare = 1 + 0.12 * gk, cutMan = !(a.hood > 0);
+    const head = t => {
+      if (t < tg - 0.06) return taper(t);
+      if (t < tg) { const u = (t - (tg - 0.06)) / 0.06; return 1 - 0.13 * Math.sin(PI * Math.min(1, u * 1.25)) + (flare - 1) * Math.pow(Math.max(0, (u - 0.75) / 0.25), 0.5); }
+      // (the rim stands proud for a short way, the head eases in, then domes)
+      const u = (t - tg) / (1 - tg), body = u < 0.12 ? flare : flare - (flare - 0.9) * Math.min(1, (u - 0.12) / 0.45);
+      return body * (u < 0.55 ? 1 : Math.sqrt(Math.max(0.03, 1 - Math.pow((u - 0.55) / 0.45, 2))));
+    };
+    // (the veins: two or three that run their own wandering course from the
+    // root toward the head, standing up a little - none on the head itself)
+    const vk = Math.max(0, (a.veins ?? 35) / 100) * 0.2, vs = (a.veinSeed ?? 1) * 9.13;
+    const vrnd = k => { const x = Math.sin(vs * 12.9898 + k * 78.233) * 43758.5453; return x - Math.floor(x); };
+    const VEINS = [0, 1, 2].slice(0, 2 + (vrnd(9) > 0.5 ? 1 : 0)).map(k => ({ a0: vrnd(k) * 2 * PI, f: 4 + 5 * vrnd(k + 3), ph: vrnd(k + 6) * 6, w: 0.11 + 0.08 * vrnd(k + 11), h: 0.5 + 0.5 * vrnd(k + 13) }));
+    const veinAt = (t, ang) => {
+      if (!vk || t < 0.12 || t > tg - 0.08) return 1;
+      const fade = Math.min(1, (t - 0.12) / 0.15) * Math.min(1, (tg - 0.08 - t) / 0.12);
+      let h = 0;
+      for (const V of VEINS) { let d = ang - (V.a0 + 0.5 * Math.sin(t * V.f + V.ph)); d = Math.atan2(Math.sin(d), Math.cos(d)); h += V.h * Math.exp(-(d / V.w) * (d / V.w)); }
+      return 1 + vk * fade * h;
+    };
+    const tinted = !!(m && m.isMeshStandardMaterial);
+    const GL = [0.86, 0.66, 0.68], SCAR = [0.9, 0.84, 0.84], VEIN = [0.93, 0.92, 1.0];
+    const colorAt = (t, ang) => {
+      const gl = Math.min(1, Math.max(0, (t - (tg - 0.012)) / 0.03));
+      let c = [1, 1, 1].map((x, i) => x + (GL[i] - x) * gl);
+      if (cutMan && Math.abs(t - (tg - 0.16)) < 0.025) c = c.map((x, i) => x * (1 - (1 - SCAR[i]) * (1 - Math.abs(t - (tg - 0.16)) / 0.025)));
+      const vv = veinAt(t, ang) - 1; if (vv > 0) { const k = Math.min(1, vv / 0.04); c = c.map((x, i) => x * (1 - (1 - VEIN[i]) * k)); }
+      return c;
+    };
+    const geo = sweep([bury, ...pts], tapered([r * 0.9, r * 1.12, r, r * 0.98, r * 1.02, r]), 28, UVM.linen, head, veinAt, tinted ? colorAt : null);
+    let shm = m;
+    if (tinted) { shm = m.clone(); shm.vertexColors = true; shm.map = m.map; }
+    sh = liveFacet(geo, shm, g, 0);
+    sleeve = buildSleeve([bury, ...pts], r, sL, a, m, g, t => Math.max(head(t), t < tg ? 1 : 0));
     // turn it by q about its root as the physics asks (null: at rest) - the
     // root's run held where it is, the turn growing to all of q by BEND along
     // it: past that it is the rigid turn it was, so the tip lands where the

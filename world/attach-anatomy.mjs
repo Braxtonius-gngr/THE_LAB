@@ -11,6 +11,7 @@
 //   skinPatch [x, y, size] a clean skin patch on the body texture (px of a 4096 texture) for the grain
 //   foldBack, lobeTuck  fit tweaks for a flatter imported pelvis (defaults 1.1, 0.8)
 //   colliders { legs: [[hipBone, kneeBone], ...], thighR, belly: [fromBone, toBone], bellyR } (metres)
+//   base   this body's own baseline (slider values); each creation is drawn about it
 //   stiff  0-1, physics off only: how much it keeps the hips' tilt instead of hanging plumb (default 0.2)
 //
 // The anatomy is built in centimetres (the lab's units) inside `pouch`,
@@ -19,6 +20,19 @@
 // keys); anything not given takes the lab's realistic-average baseline.
 import * as THREE from '../assets/vendor/three/three.module.js';
 import { buildAnatomy, getAnatomy, setSoft } from '../assets/intro3d/figure.mjs';
+import { realismDraw, realismClamp } from '../assets/intro3d/dev-overlay.mjs';
+
+// a seeded rng (mulberry32) so a character is the same man every time he loads
+export function seeded(seed) { let a = (typeof seed === 'string' ? [...seed].reduce((h, c) => Math.imul(h ^ c.charCodeAt(0), 2654435761), 7) : seed) >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+// One man: the body's own baseline (bodies.json anatomy.base: what this model
+// is - sizes, cut or uncut, which way he hangs) with a creation's draw about
+// it (seed: the same seed is the same man). Natural spread, at rest.
+export function rollAnatomy(base = {}, seed = Math.random() * 1e9, spread = 0.45) {
+  const b = Object.assign(getAnatomy(), base);
+  const v = realismClamp(Object.assign({}, b, realismDraw(b, seeded(seed), spread)));
+  v.gorge = 0;
+  return v;
+}
 import { FleshSim } from '../assets/intro3d/flesh.mjs';
 
 const _q = new THREE.Quaternion(), _qh = new THREE.Quaternion(), _qt = new THREE.Quaternion();
@@ -39,7 +53,10 @@ class RigFleshSim extends FleshSim {
   }
 }
 
-export function attachAnatomy(model, spec, params = {}) {
+// params: a full slider set (a saved preset) - or none, and the man is rolled
+// from the body's baseline with opts.seed
+export function attachAnatomy(model, spec, params = {}, opts = {}) {
+  if (!params || !Object.keys(params).length) params = rollAnatomy(spec.base, opts.seed ?? Math.random() * 1e9);
   const hips = model.getObjectByName(spec.bone || 'Hips');
   if (!hips) throw new Error(`attachAnatomy: no bone "${spec.bone || 'Hips'}"`);
   model.updateMatrixWorld(true);

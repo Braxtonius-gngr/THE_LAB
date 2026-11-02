@@ -187,6 +187,7 @@ const PARTS = [
     { key: 'elevation', label: 'Elevation',  min: 0,   max: 100, step: 1 },
     { key: 'pitch',     label: 'Pitch',      min: 0,   max: 100, step: 1 },
     { key: 'twist',     label: 'Twist L/R',  min: 0,   max: 100, step: 1 },
+    { key: 'curve',     label: 'Curve L/R',  min: 0,   max: 100, step: 1 },
   ] },
   { id: 'lobes', label: 'Lobes', params: [
     { key: 'sizeLobe',  label: 'Size lobe',  min: 0.5, max: 3,   step: 0.05 },
@@ -230,6 +231,8 @@ const PARTS = [
     { key: 'footSize',    label: 'Feet',       min: 0, max: 100, step: 1 },
   ] },
   { id: 'envelope', label: 'Envelope', params: [
+    { key: 'glans',     label: 'Head',       min: 0,   max: 100, step: 1 },
+    { key: 'veins',     label: 'Veins',      min: 0,   max: 100, step: 1 },
     { key: 'hood',      label: 'Hood',       min: 0,   max: 100, step: 1 },
     { key: 'ring',      label: 'Ring',       min: 0,   max: 100, step: 1 },
     { key: 'tether',    label: 'Tether',     min: 0,   max: 100, step: 1 },
@@ -260,7 +263,7 @@ const REALISM = {
   sizeLobe: { sd: 0.1, corr: ['sizePouch', 0.5] },
   fullnessL: { sd: 10 }, fullnessR: { sd: 10, corr: ['fullnessL', 0.7] },
   hangL: { sd: 10 }, hangR: { sd: 10, corr: ['hangL', 0.6] },
-  taper: { sd: 10 }, elevation: { sd: 10 }, pitch: { sd: 10 }, twist: { sd: 12 },
+  taper: { sd: 10 }, elevation: { sd: 10 }, pitch: { sd: 10 }, twist: { sd: 12 }, curve: { sd: 11 }, glans: { sd: 12 }, veins: { sd: 14 },
   lobeLag: { sd: 12 }, density: { sd: 12 },
   // (the envelope: none on about half of draws - then the rest of its cut
   // is drawn all the same, for when it is turned up)
@@ -329,18 +332,22 @@ export function gauss(rnd = Math.random) { let u = 0; while (!u) u = rnd(); retu
 function gaussT(t, rnd) { for (let i = 0; i < 20; i++) { const z = gauss(rnd); if (Math.abs(z) <= t) return z; } return 0; }
 // a full set of values about `base` (each in its slider's range): the
 // standard scores are kept, so a correlated pair shares part of its draw
-export function realismDraw(base = DEFAULTS, rnd = Math.random) {
+export function realismDraw(base = DEFAULTS, rnd = Math.random, spread = 1) {
   const z = {}, out = {};
   PARAMS.forEach(p => {
     const R = REALISM[p.key]; if (!R) return;
     let zi = gaussT(2.2, rnd);
     if (R.corr && z[R.corr[0]] != null) { const r = R.corr[1]; zi = Math.max(-2.2, Math.min(2.2, r * z[R.corr[0]] + Math.sqrt(1 - r * r) * zi)); }
     z[p.key] = zi;
-    let v = (R.mean ?? base[p.key] ?? (p.min + p.max) / 2) + zi * R.sd;
+    // (spread < 1: a draw about this man's own baseline rather than everyone's)
+    let v = (spread < 1 ? (base[p.key] ?? R.mean) : (R.mean ?? base[p.key])) ?? (p.min + p.max) / 2;
+    v += zi * R.sd * spread;
     if (R.floor != null) v = Math.max(R.floor, Math.abs(v - R.floor) + R.floor);
-    if (R.none && rnd() < R.none) v = 0;
+    if (R.none && spread >= 1 && rnd() < R.none) v = 0;
+    if (R.none && spread < 1 && !(base[p.key] > 0)) v = 0;   // (a cut man stays cut)
     out[p.key] = Math.min(p.max, Math.max(p.min, Math.round(v / p.step) * p.step));
   });
+  out.veinSeed = 1 + Math.floor(rnd() * 997);
   return out;
 }
 
