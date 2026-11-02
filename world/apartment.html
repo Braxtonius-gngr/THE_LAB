@@ -51,6 +51,7 @@ import { captureRest } from './retarget.mjs';
 import { Reflexes } from './reflexes.mjs';
 import { Mind, CHARACTERS, timeOfDay } from './mind.mjs';
 import { loadProps } from './props.mjs';
+import { wear } from './garments.mjs';
 
 const isPhone = matchMedia('(pointer:coarse)').matches;
 const r = new THREE.WebGLRenderer({ antialias: true });
@@ -192,7 +193,29 @@ function placeBubble() {
   headBone.getWorldPosition(_hp); _hp.y += 0.25; _hp.project(cam);
   const behind = _hp.z > 1; bubble.style.left = ((_hp.x + 1) / 2 * innerWidth) + 'px'; bubble.style.top = ((1 - _hp.y) / 2 * innerHeight) + 'px'; bubble.style.opacity = behind ? 0 : 1;
 }
-function sceneState() { return { time: timeOfDay(), player_distance_m: +player.pos.distanceTo(marco.position).toFixed(2), spots: Object.keys(SPOTS) }; }
+// ---------- his wardrobe: what he has on, chosen by the hour, changed when he wants to ----------
+const wardrobe = await (await fetch('../assets/garments/garments.json')).json();
+const OUTFITS = { Nude: [] };
+for (const o of wardrobe.outfits) if (o.items.every(id => (wardrobe.garments.find(g => g.id === id)?.bodies || []).includes(spec.id))) OUTFITS[o.name] = o.items;
+// (a bartender's day: off work about 2 am, asleep till late morning, home in the afternoon, at the bar
+// by evening - if you find him home then, it's his night off)
+function outfitFor(h = new Date().getHours()) {
+  if (h >= 2 && h < 4) return OUTFITS['Behind the bar'] ? 'Behind the bar' : 'Tee + jeans';   // just got in
+  if (h >= 4 && h < 11) return OUTFITS['Sleepwear'] ? 'Sleepwear' : 'Nude';
+  if (h >= 11 && h < 18) return 'Lounging';
+  return 'Tee + jeans';
+}
+let outfit = null, worn = [], dressing = 0;
+async function dress(name) {
+  if (!(name in OUTFITS)) return; const tok = ++dressing;
+  worn.forEach(w => w.remove()); worn = []; outfit = name;
+  anat.setVisible(!OUTFITS[name].some(id => ['jeans', 'boxerbriefs', 'chinos', 'sweatpants', 'apron'].includes(id)));
+  for (const id of OUTFITS[name]) { const w = await wear(loader, marco, `../assets/garments/${id}/${spec.id}${isPhone ? '.mobile' : ''}.glb`); if (tok !== dressing) { w.remove(); return; } worn.push(w); }
+  window.__dressed = name;
+}
+await dress(outfitFor());
+reflex.onChange = name => dress(name);
+function sceneState() { return { time: timeOfDay(), player_distance_m: +player.pos.distanceTo(marco.position).toFixed(2), spots: Object.keys(SPOTS), wearing: outfit, wardrobe: Object.keys(OUTFITS) }; }
 function showMemories(d) {
   if (!d) return;
   memEl.innerHTML = `<b>model</b> ${d.model || ''}${d.salvaged ? ' <i>(reply was cut short; line salvaged)</i>' : ''}<br><b>mood</b> ${JSON.stringify(d.mood)}<br><b>remembered now</b> ${d.memory && d.memory.content ? `(${d.memory.importance}) ${d.memory.content}` : '–'}<br><b>recalled</b><br>` + (d.recalled || []).map(m => `· ${m.content} <i>(${m.when})</i>`).join('<br>');

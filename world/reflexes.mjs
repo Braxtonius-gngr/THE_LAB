@@ -47,6 +47,8 @@ export class Reflexes {
       else if (a.type === 'turn_to' && a.target === 'player' && this.player) this.turnTo(this.player);
       else if (a.type === 'look_at') this.lookAt(a.target === 'player' ? this.player : null);
       else if (a.type === 'gesture') this.gesture(a.name || 'nod');
+      // (changing clothes: off to where he keeps them - the bed - then the page dresses him)
+      else if (a.type === 'change') { const at = spots.bed || spots.shelf; if (at) this.walkTo(at, () => this.onChange?.(a.outfit)); else this.onChange?.(a.outfit); this.current = { type: 'walk_to' }; }
       else this.current = null;
     }
   }

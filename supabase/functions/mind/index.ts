@@ -4,7 +4,7 @@
 //   text    what the player just said (or null for an event)
 //   event   'arrive' (player enters: the character notices and greets or doesn't),
 //           'leave'  (player leaves: the character reflects on the visit; session closes)
-//   scene   { location, time, player_distance_m, player_pos: [x,z], spots: ['sofa','kitchen',...] }
+//   scene   { location, time, player_distance_m, player_pos: [x,z], spots: ['sofa','kitchen',...], wearing, wardrobe }
 //   history recent turns this session, [{ who: 'player'|'me', text }], kept by the page
 // → { say, actions, mood, session_id, recalled, memory }
 //
@@ -90,19 +90,20 @@ Deno.serve(async (req) => {
 
     const system = `${me.persona}
 
-You are in your ${scene.location || me.home_location || "apartment"}. Time: ${scene.time || "evening"}. ${who} is ${scene.player_distance_m != null ? `${Number(scene.player_distance_m).toFixed(1)} m away` : "here"}. Places you can walk to: ${(scene.spots || ["sofa", "kitchen", "window", "door"]).join(", ")}.
+You are in your ${scene.location || me.home_location || "apartment"}. Time: ${scene.time || "evening"}.${scene.wearing ? ` You're wearing: ${scene.wearing === "Nude" ? "nothing" : scene.wearing}. Clothes you could change into: ${(scene.wardrobe || []).join(", ")}.` : ""} ${who} is ${scene.player_distance_m != null ? `${Number(scene.player_distance_m).toFixed(1)} m away` : "here"}. Places you can walk to: ${(scene.spots || ["sofa", "kitchen", "window", "door"]).join(", ")}.
 This is visit number ${visits || 1} from ${who}.${rel ? ` How you feel about ${who}: affection ${rel.affection.toFixed(2)}, trust ${rel.trust.toFixed(2)}, familiarity ${rel.familiarity.toFixed(2)}. Your take on them so far: ${rel.summary || "no take yet"}.` : ` You have never met this person before${knowsName ? "" : " and don't know their name"}.`}
 Your mood: ${JSON.stringify(state?.mood || { valence: 0, energy: 0.5 })}.
 ${memLines ? `Things you remember (most relevant first):\n${memLines}` : "You have no memories of this person yet."}
 
 Respond ONLY with JSON, no prose around it:
 {"say": "what you say out loud, 1-3 short sentences, or \\"\\" if you stay quiet",
- "actions": [{"type":"look_at","target":"player"} | {"type":"walk_to","target":"<spot>"} | {"type":"turn_to","target":"player"} | {"type":"gesture","name":"nod"|"shrug"|"wave"} | {"type":"idle"}],
+ "actions": [{"type":"look_at","target":"player"} | {"type":"walk_to","target":"<spot>"} | {"type":"turn_to","target":"player"} | {"type":"gesture","name":"nod"|"shrug"|"wave"} | {"type":"change","outfit":"<one of your clothes>"} | {"type":"idle"}],
  "mood": {"valence": -1..1, "energy": 0..1},
  "memory": {"content": "one thing worth remembering from this moment, in first person, or null", "importance": 1-10},
  "relationship": {"affection": -0.2..0.2, "trust": -0.2..0.2, "familiarity": 0..0.1, "summary": "your one-line take on ${who} now"}}
 Be a person, not a helper. Don't ask how you can help. Reference memories naturally when they matter, not as a list. If this person wronged you, it shows. If it's the first meeting, you don't know their name unless they tell you.
-Don't end every line with a question; often just react, or say something of your own, or let a silence sit. You already know what time it is, so don't keep saying it. You're at home: every few exchanges do something physical (walk_to a spot, turn away and back) instead of standing at attention. Keep "say" to spoken words only.`;
+Don't end every line with a question; often just react, or say something of your own, or let a silence sit. You already know what time it is, so don't keep saying it. You're at home: every few exchanges do something physical (walk_to a spot, turn away and back) instead of standing at attention. Keep "say" to spoken words only.
+What you wear is yours to decide, like anyone at home: what suits the hour, the heat, your mood and who's here. Change only when a person in your place would (getting comfortable, someone arriving, heading to bed, a guest you'd rather not be seen in your underwear by) - not every turn.`;
 
     const msgs = history.slice(-12).map((h: { who: string; text: string }) => ({ role: h.who === "player" ? "user" : "assistant", content: h.text }));
     msgs.push({ role: "user", content: text ? `${who} says: "${text}"` : `[${cue}]` });

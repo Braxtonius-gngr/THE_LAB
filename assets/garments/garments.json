@@ -1,5 +1,5 @@
 {
- "_": "Fitted garments: assets/garments/<id>/<bodyId>[.mobile].glb + .hide.bin (tools/garments). outfits: sets worn together, inner layers first.",
+ "_": "Fitted garments: assets/garments/<id>/<bodyId>[.mobile].glb + .hide.bin (tools/garments). outfits: sets worn together, inner layers first. Nude is always available (no items).",
  "garments": [
   {
    "id": "boxerbriefs",
@@ -92,6 +92,12 @@
    "items": [
     "boxerbriefs",
     "crewsocks"
+   ]
+  },
+  {
+   "name": "Sleepwear",
+   "items": [
+    "boxerbriefs"
    ]
   },
   {
