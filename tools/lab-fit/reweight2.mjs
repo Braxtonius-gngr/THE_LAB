@@ -1,0 +1,10 @@
+import { NodeIO } from '@gltf-transform/core';
+import fs from 'fs';
+const io=new NodeIO();const doc=await io.read(process.env.WORK+'/nude.glb');const prim=doc.getRoot().listMeshes()[0].listPrimitives()[0];
+const npy=f=>{const b=fs.readFileSync(f);const hl=b.readUInt16LE(8);const d=b.subarray(10+hl);return d.buffer.slice(d.byteOffset,d.byteOffset+d.byteLength);};
+prim.getAttribute('WEIGHTS_0').setArray(new Float32Array(npy(process.env.WORK+'/W_new.npy')));
+prim.getAttribute('JOINTS_0').setArray(new Uint8Array(npy(process.env.WORK+'/J_new.npy')));
+const keep=new Uint8Array(npy(process.env.WORK+'/keep_tris.npy'));const I=prim.getIndices().getArray();const out=[];
+for(let t=0;t<I.length/3;t++) if(keep[t]) out.push(I[3*t],I[3*t+1],I[3*t+2]);
+prim.getIndices().setArray(new Uint32Array(out));
+await io.write(process.env.WORK+'/nude_rw.glb',doc);console.log('ok',out.length/3);

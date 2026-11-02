@@ -1,0 +1,14 @@
+<!doctype html><body style="margin:0"><script type="module">
+import * as THREE from '../../assets/vendor/three/three.module.js';import {GLTFLoader} from '../../assets/vendor/three/three.addons.js';
+const f=new URLSearchParams(location.search);const W=+(f.get('w')||1600),H=+(f.get('h')||700);const r=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});r.setSize(W,H);document.body.appendChild(r.domElement);
+r.outputColorSpace=THREE.SRGBColorSpace;r.toneMapping=THREE.ACESFilmicToneMapping;const s=new THREE.Scene();s.background=new THREE.Color(0x9a9a9a);
+s.add(new THREE.HemisphereLight(0xfff4e6,0x444444,1.0));const d=new THREE.DirectionalLight(0xffffff,2.4);d.position.set(1.5,2.5,3);s.add(d);const d2=new THREE.DirectionalLight(0xffffff,0.8);d2.position.set(-2,1,-2);s.add(d2);
+const g=await new GLTFLoader().loadAsync(f.get('m'));const o=g.scene;s.add(o);
+if(f.get('nonrm'))o.traverse(m=>{if(m.isMesh){m.material=new THREE.MeshStandardMaterial({map:m.material.map,roughness:0.62})}});
+if(f.get('onlyn'))o.traverse(m=>{if(m.isMesh){m.material=new THREE.MeshStandardMaterial({color:0xd9a88a,normalMap:m.material.normalMap,roughness:0.62})}});
+if(f.get('noskin'))o.traverse(m=>{if(m.isSkinnedMesh){const p=new THREE.Mesh(m.geometry,m.material);m.parent.add(p);m.visible=false;}});
+if(f.get('flat'))o.traverse(m=>{if(m.isMesh)m.material=new THREE.MeshStandardMaterial({color:0xd9a88a,roughness:0.6})});
+const cy=+(f.get('cy')||0.85),cd=+(f.get('cd')||1.6);
+const cam=new THREE.PerspectiveCamera(30,(W/4)/H,0.05,50);r.setScissorTest(true);
+[0,Math.PI/2,Math.PI,-Math.PI/4].forEach((a,i)=>{o.rotation.y=a;cam.position.set(0,cy,cd);cam.lookAt(0,cy,0);
+r.setViewport(i*W/4,0,W/4,H);r.setScissor(i*W/4,0,W/4,H);r.render(s,cam);});document.title='done';</script>

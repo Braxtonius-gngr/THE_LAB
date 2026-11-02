@@ -1,0 +1,2 @@
+{ "name": "lab-fit-tools", "private": true, "type": "module",
+  "dependencies": { "@gltf-transform/core": "^4", "@gltf-transform/functions": "^4", "@gltf-transform/cli": "^4", "fbx2gltf": "^0.9.7-p1" } }
