@@ -14,3 +14,5 @@ The scripts behind the `/lab-fit` skill (see the skill for the full procedure). 
 | texture | `repaint.py`, `tone.py`, `edgefix.py`, `hair.py`, `pad.py`, `tex.mjs` | skin fill + grain, pressure-line tone, baked edge softening, strand-by-strand hair (`HAIRK`/`PUBK` env scale density), island padding |
 | weights | `split-limbs.py`, `reweight2.mjs` | hand/thigh weight bleed |
 | verify | `views.html` + `render.cjs`, `bodies-test.cjs` | 4-view strip (flat / nonrm / onlyn / noskin / ds modes), Bodies-page test |
+
+**Skin-coloured garments** (Rodin): colour can't separate them from skin, so `maskloops.py WLO WHI LLO LHI` reads Meshy's dense stitch seams as curves (waistband height per angle round the body axis, leg-opening height per angle round each thigh axis) and masks what lies between. `maskseams.py` (flood-fill between seam walls) is kept but leaks wherever a single big triangle spans a seam. Build `tmask.npy` from the masked triangles afterwards.

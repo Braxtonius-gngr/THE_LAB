@@ -155,5 +155,31 @@
         256
       ]
     }
+  },
+  {
+    "id": "rodin",
+    "name": "Rodin",
+    "source": "Meshy AI from the lab's original Rodin man render, MeshyRig (29 bones, auto-named), 2026-11-02",
+    "pose": "A-pose",
+    "heightM": 1.7,
+    "rigged": true,
+    "notes": "The Rodin man remade with a skeleton. Skin-coloured briefs removed: masked from Meshy's stitch seams (colour couldn't tell them from skin), thin-plate front, cleft restored, edge band re-filled, hem normals rebuilt; repainted and tone-matched. Lab anatomy with flesh physics.",
+    "desktop": "rodin/desktop.glb",
+    "mobile": "rodin/mobile.glb",
+    "anatomy": {
+      "bone": "Hips",
+      "root": [
+        0.003,
+        0.83,
+        0.104
+      ],
+      "tone": "#c08a6c",
+      "facing": 1,
+      "skinPatch": [
+        1608,
+        1849,
+        256
+      ]
+    }
   }
 ]
