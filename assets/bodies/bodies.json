@@ -33,7 +33,7 @@
     "pose": "A-pose (arms low)",
     "heightM": 1.7,
     "rigged": true,
-    "notes": "Muscular build, body hair. Briefs removed: pelvis reshaped and repainted as skin (gloss map matched; no body hair on the repainted area yet). Hand-to-thigh weight bleed from the auto-rig fixed. Lab anatomy attached with flesh physics. Rig has index and ring finger chains.",
+    "notes": "Muscular build, body hair. Briefs removed: pelvis reshaped and repainted as skin (gloss map matched), with body hair painted strand by strand to match (coarse pubic hair, fine hair over hips and glutes). Hand-to-thigh weight bleed from the auto-rig fixed. Lab anatomy attached with flesh physics. Rig has index and ring finger chains.",
     "desktop": "tommy/desktop.glb",
     "mobile": "tommy/mobile.glb",
     "anatomy": {
