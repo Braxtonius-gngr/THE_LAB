@@ -22,6 +22,7 @@
   <button class="chip" id="ruler">Ruler</button>
   <button class="chip" id="pose">Pose test</button>
   <button class="chip" id="motion">Motion</button>
+  <select class="chip" id="anim"><option value="">Animation: none</option></select>
   <button class="chip" id="anat" hidden>Anatomy</button>
   <button class="chip on" id="phys" hidden>Physics</button>
   <select class="chip" id="preset" hidden><option value="">Anatomy: lab baseline</option></select>
@@ -31,6 +32,7 @@
 import * as THREE from '../assets/vendor/three/three.module.js';
 import { GLTFLoader } from '../assets/vendor/three/three.addons.js';
 import { attachAnatomy } from '../world/attach-anatomy.mjs';
+import { captureRest, retargetClip, clipLabel } from '../world/retarget.mjs';
 
 const isPhone = matchMedia('(pointer:coarse)').matches || innerWidth < 800;
 const r = new THREE.WebGLRenderer({ antialias: true });
@@ -95,6 +97,28 @@ const loader = new GLTFLoader();
 const list = await (await fetch('../assets/bodies/bodies.json')).json();
 for (const b of list) pick.add(new Option(b.name, b.id));
 let quality = isPhone ? 'mobile' : 'desktop', current = null, anat = null, anatOn = true;
+// animation library: clips on a source skeleton, retargeted onto whichever body is shown
+const animSel = document.getElementById('anim');
+let packRest = null, packClips = [], mixer = null, bodyRest = null;
+loader.loadAsync('../assets/anims/meshy-pack-01.glb').then(g => {
+  packRest = captureRest(g.scene, { allNodes: true }); packClips = g.animations;
+  packClips.forEach((c, i) => animSel.add(new Option('Animation: ' + clipLabel(c.name), i)));
+}).catch(e => console.warn('animation pack', e));
+function stopAnim() {
+  if (!mixer) return;
+  mixer.stopAllAction();
+  if (bodyRest) for (const r of Object.values(bodyRest)) { r.bone.quaternion.copy(r.q); r.bone.position.copy(r.p); }
+  animSel.value = '';
+}
+animSel.onchange = () => {
+  const i = animSel.value; stopMotion(); if (posed) document.getElementById('pose').click();
+  if (mixer) mixer.stopAllAction();
+  if (bodyRest) for (const r of Object.values(bodyRest)) { r.bone.quaternion.copy(r.q); r.bone.position.copy(r.p); }
+  if (i === '' || !current || !packRest) return;
+  const clip = retargetClip(packClips[+i], packRest, bodyRest);
+  mixer.clipAction(clip).reset().play();
+  anat?.sim.reset();
+};
 const anatBtn = document.getElementById('anat'), presetSel = document.getElementById('preset'), physBtn = document.getElementById('phys');
 physBtn.onclick = () => { if (!anat) return; anat.setPhysics(!anat.physics); physBtn.classList.toggle('on', anat.physics); };
 // presets saved by the Measure tool / the anatomy lab (this browser only)
@@ -122,6 +146,7 @@ async function show() {
   current = gltf.scene;
   current.updateMatrixWorld(true);
   current.traverse(o => { if (o.isBone) restFrame(o); });   // each bone's rest frame, before anything poses it
+  bodyRest = captureRest(current); mixer = new THREE.AnimationMixer(current); animSel.value = '';
   if (b.anatomy) {
     fillPresets();
     anat = attachAnatomy(current, b.anatomy, readPresets()[presetSel.value] || {});
@@ -149,6 +174,7 @@ function stopMotion() {
 }
 function startMotion() {
   if (!current) return;
+  stopAnim();
   if (posed) document.getElementById('pose').click();
   const bones = MOVE_BONES.map(n => current.getObjectByName(n)), hips = bones[0];
   const par = hips.parent, w0 = hips.getWorldPosition(new THREE.Vector3());
@@ -191,6 +217,7 @@ document.getElementById('pose').onclick = e => {
   if (!current) return;
   const bones = ['Hips','LeftArm','RightArm','RightForeArm','LeftUpLeg','LeftLeg','Spine01','Head'];
   if (!posed) {
+    stopAnim();
     rest = bones.map(n => current.getObjectByName(n)?.quaternion.clone());
     const P = { Hips: [0.35, 0, 0], Spine01: [-0.3, 0.3, 0], LeftArm: [0, 0, 0.5], RightArm: [0, 0, -0.9], RightForeArm: [0, -1.2, 0], LeftUpLeg: [-0.9, 0, 0], LeftLeg: [1.2, 0, 0], Head: [0, -0.4, 0] };
     bones.forEach((n, i) => { const o = current.getObjectByName(n); if (o && P[n]) setRest(o, rest[i], ...P[n]); });
@@ -202,7 +229,7 @@ if (list.length) await show(); else info.textContent = 'No imported bodies yet.'
 // (for tests and links: set the view)
 window.__view = (y, p, d, t) => { yaw = y; pitch = p; dist = d; target.y = t; };
 window.__lab = { get anat() { return anat; }, get model() { return current; } };
-const clock = new THREE.Clock();
-r.setAnimationLoop(() => { const dt = Math.min(clock.getDelta(), 0.05); place(); motionTick(dt); anat?.update(dt); r.render(scene, cam); });
+let lastT = performance.now();
+r.setAnimationLoop(now => { const dt = Math.min((now - lastT) / 1000, 0.05); lastT = now; place(); motionTick(dt); mixer?.update(dt); anat?.update(dt); r.render(scene, cam); });
 </script>
 </body></html>
