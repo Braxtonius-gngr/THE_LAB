@@ -744,7 +744,7 @@ function buildHead(kit, o = {}) {
 //     density    0-100: the lobes' give to gravity - over 50 they sag toward
 //                the ground (whichever way that is), under 50 they hold up
 //     curve      0-100: a bend along its length to his left (under 50) or
-//                right, growing toward the tip - at rest, +-22% of its run
+//                right, growing toward the tip - at rest, +-9% of its run
 //                sideways at the tip (twist leans it at the root; this bends it)
 //   the surface (a build's man; 50 / 35 as below):
 //     glans      0-100: the head's size - its length and the corona's flare
@@ -1061,18 +1061,34 @@ export function buildAnatomy(pouch, m, a) {
     const secs = () => {
       const L = lobes[0].position, R = lobes[1].position, cx = (L.x + R.x) / 2, zc = (L.z + R.z) / 2 + 0.4 * sL, spread = Math.abs(R.x - L.x) / 2;
       const low = Math.min(L.y, R.y) - 0.45 * sL, wide = avgLR * 1.55 * Math.max(0.85, spread / spread0);
-      return [
-        { y: 3.0 * sL + el, rx: 2.4 * sL, rz: 2.0 * sL },
-        { y: 1.0 * sL + el, rx: 2.0 * sL, rz: 1.6 * sL },
-        { y: -2.0 * sL + el, rx: avgLR * 1.15, rz: avgLR * 0.9, x: cx * 0.3, z: zc * 0.3 },
-        { y: low + avgLR * 0.3, rx: wide, rz: avgLR * 0.95, x: cx, z: zc },
-        { y: low - avgLR * 0.55, rx: avgLR * 1.25, rz: avgLR * 0.8, x: cx, z: zc },
-        { y: low - avgLR * 0.95, rx: 0.3 * sL, rz: 0.3 * sL, x: cx, z: zc }
-      ];
+      // (each lobe a swell of the one skin, front and back, where that lobe
+      // is - its own size and height - with the seam between them; the knobs
+      // themselves stay inside, unseen, for the physics)
+      const sw = (k, y) => [L, R].map((P, i) => { const lr = i ? lrR : lrL, dy = (y - P.y) / (lr * 1.3); return { x: P.x - cx, w: lr * 0.7, d: k * lr * 0.5 * Math.exp(-dy * dy) }; });
+      const sec = (y, rx, rz, x, z, k) => ({ y, rx, rz, x, z, lobes: sw(k, y), backLobes: sw(k * 0.8, y) });
+      const yl = Math.min(L.y, R.y), yh = Math.max(L.y, R.y);
+      // (the skin as the union of a neck under the root and an ellipsoid
+      // round each lobe at its own height and size, sampled densely so its
+      // outline is smooth; each lobe a swell front and back, the seam between)
+      const yt = 3.0 * sL + el, yn = -1.6 * sL + el, ys = [];
+      const ell = (P, lr, y) => { const ey = (y - P.y) / (lr * 1.3); return Math.abs(ey) < 1 ? Math.sqrt(1 - ey * ey) : 0; };
+      const yb = Math.min(L.y - lrL * 1.3, R.y - lrR * 1.3);
+      const NS = 16;
+      for (let i = 0; i <= NS; i++) { const u = i / NS; ys.push(yt + (yb - yt) * (1 - Math.pow(1 - u, 1.6))); }
+      return ys.map((y, i) => {
+        if (i === NS) return { y: y + 0.12 * sL, rx: 0.08 * sL, rz: 0.08 * sL, x: cx, z: zc };
+        const ytop = Math.max(L.y + lrL * 0.9, R.y + lrR * 0.9), nk = y > ytop ? 1 : Math.max(0, 1 - (ytop - y) / (1.2 * avgLR));                 // the neck fades into the lobes
+        const nr = 1.4 * sL + (2.2 - 1.4) * sL * Math.max(0, Math.min(1, (y - yn) / (yt - yn)));
+        let x0 = cx * 0.3 - nr * nk, x1 = cx * 0.3 + nr * nk, rz = 1.25 * sL * nk + 0.01;
+        [[L, lrL], [R, lrR]].forEach(([P, lr]) => { const e = ell(P, lr, y); if (e > 0) { const hx = lr * 1.12 * e; x0 = Math.min(x0, P.x - hx); x1 = Math.max(x1, P.x + hx); rz = Math.max(rz, lr * 0.95 * e); } });
+        const blend = Math.min(1, (yt - y) / (yt - yn + 1e-6));
+        return sec(y, Math.max(0.1 * sL, (x1 - x0) / 2), rz, (x0 + x1) / 2, zc * blend, Math.min(1, blend));
+      });
     };
-    const geo = loft(secs(), { n: 14, metric: UVM.linen }); geo.computeVertexNormals();
+    lobes.forEach(l => { l.visible = false; });
+    const geo = loft(secs(), { n: 24, metric: UVM.linen }); geo.computeVertexNormals();
     sac = new THREE.Mesh(geo, m); sac.position.z = -0.4 * sL; sac.frustumCulled = false; g.add(sac);
-    updateSac = () => { const ng = loft(secs(), { n: 14, metric: UVM.linen }); geo.attributes.position.array.set(ng.attributes.position.array); geo.attributes.position.needsUpdate = true; geo.computeVertexNormals(); ng.dispose(); };
+    updateSac = () => { const ng = loft(secs(), { n: 24, metric: UVM.linen }); geo.attributes.position.array.set(ng.attributes.position.array); geo.attributes.position.needsUpdate = true; geo.computeVertexNormals(); ng.dispose(); };
   } else {
     sac = facet(loft([
       { y: 1.0 * sL + el, rx: 2.0 * sL, rz: 1.6 * sL },
@@ -1109,7 +1125,7 @@ export function buildAnatomy(pouch, m, a) {
     [0, -2.0 * sL - L, front + 0.5 * sL]
   ];
   // (curve: bent to a side along its run, nothing at the root, most at the tip)
-  { const cv = cut('curve'); [0, 0, 0.3, 0.6, 1].forEach((f, i) => { pts[i][0] += cv * 0.22 * L * f * f; }); }
+  { const cv = cut('curve'); [0, 0, 0.3, 0.6, 1].forEach((f, i) => { pts[i][0] += cv * 0.09 * L * f * f; }); }
   // (raised or dropped with the rest; then turned about its root - pitched
   // forward or back about x, leaned to a side about z)
   {
