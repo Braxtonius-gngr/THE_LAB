@@ -51,5 +51,31 @@
         256
       ]
     }
+  },
+  {
+    "id": "adult-base-02",
+    "name": "Adult base 02",
+    "source": "Meshy AI, MeshyRig (68 bones incl. five-finger hands, auto-named by tools/rig-fixes/automap.mjs), 2026-11-01",
+    "pose": "A-pose",
+    "heightM": 1.7,
+    "rigged": true,
+    "notes": "Sculpted, statue-like finish (skin made less glossy: roughness 0.31 -> 0.56). Front pouch removed: pelvis rebuilt with a thin-plate fill so the V-lines run into the groin; repainted and tone-matched. Rig quirk: the legs hang off a separate Pelvis bone under a high Hips bone. Lab anatomy on the Pelvis bone with flesh physics.",
+    "desktop": "adult-base-02/desktop.glb",
+    "mobile": "adult-base-02/mobile.glb",
+    "anatomy": {
+      "bone": "Pelvis",
+      "root": [
+        0.0,
+        0.865,
+        0.054
+      ],
+      "tone": "#b07e68",
+      "facing": 1,
+      "skinPatch": [
+        571,
+        2289,
+        256
+      ]
+    }
   }
 ]
