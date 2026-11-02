@@ -5,7 +5,10 @@
 import * as THREE from '../../assets/vendor/three/three.module.js';
 import { buildAnatomy, getAnatomy, setSoft } from '../../assets/intro3d/figure.mjs';
 import { rollAnatomy } from '../../world/attach-anatomy.mjs';
-const f = new URLSearchParams(location.search), base = JSON.parse(f.get('p') || '{}'), n = +(f.get('n') || 1), roll = f.get('roll') !== '0';
+const f = new URLSearchParams(location.search), P0 = JSON.parse(f.get('p') || '{}'), list = Array.isArray(P0) ? P0 : null, base = list ? {} : P0, n = list ? list.length : +(f.get('n') || 1), roll = !list && f.get('roll') !== '0';
+const tones = JSON.parse(f.get('tones') || '[]');
+// (a shared frame for a size-up: every column the same camera)
+const same = f.get('same') === '1';
 const W = innerWidth, H = innerHeight;
 const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); r.setSize(W, H); r.outputColorSpace = THREE.SRGBColorSpace; r.setScissorTest(true); document.body.appendChild(r.domElement);
 const s = new THREE.Scene(); s.background = new THREE.Color(0x2a2a2e);
@@ -14,10 +17,11 @@ const m = new THREE.MeshStandardMaterial({ color: new THREE.Color(f.get('tone') 
 const cam = new THREE.PerspectiveCamera(30, (W / n) / (H / 2), 0.5, 200);
 for (let i = 0; i < n; i++) {
   const pouch = new THREE.Group(); pouch.userData.live = true; s.add(pouch);
-  const a = roll ? rollAnatomy(base, i + 1) : Object.assign(getAnatomy(), base);
-  setSoft(1); buildAnatomy(pouch, m, a); setSoft(0.8);
+  const a = list ? Object.assign(getAnatomy(), list[i]) : roll ? rollAnatomy(base, i + 1) : Object.assign(getAnatomy(), base);
+  const mi = tones[i] ? new THREE.MeshStandardMaterial({ color: new THREE.Color(tones[i]), roughness: 0.55 }) : m;
+  setSoft(1); buildAnatomy(pouch, mi, a); setSoft(0.8);
   pouch.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(pouch), c = box.getCenter(new THREE.Vector3()), R = box.getSize(new THREE.Vector3()).length();
+  const box = new THREE.Box3().setFromObject(pouch), c = same ? new THREE.Vector3(0, -7, -2) : box.getCenter(new THREE.Vector3()), R = same ? 26 : box.getSize(new THREE.Vector3()).length();
   [[0, 0.1], [Math.PI / 2, 0.1]].forEach(([yaw, pitch], row) => {
     // (the lab's men face -z: front is from -z)
     cam.position.set(c.x - Math.sin(yaw) * R * 1.6, c.y + pitch * R, c.z - Math.cos(yaw) * R * 1.6); cam.lookAt(c);
