@@ -50,6 +50,7 @@ import { attachAnatomy } from './attach-anatomy.mjs';
 import { captureRest } from './retarget.mjs';
 import { Reflexes } from './reflexes.mjs';
 import { Mind, CHARACTERS, timeOfDay } from './mind.mjs';
+import { loadProps } from './props.mjs';
 
 const isPhone = matchMedia('(pointer:coarse)').matches;
 const r = new THREE.WebGLRenderer({ antialias: true });
@@ -66,29 +67,39 @@ const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), mat(0xe9e4da)); ceil.
 const wallM = mat(0xcfc6b8);
 const wall = (w, h, x, y, z, ry) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), wallM); m.position.set(x, y, z); m.rotation.y = ry; m.receiveShadow = true; scene.add(m); return m; };
 wall(W, H, 0, H / 2, -D / 2, 0); wall(W, H, 0, H / 2, D / 2, Math.PI); wall(D, H, -W / 2, H / 2, 0, Math.PI / 2); wall(D, H, W / 2, H / 2, 0, -Math.PI / 2);
-// window (a glowing pane) on the back wall, door frame on the front wall
-const win = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 1.3), new THREE.MeshStandardMaterial({ color: 0x8fb4d9, emissive: 0x6f94c4, emissiveIntensity: 0.9, roughness: 1 })); win.position.set(0.3, 1.55, D / 2 - 0.01); win.rotation.y = Math.PI; scene.add(win);
-const door = new THREE.Mesh(new THREE.BoxGeometry(0.9, 2.1, 0.05), mat(0xf1ede6, 0.6)); door.position.set(0, 1.05, -D / 2 + 0.03); scene.add(door);
-// placeholder furniture until the Meshy props arrive (same spots, same footprints)
-const box = (w, h, d, x, z, c, ry = 0) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(c, 0.85)); m.position.set(x, h / 2, z); m.rotation.y = ry; m.castShadow = m.receiveShadow = true; scene.add(m); return m; };
-box(2.1, 0.45, 0.9, -1.6, 1.4, 0x3f3b3a);   box(1.9, 0.42, 0.3, -1.6, 1.75, 0x4a4544);      // sofa seat + back
-box(1.0, 0.4, 0.5, -1.6, 0.45, 0x8a6a46);                                                   // coffee table
-box(0.6, 0.9, 2.0, 2.68, -0.6, 0xdedad2);  box(0.7, 1.8, 0.7, 2.6, 1.6, 0xd9dde2);          // counter, fridge
-box(1.2, 0.75, 0.8, 1.2, -1.3, 0x9b7a52);  box(0.45, 0.9, 0.45, 0.65, -1.3, 0x5a4634); box(0.45, 0.9, 0.45, 1.75, -1.3, 0x5a4634);   // table, chairs
-box(1.4, 0.5, 2.0, -2.2, -1.1, 0x6e7585);                                                   // bed
-box(1.0, 1.9, 0.3, -2.0, 2.05, 0x7a5a3a);                                                   // bookshelf
-box(1.1, 0.5, 0.4, 1.0, 2.0, 0x2b2a28);                                                     // tv stand
-const lampPost = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.6, 8), mat(0x222)); lampPost.position.set(-2.6, 0.8, 0.9); scene.add(lampPost);
-const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 0.3, 16, 1, true), new THREE.MeshStandardMaterial({ color: 0xf0d9a8, emissive: 0xffc77a, emissiveIntensity: 0.8, side: THREE.DoubleSide })); shade.position.set(-2.6, 1.6, 0.9); scene.add(shade);
+// night sky behind the window glass (the frame itself is a prop)
+const win = new THREE.Mesh(new THREE.PlaneGeometry(1.25, 1.4), new THREE.MeshStandardMaterial({ color: 0x1c2740, emissive: 0x3e5f8e, emissiveIntensity: 0.7, roughness: 1 })); win.position.set(-0.8, 1.75, D / 2 - 0.005); win.rotation.y = Math.PI; scene.add(win);
+
+// ---------- the furniture: Meshy props (assets/props), placed by floor centre + yaw ----------
+// Entry wall (-z): door, TV, the table and two chairs.  Kitchen along +x: fridge in the corner,
+// the island.  Bed on the +z wall with the nightstand in the corner.  Living on the -x side:
+// sofa under the window, coffee table, armchair, floor lamp in the corner, bookshelf on the -x wall.
+const PROPS = [
+  { id: 'door',        x: 0,     z: -D / 2 + 0.095, ry: 0 },
+  { id: 'tv',          x: -1.3,  z: -D / 2 + 0.14,  ry: 0 },
+  { id: 'diningtable', x: 1.0,   z: -1.55, ry: 0 },
+  { id: 'chair',       x: 0.7,   z: -0.82, ry: Math.PI },
+  { id: 'chair',       x: 1.3,   z: -0.82, ry: Math.PI },
+  { id: 'fridge',      x: W / 2 - 0.24, z: -D / 2 + 0.30, ry: -Math.PI / 2 },
+  { id: 'counter',     x: W / 2 - 0.54, z: -0.85, ry: -Math.PI / 2 },
+  { id: 'bed',         x: 1.75,  z: D / 2 - 0.92, ry: Math.PI },
+  { id: 'nightstand',  x: W / 2 - 0.26, z: D / 2 - 0.24, ry: -Math.PI / 2 },
+  { id: 'window',      x: -0.8,  y: 1.0, z: D / 2 - 0.07, ry: Math.PI, shadow: false },   // sill at 1 m
+  { id: 'sofa',        x: -0.8,  z: D / 2 - 0.46, ry: Math.PI },
+  { id: 'coffeetable', x: -0.8,  z: 0.75, ry: 0 },
+  { id: 'armchair',    x: -2.45, z: 0.3,  ry: Math.PI / 2 },
+  { id: 'floorlamp',   x: -2.6,  z: 1.9,  ry: 0, shadow: false },
+  { id: 'bookshelf',   x: -W / 2 + 0.21, z: -1.0, ry: Math.PI / 2 },
+];
 
 // ---------- light: lamp + window + a soft fill ----------
 scene.add(new THREE.HemisphereLight(0xe9dcc6, 0x2a221a, 0.45));
-const lamp = new THREE.PointLight(0xffc27a, 14, 9, 1.6); lamp.position.set(-2.6, 1.5, 0.9); lamp.castShadow = true; lamp.shadow.mapSize.set(1024, 1024); lamp.shadow.bias = -0.002; scene.add(lamp);
-const cool = new THREE.DirectionalLight(0xa9c4e6, 0.9); cool.position.set(0.3, 1.8, D / 2 - 0.2); cool.target.position.set(0, 0.6, 0); scene.add(cool, cool.target);
-const kitchen = new THREE.PointLight(0xfff1dc, 6, 6, 1.8); kitchen.position.set(2.0, 2.4, -0.4); scene.add(kitchen);
+const lamp = new THREE.PointLight(0xffc27a, 14, 9, 1.6); lamp.position.set(-2.6, 1.45, 1.9); lamp.castShadow = true; lamp.shadow.mapSize.set(1024, 1024); lamp.shadow.bias = -0.002; scene.add(lamp);
+const cool = new THREE.DirectionalLight(0xa9c4e6, 0.9); cool.position.set(-0.8, 1.8, D / 2 - 0.2); cool.target.position.set(-0.3, 0.6, 0); scene.add(cool, cool.target);
+const kitchen = new THREE.PointLight(0xfff1dc, 5, 6, 1.8); kitchen.position.set(2.1, 2.15, -0.85); scene.add(kitchen);
 
-// where the mind can send him
-const SPOTS = { sofa: new THREE.Vector3(-1.1, 0, 0.75), kitchen: new THREE.Vector3(2.0, 0, -0.3), window: new THREE.Vector3(0.3, 0, 1.6), door: new THREE.Vector3(0, 0, -1.4), table: new THREE.Vector3(1.2, 0, -0.6), bed: new THREE.Vector3(-1.3, 0, -1.2), shelf: new THREE.Vector3(-1.9, 0, 1.5) };
+// where the mind can send him (standing spots in front of each piece)
+const SPOTS = { sofa: new THREE.Vector3(-0.4, 0, 1.22), kitchen: new THREE.Vector3(1.5, 0, -0.3), window: new THREE.Vector3(0.65, 0, 1.6), door: new THREE.Vector3(0, 0, -1.3), table: new THREE.Vector3(0.3, 0, -0.4), bed: new THREE.Vector3(1.75, 0, 0.2), shelf: new THREE.Vector3(-2.2, 0, -1.0) };
 
 // ---------- the player: a first-person camera on the floor ----------
 const cam = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.05, 50);
@@ -126,13 +137,16 @@ const say = (cls, text) => { const d = document.createElement('div'); d.classNam
 const loader = new GLTFLoader();
 const bodies = await (await fetch('../assets/bodies/bodies.json')).json();
 const spec = bodies.find(b => b.id === 'adult-base-01');
-const [g, pack] = await Promise.all([loader.loadAsync('../assets/bodies/' + spec[isPhone ? 'mobile' : 'desktop']), loader.loadAsync('../assets/anims/meshy-pack-01.glb')]);
+const [g, pack, props] = await Promise.all([loader.loadAsync('../assets/bodies/' + spec[isPhone ? 'mobile' : 'desktop']), loader.loadAsync('../assets/anims/meshy-pack-01.glb'), loadProps(loader, PROPS, { tier: isPhone ? 'mobile' : 'desktop' })]);
+for (const o of props) scene.add(o);
+// the lamp shade glows; the TV is off this late
+props.filter(o => o.name === 'floorlamp').forEach(o => o.traverse(m => { if (m.isMesh) { m.material = m.material.clone(); m.material.emissive.set(0xffc77a); m.material.emissiveIntensity = 0.35; } }));
 const marco = g.scene; marco.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
 scene.add(marco);
 // (rest capture and the anatomy attach read the model at the origin; place him after)
 const reflex = new Reflexes(marco, { rest: captureRest(pack.scene, { allNodes: true }), clips: pack.animations });
 const anat = attachAnatomy(marco, spec.anatomy);
-marco.position.copy(SPOTS.kitchen); marco.rotation.y = Math.PI + 0.4;
+marco.position.copy(SPOTS.kitchen); marco.rotation.y = Math.PI / 2 - 0.5;   // at the counter
 const mind = new Mind(CHARACTERS.marco);
 let bubbleUntil = 0;
 function showBubble(text) { bubble.textContent = text; bubble.style.display = text ? 'block' : 'none'; bubbleUntil = performance.now() + 1500 + text.length * 55; }
@@ -165,7 +179,7 @@ document.getElementById('form').addEventListener('submit', async e => {
 });
 document.getElementById('leave').onclick = async () => { if (mind.busy) return; say('sys', 'you leave'); await talk({ event: 'leave' }); mind.sessionId = null; mind.history = []; document.getElementById('leave').textContent = 'Left · reload to come back'; document.getElementById('form').style.display = 'none'; };
 document.getElementById('memtoggle').onclick = e => { memEl.style.display = memEl.style.display === 'block' ? 'none' : 'block'; e.target.classList.toggle('on'); };
-window.__world = { marco, reflex, mind, player, talk, SPOTS };
+window.__world = { marco, reflex, mind, player, talk, SPOTS, props };
 
 // ---------- loop ----------
 let last = performance.now(); status.textContent = 'you arrive';
@@ -180,6 +194,6 @@ r.setAnimationLoop(now => {
   placeBubble();
   r.render(scene, cam);
 });
-await talk({ event: 'arrive' });
+if (!new URLSearchParams(location.search).has('quiet')) await talk({ event: 'arrive' });   // ?quiet=1: look around without waking him
 </script>
 </body></html>

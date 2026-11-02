@@ -1,0 +1,32 @@
+<!doctype html><html><head><meta charset="utf-8"><title>prop</title>
+<style>html,body{margin:0;background:#2a2a2e;overflow:hidden}canvas{display:block}</style></head><body>
+<script type="module">
+// Prop check: renders one GLB at a given scale from front / 3-4 / side / top with a 1 m grid
+// and a 1.75 m stick figure for scale.  ?m=/.work/props/sofa.raw.glb&s=2.32&ry=0
+import * as THREE from '/assets/vendor/three/three.module.js';
+import { GLTFLoader } from '/assets/vendor/three/three.addons.js';
+const q = new URLSearchParams(location.search);
+const url = q.get('m'), s = +(q.get('s') || 1), ry = +(q.get('ry') || 0) * Math.PI / 180, lift = q.get('lift') !== '0';
+const W = innerWidth, H = innerHeight;
+const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); r.setSize(W, H); r.outputColorSpace = THREE.SRGBColorSpace; r.setScissorTest(true); document.body.appendChild(r.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x2a2a2e);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.2));
+const sun = new THREE.DirectionalLight(0xffffff, 2); sun.position.set(2, 4, 3); scene.add(sun);
+scene.add(new THREE.GridHelper(6, 6, 0x888888, 0x555555));
+// 1.75 m reference person: a capsule
+const man = new THREE.Mesh(new THREE.CapsuleGeometry(0.18, 1.39, 4, 8), new THREE.MeshStandardMaterial({ color: 0x5577aa, transparent: true, opacity: 0.5 })); man.position.set(-1.6, 0.875, 0); scene.add(man);
+const g = (await new GLTFLoader().loadAsync(url)).scene;
+g.scale.setScalar(s); g.rotation.y = ry; g.updateMatrixWorld(true);
+const bb = new THREE.Box3().setFromObject(g); const size = bb.getSize(new THREE.Vector3()), ctr = bb.getCenter(new THREE.Vector3());
+if (lift) g.position.set(-ctr.x, -bb.min.y, -ctr.z); // stand it on the floor, centred
+scene.add(g); g.updateMatrixWorld(true);
+const bb2 = new THREE.Box3().setFromObject(g); const c = bb2.getCenter(new THREE.Vector3()); const R = Math.max(size.x, size.y, size.z);
+const views = [[0, 0.15], [0.8, 0.35], [Math.PI / 2, 0.1], [0, 1.45]];
+views.forEach(([yaw, pitch], i) => {
+  const cam = new THREE.PerspectiveCamera(35, (W / 4) / H, 0.05, 50);
+  const d = R * 2.1; cam.position.set(c.x + Math.sin(yaw) * Math.cos(pitch) * d, c.y + Math.sin(pitch) * d, c.z + Math.cos(yaw) * Math.cos(pitch) * d); cam.lookAt(c);
+  r.setViewport(i * W / 4, 0, W / 4, H); r.setScissor(i * W / 4, 0, W / 4, H); r.render(scene, cam);
+});
+document.title = 'done';
+window.__size = size.toArray(); console.log('size', size.toArray().map(v => v.toFixed(3)).join(' x '));
+</script></body></html>

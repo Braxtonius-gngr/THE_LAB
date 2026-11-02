@@ -72,19 +72,13 @@ Deno.serve(async (req) => {
     ]);
     if (!me || !player) return json({ error: "unknown character or player" }, 404);
 
-    if (!session_id) {
-      const { data: s } = await supabase.from("sessions")
-        .insert({ kind: "solo", location: scene.location || me.home_location, attendees: [character_id, player_id] })
-        .select("id").single();
-      session_id = s!.id;
-    }
-
     // what is on the character's mind right now: the cue is what was said, or the event
     const cue = text || (event === "arrive" ? `${player.name} has just arrived` : event === "leave" ? `${player.name} is leaving` : "nothing in particular");
     const qv = await embed(cue);
     const { data: recalled } = await supabase.rpc("recall", { p_owner: character_id, p_query: JSON.stringify(qv), p_limit: 10 });
     const memLines = (recalled || []).map((m: { content: string; created_at: string; kind: string }) => `- (${ago(m.created_at)}, ${m.kind}) ${m.content}`).join("\n");
-    const { count: visits } = await supabase.from("sessions").select("id", { count: "exact", head: true }).contains("attendees", [player_id]);
+    const { count: past } = await supabase.from("sessions").select("id", { count: "exact", head: true }).contains("attendees", [player_id]);
+    const visits = (past || 0) + (session_id ? 0 : 1);   // this visit counts, once
 
     const system = `${me.persona}
 
@@ -109,6 +103,13 @@ Be a person, not a helper. Don't ask how you can help. Reference memories natura
     if (alt[0].role !== "user") alt.unshift({ role: "user", content: `[${player.name} is here]` });
 
     const out = await think(system, alt);
+    // the visit only counts once he has actually answered (a failed model call leaves no trace)
+    if (!session_id) {
+      const { data: s } = await supabase.from("sessions")
+        .insert({ kind: "solo", location: scene.location || me.home_location, attendees: [character_id, player_id] })
+        .select("id").single();
+      session_id = s!.id;
+    }
     const say = typeof out.say === "string" ? out.say.trim() : "";
     const actions = Array.isArray(out.actions) ? out.actions.slice(0, 4) : [];
 

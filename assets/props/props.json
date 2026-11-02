@@ -1,0 +1,229 @@
+{
+ "_": "Meshy props baked by tools/props/bake.mjs: origin at the floor centre, front on +z, metres. size = [w,h,d].",
+ "props": [
+  {
+   "id": "armchair",
+   "size": [
+    0.8,
+    0.855,
+    0.691
+   ],
+   "bakeScale": [
+    0.899,
+    0.899,
+    0.899
+   ],
+   "desktop": "armchair/desktop.glb",
+   "mobile": "armchair/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02"
+  },
+  {
+   "id": "bed",
+   "size": [
+    1.52,
+    0.57,
+    1.817
+   ],
+   "bakeScale": [
+    1.9,
+    1.9,
+    1.9
+   ],
+   "desktop": "bed/desktop.glb",
+   "mobile": "bed/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02"
+  },
+  {
+   "id": "bookshelf",
+   "size": [
+    0.731,
+    1.9,
+    0.403
+   ],
+   "bakeScale": [
+    2,
+    2,
+    2
+   ],
+   "desktop": "bookshelf/desktop.glb",
+   "mobile": "bookshelf/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02"
+  },
+  {
+   "id": "chair",
+   "size": [
+    0.539,
+    0.9,
+    0.556
+   ],
+   "bakeScale": [
+    0.946,
+    0.946,
+    0.946
+   ],
+   "desktop": "chair/desktop.glb",
+   "mobile": "chair/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02"
+  },
+  {
+   "id": "coffeetable",
+   "size": [
+    1.045,
+    0.322,
+    0.707
+   ],
+   "bakeScale": [
+    1.1,
+    1.9,
+    1.1
+   ],
+   "desktop": "coffeetable/desktop.glb",
+   "mobile": "coffeetable/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02"
+  },
+  {
+   "id": "counter",
+   "size": [
+    1.601,
+    1.043,
+    1.064
+   ],
+   "bakeScale": [
+    1.68,
+    1.68,
+    1.68
+   ],
+   "desktop": "counter/desktop.glb",
+   "mobile": "counter/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02"
+  },
+  {
+   "id": "diningtable",
+   "size": [
+    1.489,
+    0.718,
+    0.923
+   ],
+   "bakeScale": [
+    1.58,
+    1.58,
+    1.58
+   ],
+   "desktop": "diningtable/desktop.glb",
+   "mobile": "diningtable/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02"
+  },
+  {
+   "id": "door",
+   "size": [
+    0.963,
+    2.1,
+    0.188
+   ],
+   "bakeScale": [
+    2.213,
+    2.213,
+    2.213
+   ],
+   "desktop": "door/desktop.glb",
+   "mobile": "door/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02"
+  },
+  {
+   "id": "floorlamp",
+   "size": [
+    0.487,
+    1.599,
+    0.489
+   ],
+   "bakeScale": [
+    1.682,
+    1.682,
+    1.682
+   ],
+   "desktop": "floorlamp/desktop.glb",
+   "mobile": "floorlamp/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02"
+  },
+  {
+   "id": "fridge",
+   "size": [
+    0.567,
+    1.8,
+    0.458
+   ],
+   "bakeScale": [
+    1.891,
+    1.891,
+    1.891
+   ],
+   "desktop": "fridge/desktop.glb",
+   "mobile": "fridge/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02"
+  },
+  {
+   "id": "nightstand",
+   "size": [
+    0.5,
+    0.551,
+    0.45
+   ],
+   "bakeScale": [
+    0.663,
+    1.31,
+    0.474
+   ],
+   "desktop": "nightstand/desktop.glb",
+   "mobile": "nightstand/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02"
+  },
+  {
+   "id": "sofa",
+   "size": [
+    2.199,
+    0.839,
+    0.894
+   ],
+   "bakeScale": [
+    2.323,
+    2.323,
+    2.323
+   ],
+   "desktop": "sofa/desktop.glb",
+   "mobile": "sofa/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02"
+  },
+  {
+   "id": "tv",
+   "size": [
+    1.239,
+    0.759,
+    0.274
+   ],
+   "bakeScale": [
+    1.3,
+    1.3,
+    1.3
+   ],
+   "desktop": "tv/desktop.glb",
+   "mobile": "tv/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02"
+  },
+  {
+   "id": "window",
+   "size": [
+    1.343,
+    1.5,
+    0.138
+   ],
+   "bakeScale": [
+    1.574,
+    1.574,
+    1.574
+   ],
+   "desktop": "window/desktop.glb",
+   "mobile": "window/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02"
+  }
+ ]
+}
