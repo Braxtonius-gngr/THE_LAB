@@ -1,7 +1,7 @@
 [
   {
     "id": "adult-base-01",
-    "name": "Adult base 01",
+    "name": "Marco",
     "source": "Meshy AI 7.1 image-to-3D, auto-rigged (Mixamo template), 2026-11-01",
     "pose": "A-pose",
     "heightM": 1.7,
@@ -54,7 +54,7 @@
   },
   {
     "id": "adult-base-02",
-    "name": "Adult base 02",
+    "name": "Adrian",
     "source": "Meshy AI, MeshyRig (68 bones incl. five-finger hands, auto-named by tools/rig-fixes/automap.mjs), 2026-11-01",
     "pose": "A-pose",
     "heightM": 1.7,
