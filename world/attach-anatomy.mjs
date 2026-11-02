@@ -30,7 +30,7 @@ export function seeded(seed) { let a = (typeof seed === 'string' ? [...seed].red
 export function rollAnatomy(base = {}, seed = Math.random() * 1e9, spread = 0.9) {
   const b = Object.assign(getAnatomy(), base);
   const v = realismClamp(Object.assign({}, b, realismDraw(b, seeded(seed), spread)));
-  v.gorge = 0;
+  v.gorge = 0; v.warmth = base.warmth ?? 50;   // (warmth is a state, set by the scene, not drawn)
   return v;
 }
 import { FleshSim } from '../assets/intro3d/flesh.mjs';
@@ -111,6 +111,7 @@ export function attachAnatomy(model, spec, params = {}, opts = {}) {
   };
   const sim = new RigFleshSim(fig, rig);
   let physics = true;
+  let warmthTo = null, warmthNow = 50;
 
   const foldSac = sac => {
     const P = sac.geometry.attributes.position, f = spec.foldBack ?? 1.1;
@@ -152,6 +153,12 @@ export function attachAnatomy(model, spec, params = {}, opts = {}) {
     holder, pouch, material, sim,
     // dt in seconds; returns true while it is still moving
     update(dt = 1 / 60) {
+      // (warmth eased at 10 a second, rebuilt every 3 - a few seconds from room to cold)
+      if (warmthTo != null) {
+        const d = warmthTo - warmthNow; warmthNow += Math.sign(d) * Math.min(Math.abs(d), 10 * dt);
+        if (Math.abs(warmthNow - (current.warmth ?? 50)) >= 3 || warmthNow === warmthTo) build({ warmth: Math.round(warmthNow) });
+        if (warmthNow === warmthTo) warmthTo = null;
+      }
       if (!physics) { plumb(); return false; }
       holder.quaternion.copy(rest);
       holder.updateMatrixWorld(true);
@@ -169,6 +176,10 @@ export function attachAnatomy(model, spec, params = {}, opts = {}) {
       if (restAngle != null) sim.rest = restAngle;
     },
     rebuild: build,
+    // the body's warmth now, 0-100 (50 a room at rest): eased toward over a
+    // few seconds by update() - a hot shower drops him, cold or effort draws him up
+    setWarmth(v) { warmthNow = current.warmth ?? 50; warmthTo = Math.max(0, Math.min(100, v)); },
+    get warmth() { return current.warmth ?? 50; },
     params: () => Object.assign({}, current),
     setVisible(v) { holder.visible = v; },
     dispose() { pouch.traverse(o => o.geometry?.dispose()); material.dispose(); holder.parent?.remove(holder); }

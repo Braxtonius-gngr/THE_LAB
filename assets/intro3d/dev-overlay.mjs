@@ -195,6 +195,7 @@ const PARTS = [
     { key: 'fullnessR', label: 'Fullness R', min: 0,   max: 100, step: 1 },
     { key: 'hangL',     label: 'Hang L',     min: 0,   max: 100, step: 1 },
     { key: 'hangR',     label: 'Hang R',     min: 0,   max: 100, step: 1 },
+    { key: 'warmth',    label: 'Warmth',     min: 0,   max: 100, step: 1 },
     { key: 'lobeLag',   label: 'Lag R',      min: 0,   max: 100, step: 1 },
     { key: 'density',   label: 'Density',    min: 0,   max: 100, step: 1 },
   ] },
@@ -293,7 +294,7 @@ export function inCm(cm, d = 1) { return `${(cm / 2.54).toFixed(d)}″ (${cm.toF
 // slider runs its whole range, for exploring the extremes.
 const CLAMP = {
   cm: { length: [6, 16], girth: [6, 14], depth: [3, 7.5] },
-  units: { seatSize: [0.7, 1.5], sizePouch: [0.5, 1.5], sizeLobe: [0.6, 1.5], fullnessL: [50, 80], fullnessR: [50, 80], hangL: [15, 85], hangR: [15, 85], gorge: [0, 100], sway: [0.4, 1.8], armSize: [15, 85], forearmSize: [15, 85], handSize: [20, 80], thighSize: [15, 85], calfSize: [15, 85], footSize: [20, 80] },
+  units: { seatSize: [0.7, 1.5], sizePouch: [0.5, 1.5], sizeLobe: [0.8, 1.25], fullnessL: [50, 80], fullnessR: [50, 80], hangL: [15, 85], hangR: [15, 85], gorge: [0, 100], sway: [0.4, 1.8], armSize: [15, 85], forearmSize: [15, 85], handSize: [20, 80], thighSize: [15, 85], calfSize: [15, 85], footSize: [20, 80] },
   asym: 10,   // fullness L and R at most this far apart (the natural few percent)
   via: { length: 'sizePouch', girth: 'sizePouch', depth: 'sizeLobe' },   // the size eased when a slider alone can't reach
 };

@@ -741,6 +741,10 @@ function buildHead(kit, o = {}) {
 //                +-15 degrees - no man hangs dead centre
 //     lobeLag    0-100: how far the right lobe lags the left in a jolt (50:
 //                12% more, as it was; 0 the same, 100 24%)
+//     warmth     0-100: the body's state, not his build - 50 a room at rest;
+//                warm (a shower, a hot room, asleep) the sac relaxes and the
+//                lobes hang up to ~2 cm lower and sit a little apart; cold,
+//                fear or effort draw them up tight and close (the cremaster)
 //     density    0-100: the lobes' give to gravity - over 50 they sag toward
 //                the ground (whichever way that is), under 50 they hold up
 //     curve      0-100: a bend along its length to his left (under 50) or
@@ -814,7 +818,7 @@ let ANATOMY = {
   hangL: 45, hangR: 55,
   gorge: 0, sway: 1.0,
   taper: 50, elevation: 50, pitch: 50, twist: 50, lobeLag: 50, density: 50,
-  curve: 50, glans: 50, veins: 35, veinSeed: 1,
+  curve: 50, glans: 50, veins: 35, veinSeed: 1, warmth: 50,
   hood: 0, ring: 40, tether: 40, glide: 60, retract: 50, folds: 50,
   modulus: 50, damping: 50, resist: 50, adhesion: 50,
   seatSize: 1, seatFullL: 50, seatFullR: 50, seatLift: 50, seatSpread: 50, seatJiggle: 50, seatFirm: 50,
@@ -858,7 +862,7 @@ function anatomyFor(rnd) {
     // (the finer cut as the base has it - no draws of their own, so every
     // man is drawn as before)
     taper: ANATOMY.taper, elevation: ANATOMY.elevation, pitch: ANATOMY.pitch, twist: ANATOMY.twist, lobeLag: ANATOMY.lobeLag, density: ANATOMY.density,
-    curve: ANATOMY.curve, glans: ANATOMY.glans, veins: ANATOMY.veins, veinSeed: ANATOMY.veinSeed,
+    curve: ANATOMY.curve, glans: ANATOMY.glans, warmth: ANATOMY.warmth, veins: ANATOMY.veins, veinSeed: ANATOMY.veinSeed,
     bellySize: ANATOMY.bellySize, bellyLift: ANATOMY.bellyLift, bellyJiggle: ANATOMY.bellyJiggle, bellyFirm: ANATOMY.bellyFirm,
     chestSize: ANATOMY.chestSize, chestSpread: ANATOMY.chestSpread, chestLift: ANATOMY.chestLift, chestJiggle: ANATOMY.chestJiggle, chestFirm: ANATOMY.chestFirm,
     armSize: ANATOMY.armSize, forearmSize: ANATOMY.forearmSize, handSize: ANATOMY.handSize, thighSize: ANATOMY.thighSize, calfSize: ANATOMY.calfSize, footSize: ANATOMY.footSize,
@@ -1028,7 +1032,10 @@ export function buildAnatomy(pouch, m, a) {
   // fullness 0–100: 0 slack/empty, 100 round/full
   // hang 0–100: 0 tight to the body, 100 as low as the sac loft allows
   const fL = a.fullnessL / 100, fR = a.fullnessR / 100;
-  const hL = a.hangL / 100, hR = a.hangR / 100;
+  // (warmth: relaxed and low when warm, drawn up tight when cold - each side
+  // keeps its own hang on top of it)
+  const wm = ((a.warmth ?? 50) - 50) / 50;
+  const hL = Math.max(-0.4, Math.min(1.4, a.hangL / 100 + 0.6 * wm)), hR = Math.max(-0.4, Math.min(1.4, a.hangR / 100 + 0.6 * wm));
   // lobe radius grows with fullness; drop grows with hang and inversely
   // with fullness (a full lobe sits higher, an empty one sags)
   const lobeR = f => (1.6 + f * 0.45) * sL;
@@ -1041,7 +1048,7 @@ export function buildAnatomy(pouch, m, a) {
     { sx:  1, lr: lrR, drop: dropR, full: fR, squash: lobeSquash(fR) }
   ].map(({ sx, lr, drop, full, squash }) => {
     const lobe = facet(knob(lr, 1.0, squash, 1.0, 2), m, g, 0);
-    lobe.position.set(sx * (lr * 0.62), -drop + el, -0.6 * sL);
+    lobe.position.set(sx * (lr * (0.62 + 0.08 * wm)), -drop + el, -0.6 * sL);
     lobe.rotation.z = sx * 0.12;
     lobe.userData.pouch = true; lobe.userData.side = sx < 0 ? 'L' : 'R';
     return lobe;
