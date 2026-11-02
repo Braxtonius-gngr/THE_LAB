@@ -1,0 +1,25 @@
+<!doctype html><body style="margin:0;background:#2a2a2e"><script type="module">
+// Armpit check: raises both arms (body-frame roll) to 0 / 60 / 120 deg on top of the rest pose
+// and renders the LEFT armpit from the front-below and from behind.  ?m=<glb>&w=1800&h=900
+import * as THREE from '../../assets/vendor/three/three.module.js'; import { GLTFLoader } from '../../assets/vendor/three/three.addons.js';
+import { captureRest } from '../../world/retarget.mjs';
+const f = new URLSearchParams(location.search); const W = +(f.get('w') || 1800), H = +(f.get('h') || 900);
+const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); r.setSize(W, H); document.body.appendChild(r.domElement);
+r.outputColorSpace = THREE.SRGBColorSpace; r.toneMapping = THREE.ACESFilmicToneMapping; const s = new THREE.Scene(); s.background = new THREE.Color(0x2a2a2e);
+s.add(new THREE.HemisphereLight(0xfff4e6, f.get('bright') ? 0xcccccc : 0x444444, 1.0)); if (f.get('bright')) { const d3 = new THREE.DirectionalLight(0xffffff, 1.5); d3.position.set(1, -1, 2); s.add(d3); } const d = new THREE.DirectionalLight(0xffffff, 2.2); d.position.set(1.5, 2.5, 3); s.add(d); const d2 = new THREE.DirectionalLight(0xffffff, 0.8); d2.position.set(-2, 1, -2); s.add(d2);
+const g = await new GLTFLoader().loadAsync(f.get('m')); const o = g.scene; s.add(o); o.updateMatrixWorld(true);
+if (f.get('flat')) o.traverse(m => { if (m.isMesh) m.material = new THREE.MeshStandardMaterial({ color: 0xd9a88a, roughness: 0.6 }); });
+const rest = captureRest(o);
+const setRest = (name, x, y, z) => { const q = rest[name]; if (!q) return; const e = new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z)); q.bone.quaternion.copy(q.pwi).multiply(e).multiply(q.pw).multiply(q.q); };
+const cam = new THREE.PerspectiveCamera(28, (W / 3) / (H / 2), 0.05, 50); r.setScissorTest(true);
+const angles = [0, 60, 120]; const joint = new THREE.Vector3();
+angles.forEach((deg, i) => {
+  const a = deg * Math.PI / 180; setRest('LeftArm', 0, 0, a); setRest('RightArm', 0, 0, -a); o.updateMatrixWorld(true);
+  rest.LeftArm.bone.getWorldPosition(joint);
+  [[0.95, -0.28, 1.0, -0.03, -0.06], [2.35, -0.1, 1.0, -0.03, -0.05]].forEach(([yaw, pitch, dist, dx, dy], row) => {
+    const t = joint.clone().add(new THREE.Vector3(dx, dy, 0));
+    cam.position.set(t.x + dist * Math.sin(yaw) * Math.cos(pitch), t.y + dist * Math.sin(pitch), t.z + dist * Math.cos(yaw) * Math.cos(pitch)); cam.lookAt(t);
+    r.setViewport(i * W / 3, (1 - row) * H / 2, W / 3, H / 2); r.setScissor(i * W / 3, (1 - row) * H / 2, W / 3, H / 2); r.render(s, cam);
+  });
+});
+document.title = 'done';</script>
