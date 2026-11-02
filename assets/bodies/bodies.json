@@ -129,5 +129,31 @@
         256
       ]
     }
+  },
+  {
+    "id": "tariq",
+    "name": "Tariq",
+    "source": "Meshy AI, MeshyRig (25 bones, auto-named), 2026-11-01",
+    "pose": "A-pose",
+    "heightM": 1.7,
+    "rigged": true,
+    "notes": "Lean build, full beard, body hair. Black trunks removed (thin-plate front, cleft, edge band re-fill, rebuilt hem normals), repainted, tone-matched, body hair painted to match. The repainted band reads a touch flatter than his skin, like a soft tan line: Meshy baked lighting into his texture and the fill can't carry it. Lab anatomy with flesh physics.",
+    "desktop": "tariq/desktop.glb",
+    "mobile": "tariq/mobile.glb",
+    "anatomy": {
+      "bone": "Hips",
+      "root": [
+        0.005,
+        0.79,
+        0.095
+      ],
+      "tone": "#8f5f47",
+      "facing": 1,
+      "skinPatch": [
+        1865,
+        15,
+        256
+      ]
+    }
   }
 ]
