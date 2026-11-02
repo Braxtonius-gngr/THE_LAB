@@ -1,5 +1,6 @@
 -- THE_LAB: persistent agent memory schema (Supabase / Postgres)
--- Requires pgvector for "most relevant memories" lookups.
+-- Requires pgvector for "most relevant memories" lookups. Embeddings are
+-- Supabase's built-in gte-small (384 dims), made inside the edge function.
 create extension if not exists vector;
 
 -- 1. Who exists in the world (AI characters AND the player)
@@ -19,9 +20,10 @@ create table memories (
   id           uuid primary key default gen_random_uuid(),
   owner_id     uuid references characters(id) on delete cascade,
   kind         text check (kind in ('observation','dialogue','action','reflection','plan')),
+  speaker_id   uuid references characters(id),   -- for dialogue: who said it
   content      text not null,       -- "Brax ignored me at the party"
   importance   smallint check (importance between 1 and 10), -- scored by LLM once, on write
-  embedding    vector(1536),        -- for relevance search
+  embedding    vector(384),        -- for relevance search
   about_ids    uuid[] default '{}', -- characters this memory involves
   session_id   uuid,
   location     text,
@@ -66,7 +68,7 @@ create table sessions (
 );
 
 -- Relevance recall: blends similarity, importance, and recency.
-create or replace function recall(p_owner uuid, p_query vector(1536), p_limit int default 12)
+create or replace function recall(p_owner uuid, p_query vector(384), p_limit int default 12)
 returns setof memories language sql stable as $$
   select * from memories
   where owner_id = p_owner
@@ -77,3 +79,11 @@ returns setof memories language sql stable as $$
     desc
   limit p_limit;
 $$;
+
+-- Only the server (the mind edge function, with the service role) touches these;
+-- the page talks to the function, never to the tables.
+alter table characters       enable row level security;
+alter table memories         enable row level security;
+alter table relationships    enable row level security;
+alter table character_state  enable row level security;
+alter table sessions         enable row level security;

@@ -17,12 +17,13 @@ THE_LAB is now the **source of truth** for the body engine; DRO keeps a pinned s
 | `assets/intro3d/` | Body engine: `figure` (bodies/rig), `flesh` (soft tissue), `cloth` + `universal-cloth-material` (garments), `dev-overlay` (tuning panel), `rodin-body` (Rodin mesh skinning). Also `valley`, `table`, `intro`, `burin`, `finish`, `physics`, which the lab pages still use as their stage. |
 | `assets/vendor/three/` | Vendored Three.js (no bundler). |
 | `lab/` | Tuning pages: `anatomy.html`, `cloth.html`, `rodin.html`, `wish.html`. |
-| `world/` | Agent/world layer (not started). |
-| `db/migrations/` | Supabase SQL. `0001_agent_memory.sql` = characters, memories (pgvector), relationships, character_state, sessions, `recall()`. |
+| `world/` | Agent/world layer: `apartment.html` (first scene: Marco's studio, first-person, chat), `mind.mjs` (client for the mind function), `reflexes.mjs` (idle, gaze, walk_to, turn_to, gestures), `attach-anatomy.mjs`, `retarget.mjs`. |
+| `db/migrations/` | Supabase SQL (project `the-lab`, qyphdwcjzhgobsfpeonh). `0001` = characters, memories (pgvector 384, gte-small), relationships, character_state, sessions, `recall()`; `0002` seeds Brax + Marco. |
+| `supabase/functions/mind/` | The mind edge function: recall → Claude → say/actions/mood → memories + relationship written. Needs the `ANTHROPIC_API_KEY` secret; `MIND_MODEL` optional. |
 
 Paths were kept identical to DRO on purpose so nothing broke in the split. Moving the engine to `/engine` is a later, separate change that must update every import.
 
-## Agent architecture (planned)
+## Agent architecture (Marco is the first: world/apartment.html)
 1. **Body** - existing engine, with phone/MSI quality tiers.
 2. **Reflexes** - local, every frame: pathfinding, idle, gaze, personal space, touch reactions.
 3. **Mind** - cloud LLM on a slow, event-driven beat; emits dialogue + actions (`walk_to`, `sit_beside`).

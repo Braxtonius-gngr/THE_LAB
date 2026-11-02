@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<title>THE_LAB · Marco's apartment</title>
+<style>
+  :root{--panel:rgba(28,26,23,.86);--ink:#eee;--dim:#a49c8c;--gold:#d8b25a}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#15130f;color:var(--ink);font:15px system-ui,sans-serif;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
+  canvas{display:block}
+  #top{position:fixed;top:10px;left:10px;right:10px;display:flex;gap:8px;align-items:center;pointer-events:none}
+  #top>*{pointer-events:auto}
+  .chip{background:var(--panel);border:0;color:var(--ink);padding:8px 13px;border-radius:999px;font:inherit;cursor:pointer;text-decoration:none;backdrop-filter:blur(6px)}
+  .chip.on{background:var(--gold);color:#1b1a18}
+  #status{color:var(--dim);font-size:13px;margin-left:auto;background:var(--panel);padding:6px 10px;border-radius:999px}
+  #bubble{position:fixed;transform:translate(-50%,-100%);max-width:min(70vw,420px);background:#f4efe6;color:#1b1a18;padding:10px 14px;border-radius:14px;line-height:1.35;display:none;pointer-events:none;box-shadow:0 6px 24px rgba(0,0,0,.35)}
+  #bubble:after{content:"";position:absolute;left:50%;bottom:-8px;margin-left:-8px;border:8px solid transparent;border-top-color:#f4efe6;border-bottom:0}
+  #chat{position:fixed;left:10px;right:10px;bottom:max(10px,env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:6px;pointer-events:none}
+  #log{max-height:28vh;overflow:auto;display:flex;flex-direction:column;gap:4px;pointer-events:auto;padding-right:4px}
+  .msg{background:var(--panel);padding:7px 11px;border-radius:12px;max-width:80%;line-height:1.3;backdrop-filter:blur(6px)}
+  .msg.me{align-self:flex-end;background:rgba(216,178,90,.22)}
+  .msg.sys{align-self:center;color:var(--dim);font-size:12px;background:transparent}
+  form{display:flex;gap:6px;pointer-events:auto}
+  input{flex:1;background:var(--panel);border:1px solid #3d3a35;color:var(--ink);padding:11px 14px;border-radius:999px;font:inherit;outline:none;backdrop-filter:blur(6px)}
+  button.send{background:var(--gold);border:0;color:#1b1a18;padding:0 16px;border-radius:999px;font:inherit;font-weight:600}
+  #pad{position:fixed;left:16px;bottom:calc(max(10px,env(safe-area-inset-bottom)) + 120px);width:110px;height:110px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);display:none}
+  #knob{position:absolute;left:35px;top:35px;width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.25)}
+  @media (pointer:coarse){#pad{display:block}}
+  #mem{position:fixed;top:52px;right:10px;width:min(360px,80vw);max-height:50vh;overflow:auto;background:var(--panel);border-radius:12px;padding:10px 12px;font-size:12px;color:var(--dim);display:none;backdrop-filter:blur(6px)}
+  #mem b{color:var(--ink)}
+  #hint{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--dim);text-align:center;pointer-events:none;background:var(--panel);padding:12px 18px;border-radius:12px}
+</style></head><body>
+<div id="top">
+  <a class="chip" href="../">← Lab</a>
+  <button class="chip" id="leave">Leave</button>
+  <button class="chip" id="memtoggle">Memories</button>
+  <span id="status">loading…</span>
+</div>
+<div id="hint">Drag to look · WASD or the pad to move · type to talk</div>
+<div id="bubble"></div>
+<div id="mem"></div>
+<div id="pad"><div id="knob"></div></div>
+<div id="chat">
+  <div id="log"></div>
+  <form id="form" autocomplete="off"><input id="say" placeholder="Say something to Marco…" maxlength="400"><button class="send">Send</button></form>
+</div>
+<script type="module">
+import * as THREE from '../assets/vendor/three/three.module.js';
+import { GLTFLoader } from '../assets/vendor/three/three.addons.js';
+import { attachAnatomy } from './attach-anatomy.mjs';
+import { captureRest } from './retarget.mjs';
+import { Reflexes } from './reflexes.mjs';
+import { Mind, CHARACTERS, timeOfDay } from './mind.mjs';
+
+const isPhone = matchMedia('(pointer:coarse)').matches;
+const r = new THREE.WebGLRenderer({ antialias: true });
+r.setPixelRatio(Math.min(devicePixelRatio, isPhone ? 2 : 1.5)); r.setSize(innerWidth, innerHeight);
+r.outputColorSpace = THREE.SRGBColorSpace; r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.05; r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.prepend(r.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0e0d0b);
+
+// ---------- the room: 6 x 4.5 m studio, door on the -z wall, window on +z ----------
+const W = 6, D = 4.5, H = 2.7;
+const mat = (c, rough = 0.9) => new THREE.MeshStandardMaterial({ color: c, roughness: rough, metalness: 0 });
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D), mat(0x6b5236, 0.75)); floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), mat(0xe9e4da)); ceil.rotation.x = Math.PI / 2; ceil.position.y = H; scene.add(ceil);
+const wallM = mat(0xcfc6b8);
+const wall = (w, h, x, y, z, ry) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), wallM); m.position.set(x, y, z); m.rotation.y = ry; m.receiveShadow = true; scene.add(m); return m; };
+wall(W, H, 0, H / 2, -D / 2, 0); wall(W, H, 0, H / 2, D / 2, Math.PI); wall(D, H, -W / 2, H / 2, 0, Math.PI / 2); wall(D, H, W / 2, H / 2, 0, -Math.PI / 2);
+// window (a glowing pane) on the back wall, door frame on the front wall
+const win = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 1.3), new THREE.MeshStandardMaterial({ color: 0x8fb4d9, emissive: 0x6f94c4, emissiveIntensity: 0.9, roughness: 1 })); win.position.set(0.3, 1.55, D / 2 - 0.01); win.rotation.y = Math.PI; scene.add(win);
+const door = new THREE.Mesh(new THREE.BoxGeometry(0.9, 2.1, 0.05), mat(0xf1ede6, 0.6)); door.position.set(0, 1.05, -D / 2 + 0.03); scene.add(door);
+// placeholder furniture until the Meshy props arrive (same spots, same footprints)
+const box = (w, h, d, x, z, c, ry = 0) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(c, 0.85)); m.position.set(x, h / 2, z); m.rotation.y = ry; m.castShadow = m.receiveShadow = true; scene.add(m); return m; };
+box(2.1, 0.45, 0.9, -1.6, 1.4, 0x3f3b3a);   box(1.9, 0.42, 0.3, -1.6, 1.75, 0x4a4544);      // sofa seat + back
+box(1.0, 0.4, 0.5, -1.6, 0.45, 0x8a6a46);                                                   // coffee table
+box(0.6, 0.9, 2.0, 2.68, -0.6, 0xdedad2);  box(0.7, 1.8, 0.7, 2.6, 1.6, 0xd9dde2);          // counter, fridge
+box(1.2, 0.75, 0.8, 1.2, -1.3, 0x9b7a52);  box(0.45, 0.9, 0.45, 0.65, -1.3, 0x5a4634); box(0.45, 0.9, 0.45, 1.75, -1.3, 0x5a4634);   // table, chairs
+box(1.4, 0.5, 2.0, -2.2, -1.1, 0x6e7585);                                                   // bed
+box(1.0, 1.9, 0.3, -2.0, 2.05, 0x7a5a3a);                                                   // bookshelf
+box(1.1, 0.5, 0.4, 1.0, 2.0, 0x2b2a28);                                                     // tv stand
+const lampPost = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.6, 8), mat(0x222)); lampPost.position.set(-2.6, 0.8, 0.9); scene.add(lampPost);
+const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 0.3, 16, 1, true), new THREE.MeshStandardMaterial({ color: 0xf0d9a8, emissive: 0xffc77a, emissiveIntensity: 0.8, side: THREE.DoubleSide })); shade.position.set(-2.6, 1.6, 0.9); scene.add(shade);
+
+// ---------- light: lamp + window + a soft fill ----------
+scene.add(new THREE.HemisphereLight(0xe9dcc6, 0x2a221a, 0.45));
+const lamp = new THREE.PointLight(0xffc27a, 14, 9, 1.6); lamp.position.set(-2.6, 1.5, 0.9); lamp.castShadow = true; lamp.shadow.mapSize.set(1024, 1024); lamp.shadow.bias = -0.002; scene.add(lamp);
+const cool = new THREE.DirectionalLight(0xa9c4e6, 0.9); cool.position.set(0.3, 1.8, D / 2 - 0.2); cool.target.position.set(0, 0.6, 0); scene.add(cool, cool.target);
+const kitchen = new THREE.PointLight(0xfff1dc, 6, 6, 1.8); kitchen.position.set(2.0, 2.4, -0.4); scene.add(kitchen);
+
+// where the mind can send him
+const SPOTS = { sofa: new THREE.Vector3(-1.1, 0, 0.75), kitchen: new THREE.Vector3(2.0, 0, -0.3), window: new THREE.Vector3(0.3, 0, 1.6), door: new THREE.Vector3(0, 0, -1.4), table: new THREE.Vector3(1.2, 0, -0.6), bed: new THREE.Vector3(-1.3, 0, -1.2), shelf: new THREE.Vector3(-1.9, 0, 1.5) };
+
+// ---------- the player: a first-person camera on the floor ----------
+const cam = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.05, 50);
+const player = { pos: new THREE.Vector3(0, 0, -1.6), yaw: Math.PI, pitch: 0 };   // in at the door, facing the room
+const EYE = 1.62;
+function placeCam() { cam.position.set(player.pos.x, EYE, player.pos.z); cam.rotation.set(0, 0, 0, 'YXZ'); cam.rotation.y = player.yaw; cam.rotation.x = player.pitch; }
+const keys = {}; addEventListener('keydown', e => { if (e.target.tagName !== 'INPUT') keys[e.key.toLowerCase()] = true; }); addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+let drag = null, padV = { x: 0, y: 0 };
+const pad = document.getElementById('pad'), knob = document.getElementById('knob');
+r.domElement.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, id: e.pointerId }; r.domElement.setPointerCapture(e.pointerId); document.getElementById('hint').style.display = 'none'; });
+r.domElement.addEventListener('pointermove', e => { if (!drag || drag.id !== e.pointerId) return; player.yaw -= (e.clientX - drag.x) * 0.004; player.pitch = THREE.MathUtils.clamp(player.pitch - (e.clientY - drag.y) * 0.003, -0.9, 0.9); drag.x = e.clientX; drag.y = e.clientY; });
+r.domElement.addEventListener('pointerup', e => { if (drag && drag.id === e.pointerId) drag = null; });
+let padId = null;
+pad.addEventListener('pointerdown', e => { padId = e.pointerId; pad.setPointerCapture(e.pointerId); padMove(e); });
+pad.addEventListener('pointermove', e => { if (e.pointerId === padId) padMove(e); });
+pad.addEventListener('pointerup', e => { if (e.pointerId === padId) { padId = null; padV = { x: 0, y: 0 }; knob.style.left = '35px'; knob.style.top = '35px'; } });
+function padMove(e) { const b = pad.getBoundingClientRect(); let x = (e.clientX - b.left - 55) / 45, y = (e.clientY - b.top - 55) / 45; const l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; } padV = { x, y }; knob.style.left = (35 + x * 35) + 'px'; knob.style.top = (35 + y * 35) + 'px'; }
+function movePlayer(dt) {
+  let fx = (keys['w'] || keys['arrowup'] ? 1 : 0) - (keys['s'] || keys['arrowdown'] ? 1 : 0) - padV.y;
+  let sx = (keys['d'] || keys['arrowright'] ? 1 : 0) - (keys['a'] || keys['arrowleft'] ? 1 : 0) + padV.x;
+  const l = Math.hypot(fx, sx); if (l > 1) { fx /= l; sx /= l; }
+  if (!fx && !sx) return;
+  const sp = 1.6 * dt;
+  const fwd = new THREE.Vector3(-Math.sin(player.yaw), 0, -Math.cos(player.yaw)), right = new THREE.Vector3(fwd.z, 0, -fwd.x);
+  player.pos.addScaledVector(fwd, fx * sp).addScaledVector(right, sx * sp);
+  player.pos.x = THREE.MathUtils.clamp(player.pos.x, -W / 2 + 0.3, W / 2 - 0.3); player.pos.z = THREE.MathUtils.clamp(player.pos.z, -D / 2 + 0.3, D / 2 - 0.3);
+  // keep a little personal space from Marco
+  if (marco) { const d = player.pos.distanceTo(marco.position); if (d < 0.55) player.pos.sub(marco.position).setLength(0.55).add(marco.position); }
+}
+addEventListener('resize', () => { r.setSize(innerWidth, innerHeight); cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); });
+
+// ---------- Marco ----------
+const status = document.getElementById('status'), log = document.getElementById('log'), bubble = document.getElementById('bubble'), memEl = document.getElementById('mem');
+const say = (cls, text) => { const d = document.createElement('div'); d.className = 'msg ' + cls; d.textContent = text; log.appendChild(d); log.scrollTop = log.scrollHeight; };
+const loader = new GLTFLoader();
+const bodies = await (await fetch('../assets/bodies/bodies.json')).json();
+const spec = bodies.find(b => b.id === 'adult-base-01');
+const [g, pack] = await Promise.all([loader.loadAsync('../assets/bodies/' + spec[isPhone ? 'mobile' : 'desktop']), loader.loadAsync('../assets/anims/meshy-pack-01.glb')]);
+const marco = g.scene; marco.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
+scene.add(marco);
+// (rest capture and the anatomy attach read the model at the origin; place him after)
+const reflex = new Reflexes(marco, { rest: captureRest(pack.scene, { allNodes: true }), clips: pack.animations });
+const anat = attachAnatomy(marco, spec.anatomy);
+marco.position.copy(SPOTS.kitchen); marco.rotation.y = Math.PI + 0.4;
+const mind = new Mind(CHARACTERS.marco);
+let bubbleUntil = 0;
+function showBubble(text) { bubble.textContent = text; bubble.style.display = text ? 'block' : 'none'; bubbleUntil = performance.now() + 1500 + text.length * 55; }
+const headBone = reflex.bone('Head'), _hp = new THREE.Vector3();
+function placeBubble() {
+  if (bubble.style.display === 'none') return;
+  if (performance.now() > bubbleUntil) { bubble.style.display = 'none'; return; }
+  headBone.getWorldPosition(_hp); _hp.y += 0.25; _hp.project(cam);
+  const behind = _hp.z > 1; bubble.style.left = ((_hp.x + 1) / 2 * innerWidth) + 'px'; bubble.style.top = ((1 - _hp.y) / 2 * innerHeight) + 'px'; bubble.style.opacity = behind ? 0 : 1;
+}
+function sceneState() { return { time: timeOfDay(), player_distance_m: +player.pos.distanceTo(marco.position).toFixed(2), spots: Object.keys(SPOTS) }; }
+function showMemories(d) {
+  if (!d) return;
+  memEl.innerHTML = `<b>model</b> ${d.model || ''}<br><b>mood</b> ${JSON.stringify(d.mood)}<br><b>remembered now</b> ${d.memory && d.memory.content ? `(${d.memory.importance}) ${d.memory.content}` : '–'}<br><b>recalled</b><br>` + (d.recalled || []).map(m => `· ${m.content} <i>(${m.when})</i>`).join('<br>');
+}
+async function talk(opts) {
+  status.textContent = 'thinking…';
+  try {
+    const d = await mind.send({ ...opts, scene: sceneState() });
+    if (!d) return;
+    reflex.clear(); reflex.lookAt(new THREE.Vector3(player.pos.x, EYE - 0.05, player.pos.z));
+    for (const a of d.actions || []) reflex.do(a);
+    if (d.say) { say('him', 'Marco: ' + d.say); showBubble(d.say); }
+    showMemories(d); status.textContent = `visit · ${mind.history.length} turns`;
+  } catch (e) { say('sys', 'Marco is out of reach: ' + e.message); status.textContent = 'offline'; }
+}
+document.getElementById('form').addEventListener('submit', async e => {
+  e.preventDefault(); const inp = document.getElementById('say'); const t = inp.value.trim(); if (!t || mind.busy) return;
+  inp.value = ''; say('me', t); await talk({ text: t });
+});
+document.getElementById('leave').onclick = async () => { if (mind.busy) return; say('sys', 'you leave'); await talk({ event: 'leave' }); mind.sessionId = null; mind.history = []; document.getElementById('leave').textContent = 'Left · reload to come back'; document.getElementById('form').style.display = 'none'; };
+document.getElementById('memtoggle').onclick = e => { memEl.style.display = memEl.style.display === 'block' ? 'none' : 'block'; e.target.classList.toggle('on'); };
+window.__world = { marco, reflex, mind, player, talk, SPOTS };
+
+// ---------- loop ----------
+let last = performance.now(); status.textContent = 'you arrive';
+r.setAnimationLoop(now => {
+  const dt = Math.min((now - last) / 1000, 0.05); last = now;
+  movePlayer(dt); placeCam();
+  const eye = new THREE.Vector3(player.pos.x, EYE - 0.05, player.pos.z);
+  // he keeps an eye on you when you're close, otherwise on what he's doing
+  if (!reflex.busy && player.pos.distanceTo(marco.position) < 3.2) reflex.lookAt(eye); else if (!reflex.busy) reflex.lookAt(null);
+  reflex.update(dt, { player: eye, spots: SPOTS });
+  anat.update(dt);
+  placeBubble();
+  r.render(scene, cam);
+});
+await talk({ event: 'arrive' });
+</script>
+</body></html>
