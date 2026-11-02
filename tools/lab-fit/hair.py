@@ -10,7 +10,7 @@ SRC, OUT = sys.argv[1], sys.argv[2]
 UV = np.fromfile('uv.bin', np.float32).reshape(-1, 2); I = np.fromfile('idx.bin', np.uint32).reshape(-1, 3)
 W = np.load('newW.npy'); fillv = np.load('mask_w.npy')
 img = cv2.cvtColor(cv2.imread(SRC), cv2.COLOR_BGR2RGB).astype(np.float32); h, w, _ = img.shape
-ROOT = np.array([0.003, 0.815, 0.101])          # the anatomy's root (bodies.json)
+ROOT = np.array([-0.005, 0.83, 0.102])          # the anatomy's root (bodies.json)
 x, y, z = W.T
 
 def ss(a, b, t): t = np.clip((t - a) / (b - a), 0, 1); return t * t * (3 - 2 * t)
@@ -26,6 +26,9 @@ thigh = ss(ROOT[1] + 0.0, ROOT[1] - 0.05, y)                                    
 cleft = np.exp(-(dx / 0.02) ** 2) * back
 dens = 3.0 + 13.0 * pub + 5.0 * trail + 3.5 * groin + 6.0 * thigh + 2.0 * cleft + 1.5 * back
 dens *= 0.85 + 0.3 * rng.random(len(dens))
+import os
+HK=float(os.environ.get('HAIRK','1')); PK=float(os.environ.get('PUBK','1'))
+dens = dens * np.where(pub > 0.3, PK, HK)   # HAIRK scales body hair, PUBK the pubic patch (match the body's own hair)
 
 # --- flow direction, per vertex (3D, cm) ---
 down = np.tile([0.0, -1.0, 0.0], (len(W), 1))

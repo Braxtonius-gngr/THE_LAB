@@ -12,6 +12,7 @@ const key=new Map();for(let v=0;v<P.length/3;v++){const kk=`${Math.round(P[v*3]*
 for(const g of key.values()){if(g.length<2)continue;let s=[0,0,0];for(const v of g){s[0]+=N[v*3];s[1]+=N[v*3+1];s[2]+=N[v*3+2];}for(const v of g){N[v*3]=s[0];N[v*3+1]=s[1];N[v*3+2]=s[2];}}
 for(let v=0;v<N.length;v+=3){const l=Math.hypot(N[v],N[v+1],N[v+2])||1;N[v]/=l;N[v+1]/=l;N[v+2]/=l;}
 prim.getAttribute('NORMAL').setArray(N);
+const nb=process.env.NORMALS||'';if(nb&&fs.existsSync(nb)){const b2=fs.readFileSync(nb);prim.getAttribute('NORMAL').setArray(new Float32Array(b2.buffer,b2.byteOffset,b2.byteLength/4).slice());console.log('smoothed normals used');}
 const m=doc.getRoot().listMaterials()[0];
 if(tex){m.getBaseColorTexture().setImage(fs.readFileSync(tex)).setMimeType('image/png');}
 await io.write(out,doc);

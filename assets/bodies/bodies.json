@@ -103,5 +103,31 @@
         256
       ]
     }
+  },
+  {
+    "id": "dante",
+    "name": "Dante",
+    "source": "Meshy AI, MeshyRig (29 bones, auto-named), 2026-11-01",
+    "pose": "A-pose",
+    "heightM": 1.7,
+    "rigged": true,
+    "notes": "Athletic build, light body hair. Thick briefs removed: pulled in by fabric thickness, thin-plate front fill, cleft restored, edge band re-filled, and the hem's shading normals rebuilt from the surrounding surface (the line Meshy's rolled hems leave is in the normals, not the shape). Repainted, tone-matched, body hair painted to match. Lab anatomy with flesh physics.",
+    "desktop": "dante/desktop.glb",
+    "mobile": "dante/mobile.glb",
+    "anatomy": {
+      "bone": "Hips",
+      "root": [
+        -0.005,
+        0.83,
+        0.102
+      ],
+      "tone": "#b47f5c",
+      "facing": 1,
+      "skinPatch": [
+        2125,
+        1404,
+        256
+      ]
+    }
   }
 ]
