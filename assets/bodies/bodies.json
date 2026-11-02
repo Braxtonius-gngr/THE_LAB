@@ -77,5 +77,31 @@
         256
       ]
     }
+  },
+  {
+    "id": "cole",
+    "name": "Cole",
+    "source": "Meshy AI, MeshyRig (69 bones incl. five-finger hands, auto-named by tools/rig-fixes/automap.mjs), 2026-11-01",
+    "pose": "A-pose",
+    "heightM": 1.7,
+    "rigged": true,
+    "notes": "Athletic build. Swim briefs removed: thin-plate front fill, gluteal cleft restored, Meshy's dense hem/waistband micro-geometry relaxed and seam folds untangled; repainted, tone-matched, and the baked edge line softened. A faint line remains across the front waist. Lab anatomy with flesh physics.",
+    "desktop": "cole/desktop.glb",
+    "mobile": "cole/mobile.glb",
+    "anatomy": {
+      "bone": "Hips",
+      "root": [
+        0.003,
+        0.845,
+        0.104
+      ],
+      "tone": "#b9805f",
+      "facing": 1,
+      "skinPatch": [
+        2672,
+        1477,
+        256
+      ]
+    }
   }
 ]
