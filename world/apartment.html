@@ -87,11 +87,11 @@ const PROPS = [
   { id: 'window',      x: -0.8,  y: 1.0, z: D / 2 - 0.07, ry: Math.PI, shadow: false },   // sill at 1 m
   { id: 'sofa',        x: -0.8,  z: D / 2 - 0.46, ry: Math.PI },
   { id: 'coffeetable', x: -0.8,  z: 0.75, ry: 0 },
-  { id: 'armchair',    x: -2.45, z: 0.3,  ry: Math.PI / 2 },
-  { id: 'floorlamp',   x: -2.6,  z: 1.9,  ry: 0, shadow: false },
-  { id: 'bookshelf',   x: -W / 2 + 0.21, z: -1.0, ry: Math.PI / 2 },
+  { id: 'armchair',    x: -2.3,  z: 0.45, ry: Math.PI / 2 },
+  { id: 'floorlamp',   x: -2.15, z: 2.0,  ry: 0, shadow: false },
+  { id: 'bookshelf',   x: -W / 2 + 0.21, z: -0.95, ry: Math.PI / 2 },
   // small things (batch 2): surface heights are the baked tops (table 0.718, counter 1.043, coffee table 0.322)
-  { id: 'bassguitar',  x: 0.62,  z: 1.95, ry: Math.PI - 0.3 },
+  { id: 'bassguitar',  x: 0.45,  z: 1.95, ry: Math.PI - 0.3 },
   { id: 'laptop',      x: 0.85,  y: 0.718, z: -1.4, ry: 0.15 },
   { id: 'mug',         x: 1.35,  y: 0.718, z: -1.3, ry: 0.8, shadow: false },
   { id: 'keysbowl',    x: 0.45,  y: 0.718, z: -1.85, ry: 0, shadow: false },
@@ -99,11 +99,37 @@ const PROPS = [
   { id: 'glass',       x: 2.2,   y: 1.043, z: -0.62, ry: 0, shadow: false },
   { id: 'pintglass',   x: 2.35,  y: 1.043, z: -1.42, ry: 0, shadow: false },
   { id: 'beerbottle',  x: -0.55, y: 0.322, z: 0.82, ry: 0, shadow: false },
+  // batch 3: making it his
+  { id: 'rug',          x: -0.8,  z: 0.75, ry: 0, shadow: false },
+  { id: 'stove',        x: W / 2 - 0.33, z: 0.18, ry: -Math.PI / 2 },
+  { id: 'microwave',    x: 2.6,   y: 1.043, z: -1.45, ry: -Math.PI / 2 },
+  { id: 'wallshelf',    x: W / 2 - 0.125, y: 1.6, z: -0.85, ry: -Math.PI / 2, shadow: false },
+  { id: 'liquorbottle', x: 2.25,  y: 1.043, z: -1.15, ry: 0.4, shadow: false },
+  { id: 'trashcan',     x: 2.15,  z: -2.02, ry: 0 },
+  { id: 'barcart',      x: -W / 2 + 0.16, z: -0.2, ry: Math.PI / 2 },
+  { id: 'shaker',       x: -2.84, y: 0.81, z: -0.38, ry: 0, shadow: false },
+  { id: 'bassamp',      x: 0.78,  z: 2.08, ry: Math.PI - 0.15 },
+  { id: 'turntable',    x: -W / 2 + 0.16, z: 1.15, ry: Math.PI / 2 },
+  { id: 'recordcrate',  x: -2.86, z: 0.75, ry: Math.PI / 2, shadow: false },
+  { id: 'wallart',      x: -W / 2 + 0.045, y: 1.25, z: 0.45, ry: Math.PI / 2, shadow: false },
+  { id: 'wallclock',    x: 1.0,   y: 2.0, z: -D / 2 + 0.012, ry: 0, shadow: false },
+  { id: 'plant',        x: -2.68, z: 1.95, ry: 0.6 },
+  { id: 'smallplant',   x: -2.79, y: 1.9, z: -0.95, ry: 0, shadow: false },
+  { id: 'throwblanket', x: -1.55, y: 0.45, z: 1.85, ry: 0.3, shadow: false },
+  { id: 'bookstack',    x: 2.74,  y: 0.551, z: 1.99, ry: 0.2, shadow: false },
+  { id: 'coatrack',     x: -0.56, z: -1.85, ry: 0 },
+  { id: 'shoes',        x: -0.95, z: -1.7, ry: 0.3, shadow: false },
+  { id: 'laundrybasket', x: 2.78, z: 0.78, ry: -Math.PI / 2 },
+  { id: 'curtain',      x: -1.72, y: 0.32, z: D / 2 - 0.09, ry: Math.PI, shadow: false },
+  { id: 'curtain',      x: 0.12,  y: 0.32, z: D / 2 - 0.09, ry: Math.PI, shadow: false },
+  { id: 'ceilinglight', x: -0.8,  y: H - 0.64, z: 0.75, ry: 0, shadow: false },
+  { id: 'bathroomdoor', x: -W / 2 + 0.1, z: -1.8, ry: Math.PI / 2 },
+  { id: 'towel',        x: -2.3,  y: 0.9, z: -D / 2 + 0.1, ry: 0, shadow: false },
 ];
 
 // ---------- light: lamp + window + a soft fill ----------
 scene.add(new THREE.HemisphereLight(0xe9dcc6, 0x2a221a, 0.45));
-const lamp = new THREE.PointLight(0xffc27a, 14, 9, 1.6); lamp.position.set(-2.6, 1.45, 1.9); lamp.castShadow = true; lamp.shadow.mapSize.set(1024, 1024); lamp.shadow.bias = -0.002; scene.add(lamp);
+const lamp = new THREE.PointLight(0xffc27a, 14, 9, 1.6); lamp.position.set(-2.15, 1.45, 2.0); lamp.castShadow = true; lamp.shadow.mapSize.set(1024, 1024); lamp.shadow.bias = -0.002; scene.add(lamp);
 const cool = new THREE.DirectionalLight(0xa9c4e6, 0.9); cool.position.set(-0.8, 1.8, D / 2 - 0.2); cool.target.position.set(-0.3, 0.6, 0); scene.add(cool, cool.target);
 const kitchen = new THREE.PointLight(0xfff1dc, 5, 6, 1.8); kitchen.position.set(2.1, 2.15, -0.85); scene.add(kitchen);
 

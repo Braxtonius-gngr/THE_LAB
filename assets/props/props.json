@@ -312,6 +312,150 @@
    "desktop": "plate/desktop.glb",
    "mobile": "plate/mobile.glb",
    "source": "Meshy AI agent, 2026-11-02 (batch 2)"
+  },
+  {
+   "id": "barcart",
+   "desktop": "barcart/desktop.glb",
+   "mobile": "barcart/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 3)"
+  },
+  {
+   "id": "bassamp",
+   "desktop": "bassamp/desktop.glb",
+   "mobile": "bassamp/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 3)"
+  },
+  {
+   "id": "bathroomdoor",
+   "desktop": "bathroomdoor/desktop.glb",
+   "mobile": "bathroomdoor/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 3)"
+  },
+  {
+   "id": "bookstack",
+   "desktop": "bookstack/desktop.glb",
+   "mobile": "bookstack/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 3)"
+  },
+  {
+   "id": "ceilinglight",
+   "desktop": "ceilinglight/desktop.glb",
+   "mobile": "ceilinglight/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 3)"
+  },
+  {
+   "id": "coatrack",
+   "desktop": "coatrack/desktop.glb",
+   "mobile": "coatrack/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 3)"
+  },
+  {
+   "id": "curtain",
+   "desktop": "curtain/desktop.glb",
+   "mobile": "curtain/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 3)"
+  },
+  {
+   "id": "laundrybasket",
+   "desktop": "laundrybasket/desktop.glb",
+   "mobile": "laundrybasket/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 3)"
+  },
+  {
+   "id": "liquorbottle",
+   "desktop": "liquorbottle/desktop.glb",
+   "mobile": "liquorbottle/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 3)"
+  },
+  {
+   "id": "microwave",
+   "desktop": "microwave/desktop.glb",
+   "mobile": "microwave/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 3)"
+  },
+  {
+   "id": "plant",
+   "desktop": "plant/desktop.glb",
+   "mobile": "plant/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 3)"
+  },
+  {
+   "id": "recordcrate",
+   "desktop": "recordcrate/desktop.glb",
+   "mobile": "recordcrate/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 3)"
+  },
+  {
+   "id": "rug",
+   "desktop": "rug/desktop.glb",
+   "mobile": "rug/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 3)"
+  },
+  {
+   "id": "shaker",
+   "desktop": "shaker/desktop.glb",
+   "mobile": "shaker/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 3)"
+  },
+  {
+   "id": "shoes",
+   "desktop": "shoes/desktop.glb",
+   "mobile": "shoes/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 3)"
+  },
+  {
+   "id": "smallplant",
+   "desktop": "smallplant/desktop.glb",
+   "mobile": "smallplant/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 3)"
+  },
+  {
+   "id": "stove",
+   "desktop": "stove/desktop.glb",
+   "mobile": "stove/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 3)"
+  },
+  {
+   "id": "throwblanket",
+   "desktop": "throwblanket/desktop.glb",
+   "mobile": "throwblanket/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 3)"
+  },
+  {
+   "id": "towel",
+   "desktop": "towel/desktop.glb",
+   "mobile": "towel/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 3)"
+  },
+  {
+   "id": "trashcan",
+   "desktop": "trashcan/desktop.glb",
+   "mobile": "trashcan/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 3)"
+  },
+  {
+   "id": "turntable",
+   "desktop": "turntable/desktop.glb",
+   "mobile": "turntable/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 3)"
+  },
+  {
+   "id": "wallart",
+   "desktop": "wallart/desktop.glb",
+   "mobile": "wallart/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 3)"
+  },
+  {
+   "id": "wallclock",
+   "desktop": "wallclock/desktop.glb",
+   "mobile": "wallclock/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 3)"
+  },
+  {
+   "id": "wallshelf",
+   "desktop": "wallshelf/desktop.glb",
+   "mobile": "wallshelf/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 3)"
   }
  ]
 }
