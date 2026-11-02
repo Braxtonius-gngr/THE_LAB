@@ -17,6 +17,8 @@ const doc = await io.read(src);
 const root = doc.getRoot(); const scene = root.getDefaultScene() || root.listScenes()[0];
 // wrap the scene in one node carrying the scale, then a translation that puts the floor centre at the origin
 const wrap = doc.createNode(name).setScale(scale);
+// ROTX=90 lays a prop Meshy stood on edge (a plate) flat: front face up
+if (process.env.ROTX) { const a = +process.env.ROTX * Math.PI / 360; wrap.setRotation([-Math.sin(a), 0, 0, Math.cos(a)]); }
 for (const n of scene.listChildren()) { scene.removeChild(n); wrap.addChild(n); }
 scene.addChild(wrap);
 const b = getBounds(scene);

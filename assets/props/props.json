@@ -224,6 +224,94 @@
    "desktop": "window/desktop.glb",
    "mobile": "window/mobile.glb",
    "source": "Meshy AI agent, 2026-11-02"
+  },
+  {
+   "id": "bassguitar",
+   "size": [
+    0.324,
+    1.15,
+    0.24
+   ],
+   "desktop": "bassguitar/desktop.glb",
+   "mobile": "bassguitar/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 2)"
+  },
+  {
+   "id": "beerbottle",
+   "size": [
+    0.055,
+    0.23,
+    0.056
+   ],
+   "desktop": "beerbottle/desktop.glb",
+   "mobile": "beerbottle/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 2)"
+  },
+  {
+   "id": "glass",
+   "size": [
+    0.104,
+    0.14,
+    0.095
+   ],
+   "desktop": "glass/desktop.glb",
+   "mobile": "glass/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 2)"
+  },
+  {
+   "id": "keysbowl",
+   "size": [
+    0.16,
+    0.081,
+    0.161
+   ],
+   "desktop": "keysbowl/desktop.glb",
+   "mobile": "keysbowl/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 2)"
+  },
+  {
+   "id": "laptop",
+   "size": [
+    0.33,
+    0.181,
+    0.285
+   ],
+   "desktop": "laptop/desktop.glb",
+   "mobile": "laptop/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 2)"
+  },
+  {
+   "id": "mug",
+   "size": [
+    0.131,
+    0.1,
+    0.096
+   ],
+   "desktop": "mug/desktop.glb",
+   "mobile": "mug/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 2)"
+  },
+  {
+   "id": "pintglass",
+   "size": [
+    0.071,
+    0.15,
+    0.071
+   ],
+   "desktop": "pintglass/desktop.glb",
+   "mobile": "pintglass/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 2)"
+  },
+  {
+   "id": "plate",
+   "size": [
+    0.27,
+    0.013,
+    0.27
+   ],
+   "desktop": "plate/desktop.glb",
+   "mobile": "plate/mobile.glb",
+   "source": "Meshy AI agent, 2026-11-02 (batch 2)"
   }
  ]
 }
