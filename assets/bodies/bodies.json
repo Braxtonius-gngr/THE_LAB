@@ -25,5 +25,31 @@
         256
       ]
     }
+  },
+  {
+    "id": "tommy",
+    "name": "Tommy",
+    "source": "Meshy AI, rigged with MeshyRig (45 bones, renamed to the lab's Mixamo-style names), 2026-11-01",
+    "pose": "A-pose (arms low)",
+    "heightM": 1.7,
+    "rigged": true,
+    "notes": "Muscular build, body hair. Briefs removed: pelvis reshaped and repainted as skin (gloss map matched; the repainted area has no body hair yet). Lab anatomy attached with flesh physics. Rig has index and ring finger chains.",
+    "desktop": "tommy/desktop.glb",
+    "mobile": "tommy/mobile.glb",
+    "anatomy": {
+      "bone": "Hips",
+      "root": [
+        0.003,
+        0.815,
+        0.101
+      ],
+      "tone": "#a86a52",
+      "facing": 1,
+      "skinPatch": [
+        1364,
+        1561,
+        256
+      ]
+    }
   }
 ]
