@@ -1123,7 +1123,9 @@ export function buildAnatomy(pouch, m, a) {
   const dk = pouch.userData.live
     ? (0.35 + 0.65 * (fL + fR) / 2) * (1 - 0.6 * (hL + hR) / 2) * dd * (1.311 + 1.417 * dd)
     : (0.3 + 2.7 * a.depth / 100 - 1) * 1.2;
-  const front = -0.6 * sL - avgLR - r * 0.75 - dk * sL;
+  // (a build's man rests on the sac's front: its skin stands out to about
+  // 1.45 lobe radii past the lobes' centres - the shaft's back on it, not in it)
+  const front = pouch.userData.live ? -0.6 * sL - avgLR * 1.22 - r * 0.92 - dk * sL : -0.6 * sL - avgLR - r * 0.75 - dk * sL;
   const pts = [
     [0, 0.6 * sL, -1.4 * sL],
     [0, -1.6 * sL, front * 0.62],
