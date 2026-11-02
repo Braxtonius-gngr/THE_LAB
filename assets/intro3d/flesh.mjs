@@ -24,6 +24,10 @@
 // the mass's velocity against the body. The cloth reads it (cloth.mjs: the
 // fitted brief trails it, the loose pieces are pushed by what passes their
 // drape gap); nothing here reads the cloth.
+// Units: the lab's world is in centimetres. A host whose world is in other
+// units (an imported body in metres) sets `fig.userData.unit`, its world
+// units per centimetre (0.01 for metres); every force and length below is
+// scaled by it, so the motion is the same. Unset, 1: the lab's men as before.
 import * as THREE from '../vendor/three/three.module.js';
 
 const GRAV = 980;                  // cm/s^2, down
@@ -136,16 +140,17 @@ export class FleshSim {
   // advance dt seconds and pose the anatomy from the particles
   step(dt) {
     const P = this.pouch, g = this.inner; if (!P || !g) return false;
+    const U = this.fig.userData.unit ?? 1, G = GRAV * U;
     const u = g.userData, s = g.scale.x, sc = this.fig.getWorldScale(_w).x * P.scale.x * s;
     const loose = Math.max(0.2, (u.sway || 1) * (this.tune.sway || 1)), press = Math.max(0, Math.min(1, this.fig.userData.press || 0));
     // (the material: figure.mjs's damping, resist and adhesion, 50 as they were)
     const mp = u.params || {}, damp = (0.4 + 1.2 * (mp.damping ?? 50) / 100) * (this.tune.damp || 1), res = (mp.resist ?? 50) / 50, adh = (mp.adhesion ?? 50) / 50;
-    const k = K / loose * (1 + 3 * res * press), c = C / Math.sqrt(loose) * damp * (1 + 4 * adh * press);
+    const k = K * U / loose * (1 + 3 * res * press), c = C / Math.sqrt(loose) * damp * (1 + 4 * adh * press);
     // (engorged - figure.mjs's gorge - the shaft is a stiff beam on its root,
     // not a hanging mass: its tip held to its rest the harder and carried
     // against gravity, so at full it stands out where it is set; the lobes
     // hang as they always do)
-    const eg = Math.max(0, Math.min(100, mp.gorge || 0)) / 100, kTip = k * (1 + 30 * eg * eg), gTip = GRAV * (1 - 0.85 * eg), cTip = c * (1 + 2 * eg);
+    const eg = Math.max(0, Math.min(100, mp.gorge || 0)) / 100, kTip = k * (1 + 30 * eg * eg), gTip = G * (1 - 0.85 * eg), cTip = c * (1 + 2 * eg);
     const lobeMax = LOBE.max * (u.kl || 1) * (1 - 0.5 * press), lobeK = LOBE.k * (1 + press), lobeC = LOBE.c * damp * (1 + 2 * adh * press);
     // (the right lobe's lag on the left, and the lobes' sag toward the
     // ground: figure.mjs's lobeLag and density, 50 as they were)
@@ -158,7 +163,7 @@ export class FleshSim {
       this.p[0].copy(T0); this.p[1].copy(T1); this.v[0].set(0, 0, 0); this.v[1].set(0, 0, 0);
       // (a nudge toward his front: balanced exactly upside down it would
       // never start to fall)
-      this.fig.userData.hips.getWorldQuaternion(_q); _fw.set(0, 0, -1).applyQuaternion(_q).multiplyScalar(25);
+      this.fig.userData.hips.getWorldQuaternion(_q); _fw.set(0, 0, -1).applyQuaternion(_q).multiplyScalar(25 * U);
       this.v[0].copy(_fw); this.v[1].copy(_fw);
       this.anchorPrev.copy(this.anchor);
       this.lobe.forEach(l => { l.o.set(0, 0, 0); l.v.set(0, 0, 0); });
@@ -181,15 +186,15 @@ export class FleshSim {
     const nude = !sup || sup >= 180, N = WALL.nude;
     const wLim = (nude ? N.lim : sup) * D2R, wOn = nude ? N.on * D2R : wLim * WALL.on;
     const wHard = Math.min(175 * D2R, nude ? N.hard * D2R : wLim * (1.25 + 0.5 * (1 - cling)));
-    const wPush = GRAV * (nude ? N.w : H && H.slip ? 0.2 + cling : 0.6 + 2.4 * cling);
+    const wPush = G * (nude ? N.w : H && H.slip ? 0.2 + cling : 0.6 + 2.4 * cling);
     while (this.acc >= STEP && n < 40) {
       this.acc -= STEP; n++;
       vm.copy(this.v[0]); v1.copy(this.v[1]);
       [0, 1].forEach(i => {
         const p = this.p[i], v = this.v[i], T = i ? T1 : T0, L = i ? L1 : L0, r = i ? r1 : r0;
         // gravity, the tissue's hold toward its rest, damping against the body's motion
-        _v.subVectors(T, p).multiplyScalar((i ? kTip : k) / Math.max(1, L));
-        _v.y -= i ? gTip : GRAV;
+        _v.subVectors(T, p).multiplyScalar((i ? kTip : k) / Math.max(U, L));
+        _v.y -= i ? gTip : G;
         _w.subVectors(v, this.anchorV).multiplyScalar(-(i ? cTip : c));
         _v.add(_w);
         // the hold's soft wall: back toward the rest, along the arc, past `on`
@@ -239,7 +244,7 @@ export class FleshSim {
       // spring and limits (how far its ring lets it draw back)
       if (sl) {
         ax.subVectors(this.p[1], this.anchor).normalize();
-        const aAx = _a.subVectors(this.v[1], v1).divideScalar(STEP).dot(ax) / sc, aG = GRAV * ax.dot(_down) / sc;
+        const aAx = _a.subVectors(this.v[1], v1).divideScalar(STEP).dot(ax) / sc, aG = G * ax.dot(_down) / sc;
         sl.vel += (-sl.k * sl.slide - sl.c * sl.vel - 0.4 * sl.glide * aAx + 0.03 * sl.glide * aG) * STEP;
         sl.slide += sl.vel * STEP;
         if (sl.slide < -sl.back) { sl.slide = -sl.back; sl.vel = Math.max(0, sl.vel); }
@@ -257,7 +262,7 @@ export class FleshSim {
     this.publish(T0, T1);
     this.pose(T0, root);
     const moving = this.v[0].distanceTo(this.anchorV) + this.v[1].distanceTo(this.anchorV);
-    return moving > 0.5 || this.lobe.some(l => l.v.lengthSq() > 0.01) || (u.sleeve && Math.abs(u.sleeve.vel) > 0.05);
+    return moving > 0.5 * U || this.lobe.some(l => l.v.lengthSq() > 0.01) || (u.sleeve && Math.abs(u.sleeve.vel) > 0.05);
   }
 
   // the swing vector, for the cloth: in the hips' frame and units
