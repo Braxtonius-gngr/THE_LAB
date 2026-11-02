@@ -18,4 +18,5 @@ fs.writeFileSync(`${out}/idx.u32`, Buffer.from(new Uint32Array(I).buffer));
 const skin = root.listSkins()[0]; const joints = skin.listJoints();
 const meta = joints.map((j, i) => ({ i, name: j.getName(), world: j.getWorldTranslation().map(v => +v.toFixed(4)), parent: joints.indexOf(j.getParentNode?.() || null) }));
 fs.writeFileSync(`${out}/joints.json`, JSON.stringify(meta));
+fs.writeFileSync(`${out}/node.json`, JSON.stringify({ matrix: Array.from(M), uv: !!prim.getAttribute('TEXCOORD_0') }));
 console.log('verts', P.length / 3, 'tris', I.length / 3, 'joints', joints.length, 'prims', prims.length, 'jointsType', J.constructor.name, 'wType', W.constructor.name);

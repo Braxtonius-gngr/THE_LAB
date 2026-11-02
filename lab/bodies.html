@@ -27,12 +27,14 @@
   <button class="chip" id="reroll" hidden title="Same body, a new man drawn about his baseline">🎲 New roll</button>
   <button class="chip on" id="phys" hidden>Physics</button>
   <select class="chip" id="preset" hidden><option value="">Anatomy: lab baseline</option></select>
+  <select id="outfit" class="chip" hidden title="Fitted garments for this body"><option value="">Nude</option></select>
 </div>
 <div id="info">Loading…</div>
 <script type="module">
 import * as THREE from '../assets/vendor/three/three.module.js';
 import { GLTFLoader } from '../assets/vendor/three/three.addons.js';
 import { attachAnatomy, rollAnatomy } from '../world/attach-anatomy.mjs';
+import { wear } from '../world/garments.mjs';
 import { captureRest, retargetClip, clipLabel } from '../world/retarget.mjs';
 
 const isPhone = matchMedia('(pointer:coarse)').matches || innerWidth < 800;
@@ -122,6 +124,31 @@ animSel.onchange = () => {
 };
 const anatBtn = document.getElementById('anat'), presetSel = document.getElementById('preset'), physBtn = document.getElementById('phys');
 const rerollBtn = document.getElementById('reroll'); let rollSeed = null;
+// garments: the outfits whose every item is fitted to this body
+const outfitSel = document.getElementById('outfit'); let worn = [], garmentCat = null;
+async function fillOutfits(b) {
+  worn.forEach(w => w.remove()); worn = [];
+  garmentCat = garmentCat || await (await fetch('../assets/garments/garments.json')).json().catch(() => ({ garments: [], outfits: [] }));
+  const ok = id => (garmentCat.garments.find(g => g.id === id)?.bodies || []).includes(b.id);
+  const outs = garmentCat.outfits.filter(o => o.items.every(ok));
+  outfitSel.value = '';
+  outfitSel.innerHTML = '<option value="">Nude</option>' + outs.map((o, i) => `<option value="${i}">${o.name}</option>`).join('');
+  outfitSel.hidden = !outs.length; outfitSel._outs = outs;
+}
+let wearTok = 0;
+outfitSel.onchange = async () => {
+  const tok = ++wearTok; window.__dressed = false;
+  worn.forEach(w => w.remove()); worn = [];
+  const o = outfitSel._outs?.[+outfitSel.value]; const id = pick.value;
+  // (dressed below the waist: the anatomy sits under the garment's own shape - hidden first, not after)
+  if (anat) anat.setVisible(anatOn && !(o && o.items.some(it => ['jeans', 'boxerbriefs', 'chinos', 'sweatpants'].includes(it))));
+  if (o) for (const it of o.items) {
+    const w = await wear(loader, current, `../assets/garments/${it}/${id}${quality === 'mobile' ? '.mobile' : ''}.glb`);
+    if (tok !== wearTok) { w.remove(); return; }            // (picked something else meanwhile)
+    worn.push(w);
+  }
+  window.__dressed = true;
+};
 rerollBtn.onclick = () => { if (!anat || presetSel.value) return; rollSeed = Math.floor(Math.random() * 1e6); anat.rebuild(rollAnatomy(list.find(x => x.id === pick.value).anatomy.base, rollSeed)); rerollBtn.title = 'roll ' + rollSeed; };
 physBtn.onclick = () => { if (!anat) return; anat.setPhysics(!anat.physics); physBtn.classList.toggle('on', anat.physics); };
 // presets saved by the Measure tool / the anatomy lab (this browser only)
@@ -157,6 +184,7 @@ async function show() {
     anat = attachAnatomy(current, b.anatomy, readPresets()[presetSel.value] || {}, { seed: rollSeed });
     anat.setVisible(anatOn);
   }
+  await fillOutfits(b);
   anatBtn.hidden = presetSel.hidden = physBtn.hidden = rerollBtn.hidden = !b.anatomy; physBtn.classList.add('on'); anatBtn.classList.toggle('on', anatOn);
   let tris = 0;
   current.traverse(o => { if (o.isMesh) { o.castShadow = true; tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; } });

@@ -1,0 +1,155 @@
+{
+ "_": "Fitted garments: assets/garments/<id>/<bodyId>[.mobile].glb + .hide.bin (tools/garments). outfits: sets worn together, inner layers first.",
+ "garments": [
+  {
+   "id": "boxerbriefs",
+   "name": "Boxer briefs",
+   "bodies": [
+    "adult-base-01"
+   ]
+  },
+  {
+   "id": "crewsocks",
+   "name": "Crew socks",
+   "bodies": [
+    "adult-base-01"
+   ]
+  },
+  {
+   "id": "tshirt",
+   "name": "T-shirt",
+   "bodies": [
+    "adult-base-01"
+   ]
+  },
+  {
+   "id": "tanktop",
+   "name": "Tank top",
+   "bodies": [
+    "adult-base-01"
+   ]
+  },
+  {
+   "id": "jeans",
+   "name": "Jeans",
+   "bodies": [
+    "adult-base-01"
+   ]
+  },
+  {
+   "id": "chinos",
+   "name": "Black chinos",
+   "bodies": [
+    "adult-base-01"
+   ]
+  },
+  {
+   "id": "sweatpants",
+   "name": "Sweatpants",
+   "bodies": [
+    "adult-base-01"
+   ]
+  },
+  {
+   "id": "workshirt",
+   "name": "Work shirt",
+   "bodies": [
+    "adult-base-01"
+   ]
+  },
+  {
+   "id": "apron",
+   "name": "Bar apron",
+   "bodies": [
+    "adult-base-01"
+   ]
+  },
+  {
+   "id": "hoodie",
+   "name": "Hoodie",
+   "bodies": [
+    "adult-base-01"
+   ]
+  },
+  {
+   "id": "flannel",
+   "name": "Flannel (open)",
+   "bodies": [
+    "adult-base-01"
+   ]
+  },
+  {
+   "id": "denimjacket",
+   "name": "Denim jacket",
+   "bodies": [
+    "adult-base-01"
+   ]
+  }
+ ],
+ "outfits": [
+  {
+   "name": "Underwear",
+   "items": [
+    "boxerbriefs",
+    "crewsocks"
+   ]
+  },
+  {
+   "name": "Tee + jeans",
+   "items": [
+    "boxerbriefs",
+    "crewsocks",
+    "tshirt",
+    "jeans"
+   ]
+  },
+  {
+   "name": "Flannel over tee",
+   "items": [
+    "boxerbriefs",
+    "crewsocks",
+    "tshirt",
+    "flannel",
+    "jeans"
+   ]
+  },
+  {
+   "name": "Denim jacket",
+   "items": [
+    "boxerbriefs",
+    "crewsocks",
+    "tshirt",
+    "denimjacket",
+    "jeans"
+   ]
+  },
+  {
+   "name": "Behind the bar",
+   "items": [
+    "boxerbriefs",
+    "crewsocks",
+    "workshirt",
+    "chinos",
+    "apron"
+   ]
+  },
+  {
+   "name": "Hoodie + jeans",
+   "items": [
+    "boxerbriefs",
+    "crewsocks",
+    "hoodie",
+    "jeans"
+   ]
+  },
+  {
+   "name": "Lounging",
+   "items": [
+    "boxerbriefs",
+    "crewsocks",
+    "tanktop",
+    "sweatpants"
+   ]
+  }
+ ]
+}
