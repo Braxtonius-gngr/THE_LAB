@@ -97,35 +97,31 @@ export class FleshSim {
     const P = this.pouch, g = this.inner, u = g.userData, s = g.scale.x;
     const mp = u.params || {};
 
-    // Map overlay parameters to physical curvature and arousal state
-    const curveAmt = (mp.curve || 50) - 50; 
-    const pitchAmt = (mp.pitch || 50) - 50;
-    this.curvatureVector.x = (pitchAmt / 50) * 0.25;
-    this.curvatureVector.y = (curveAmt / 50) * 0.30;
+    // (curve, pitch and each side's hang are already in the geometry
+    // figure.mjs builds - shaftTip and mass come from it - so the targets
+    // take them as they are; nudging them again here doubled them, and in
+    // the pouch's own units, which differ between the lab (cm) and an
+    // imported body (scaled to metres))
+    this.curvatureVector.x = 0; this.curvatureVector.y = 0;
     
     this.arousal = Math.max(0, Math.min(1, mp.gorge ? mp.gorge / 100 : this.arousal));
     const arousalScale = 1.0 + (0.45 * Math.pow(this.arousal, 0.7));
 
-    // Calculate left/right hang asymmetry bias from hangL/hangR sliders
-    const hangL = mp.hangL != null ? mp.hangL : 50;
-    const hangR = mp.hangR != null ? mp.hangR : 50;
-    const asymXOffset = (hangL - hangR) * 0.04;
 
     // (the tip's rest first, at the shaft's own bias if it has one; then the
     // mass's at the lobes', which the group is left turned to)
     if (this.restShaft != null) {
-      P.quaternion.setFromAxisAngle(_x, this.restShaft + (this.fig.userData.lift || 0) + this.curvatureVector.x); P.updateMatrixWorld(true);
-      out1.set(u.shaftTip[0] * s + this.curvatureVector.y * 10, u.shaftTip[1] * s, u.shaftTip[2] * s * arousalScale); P.localToWorld(out1);
+      P.quaternion.setFromAxisAngle(_x, this.restShaft + (this.fig.userData.lift || 0)); P.updateMatrixWorld(true);
+      out1.set(u.shaftTip[0] * s, u.shaftTip[1] * s, u.shaftTip[2] * s * arousalScale); P.localToWorld(out1);
     }
     _restQ.setFromAxisAngle(_x, this.restAll());
     P.quaternion.copy(_restQ); P.updateMatrixWorld(true);
     P.getWorldPosition(this.anchor);
     
-    // Apply asymmetrical hang offset to sac mass target
-    out0.set(u.mass[0] * s + asymXOffset, u.mass[1] * s, u.mass[2] * s); P.localToWorld(out0);
+    out0.set(u.mass[0] * s, u.mass[1] * s, u.mass[2] * s); P.localToWorld(out0);
     
     if (this.restShaft == null) {
-      out1.set(u.shaftTip[0] * s + this.curvatureVector.y * 10, u.shaftTip[1] * s, u.shaftTip[2] * s * arousalScale); P.localToWorld(out1);
+      out1.set(u.shaftTip[0] * s, u.shaftTip[1] * s, u.shaftTip[2] * s * arousalScale); P.localToWorld(out1);
     }
     if (root) { root.set(u.shaftRoot[0] * s, u.shaftRoot[1] * s, u.shaftRoot[2] * s); P.localToWorld(root); }
   }
