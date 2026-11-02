@@ -1125,7 +1125,7 @@ export function buildAnatomy(pouch, m, a) {
     [0, -2.0 * sL - L, front + 0.5 * sL]
   ];
   // (curve: bent to a side along its run, nothing at the root, most at the tip)
-  { const cv = cut('curve'); [0, 0, 0.3, 0.6, 1].forEach((f, i) => { pts[i][0] += cv * 0.09 * L * f * f; }); }
+  { const cv = cut('curve'); [0, 0, 0.3, 0.6, 1].forEach((f, i) => { pts[i][0] += cv * 0.16 * L * f * f; }); }
   // (raised or dropped with the rest; then turned about its root - pitched
   // forward or back about x, leaned to a side about z)
   {
@@ -1151,17 +1151,17 @@ export function buildAnatomy(pouch, m, a) {
     // where the skin was joined)
     const run = new THREE.CatmullRomCurve3([bury, ...pts].map(p => new THREE.Vector3(...p))).getLength();
     const gk = 0.6 + 0.8 * (a.glans ?? 50) / 100, glen = Math.min(0.3 * run, 2.2 * r * gk), tg = 1 - glen / run;
-    const flare = 1 + 0.12 * gk, cutMan = !(a.hood > 0);
+    const cutMan = !(a.hood > 0), flare = 1 + (cutMan ? 0.2 : 0.12) * gk;
     const head = t => {
       if (t < tg - 0.06) return taper(t);
-      if (t < tg) { const u = (t - (tg - 0.06)) / 0.06; return 1 - 0.13 * Math.sin(PI * Math.min(1, u * 1.25)) + (flare - 1) * Math.pow(Math.max(0, (u - 0.75) / 0.25), 0.5); }
+      if (t < tg) { const u = (t - (tg - 0.06)) / 0.06; return 1 - (cutMan ? 0.18 : 0.13) * Math.sin(PI * Math.min(1, u * 1.25)) + (flare - 1) * Math.pow(Math.max(0, (u - 0.75) / 0.25), 0.5); }
       // (the rim stands proud for a short way, the head eases in, then domes)
       const u = (t - tg) / (1 - tg), body = u < 0.12 ? flare : flare - (flare - 0.9) * Math.min(1, (u - 0.12) / 0.45);
       return body * (u < 0.55 ? 1 : Math.sqrt(Math.max(0.03, 1 - Math.pow((u - 0.55) / 0.45, 2))));
     };
     // (the veins: two or three that run their own wandering course from the
     // root toward the head, standing up a little - none on the head itself)
-    const vk = Math.max(0, (a.veins ?? 35) / 100) * 0.2, vs = (a.veinSeed ?? 1) * 9.13;
+    const vk = Math.max(0, (a.veins ?? 35) / 100) * 0.32, vs = (a.veinSeed ?? 1) * 9.13;
     const vrnd = k => { const x = Math.sin(vs * 12.9898 + k * 78.233) * 43758.5453; return x - Math.floor(x); };
     const VEINS = [0, 1, 2].slice(0, 2 + (vrnd(9) > 0.5 ? 1 : 0)).map(k => ({ a0: vrnd(k) * 2 * PI, f: 4 + 5 * vrnd(k + 3), ph: vrnd(k + 6) * 6, w: 0.11 + 0.08 * vrnd(k + 11), h: 0.5 + 0.5 * vrnd(k + 13) }));
     const veinAt = (t, ang) => {
@@ -1172,7 +1172,7 @@ export function buildAnatomy(pouch, m, a) {
       return 1 + vk * fade * h;
     };
     const tinted = !!(m && m.isMeshStandardMaterial);
-    const GL = [0.86, 0.66, 0.68], SCAR = [0.9, 0.84, 0.84], VEIN = [0.93, 0.92, 1.0];
+    const GL = [0.8, 0.55, 0.58], SCAR = [0.9, 0.84, 0.84], VEIN = [0.93, 0.92, 1.0];
     const colorAt = (t, ang) => {
       const gl = Math.min(1, Math.max(0, (t - (tg - 0.012)) / 0.03));
       let c = [1, 1, 1].map((x, i) => x + (GL[i] - x) * gl);
