@@ -27,7 +27,7 @@ export function seeded(seed) { let a = (typeof seed === 'string' ? [...seed].red
 // One man: the body's own baseline (bodies.json anatomy.base: what this model
 // is - sizes, cut or uncut, which way he hangs) with a creation's draw about
 // it (seed: the same seed is the same man). Natural spread, at rest.
-export function rollAnatomy(base = {}, seed = Math.random() * 1e9, spread = 0.45) {
+export function rollAnatomy(base = {}, seed = Math.random() * 1e9, spread = 0.9) {
   const b = Object.assign(getAnatomy(), base);
   const v = realismClamp(Object.assign({}, b, realismDraw(b, seeded(seed), spread)));
   v.gorge = 0;
