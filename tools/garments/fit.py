@@ -32,7 +32,7 @@ bw = np.fromfile(f'{B}/wgt.f32', np.float32).reshape(-1, 4)
 joints = {j['name']: np.array(j['world']) for j in json.load(open(f'{B}/joints.json'))}
 M = np.array(json.load(open(f'{B}/node.json'))['matrix']).reshape(4, 4).T   # column-major -> row-major
 
-D = dict(top=dict(top=1.47, h=0.68), pants=dict(top=1.0, bottom=0.03), under=dict(top=0.98, bottom=0.72),
+D = dict(shoes=dict(top=0.12, bottom=0.0), top=dict(top=1.47, h=0.68), pants=dict(top=1.0, bottom=0.03), under=dict(top=0.98, bottom=0.72),
          socks=dict(top=0.32, bottom=0.0))[kind]
 D.update(spec)
 off = D.get('off', 0.006)
@@ -57,6 +57,18 @@ g[:, 0] -= (g[:, 0].max() + g[:, 0].min()) / 2
 band = (bp[:, 1] > g[:, 1].min()) & (bp[:, 1] < g[:, 1].max()) & (np.abs(bp[:, 0]) < 0.2)
 g[:, 2] += (bp[band, 2].max() + bp[band, 2].min()) / 2 - (g[:, 2].max() + g[:, 2].min()) / 2
 g[:, 2] += D.get('dz', 0)
+
+# ---- shoes: each one onto its own foot, as long as the foot plus `room`, sole on the floor ----
+if kind == 'shoes':
+    for sx in (1, -1):
+        sh = sx * g[:, 0] > 0
+        ft = bp[(bp[:, 1] < D['top'] + 0.02) & (sx * bp[:, 0] > 0.02)]
+        flen = ft[:, 2].max() - ft[:, 2].min(); slen = g[sh, 2].max() - g[sh, 2].min()
+        k = (flen + D.get('room', 0.02)) / slen
+        c = np.array([(g[sh, 0].max() + g[sh, 0].min()) / 2, g[sh, 1].min(), (g[sh, 2].max() + g[sh, 2].min()) / 2])
+        fc = np.array([(ft[:, 0].max() + ft[:, 0].min()) / 2, 0.0, (ft[:, 2].max() + ft[:, 2].min()) / 2 + D.get('heel', 0.004)])
+        g[sh] = fc + (g[sh] - c) * k
+        print(f'{"L" if sx > 0 else "R"} shoe: foot {flen*100:.1f} cm, shoe scaled {k:.2f}')
 
 # ---- sleeves to the arms (tops) ----
 if kind == 'top' and not D.get('sleeveless'):

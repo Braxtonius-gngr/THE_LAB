@@ -84,77 +84,143 @@
    "bodies": [
     "adult-base-01"
    ]
+  },
+  {
+   "id": "sneakers",
+   "name": "Sneakers",
+   "bodies": [
+    "adult-base-01"
+   ]
+  },
+  {
+   "id": "slides",
+   "name": "Slides",
+   "bodies": [
+    "adult-base-01"
+   ]
+  },
+  {
+   "id": "workboots",
+   "name": "Work boots",
+   "bodies": [
+    "adult-base-01"
+   ]
+  },
+  {
+   "id": "blackshoes",
+   "name": "Black work shoes",
+   "bodies": [
+    "adult-base-01"
+   ]
+  },
+  {
+   "id": "pajamapants",
+   "name": "Pajama pants",
+   "bodies": [
+    "adult-base-01"
+   ]
+  },
+  {
+   "id": "sleepshorts",
+   "name": "Sleep shorts",
+   "bodies": [
+    "adult-base-01"
+   ]
+  },
+  {
+   "id": "sleeptee",
+   "name": "Sleep tee",
+   "bodies": [
+    "adult-base-01"
+   ]
   }
  ],
  "outfits": [
   {
    "name": "Underwear",
    "items": [
-    "boxerbriefs",
-    "crewsocks"
+    "boxerbriefs"
    ]
   },
   {
    "name": "Sleepwear",
    "items": [
-    "boxerbriefs"
+    "boxerbriefs",
+    "sleeptee",
+    "pajamapants"
    ]
   },
   {
-   "name": "Tee + jeans",
+   "name": "Sleep shorts",
    "items": [
     "boxerbriefs",
-    "crewsocks",
-    "tshirt",
-    "jeans"
-   ]
-  },
-  {
-   "name": "Flannel over tee",
-   "items": [
-    "boxerbriefs",
-    "crewsocks",
-    "tshirt",
-    "flannel",
-    "jeans"
-   ]
-  },
-  {
-   "name": "Denim jacket",
-   "items": [
-    "boxerbriefs",
-    "crewsocks",
-    "tshirt",
-    "denimjacket",
-    "jeans"
-   ]
-  },
-  {
-   "name": "Behind the bar",
-   "items": [
-    "boxerbriefs",
-    "crewsocks",
-    "workshirt",
-    "chinos",
-    "apron"
-   ]
-  },
-  {
-   "name": "Hoodie + jeans",
-   "items": [
-    "boxerbriefs",
-    "crewsocks",
-    "hoodie",
-    "jeans"
+    "sleepshorts"
    ]
   },
   {
    "name": "Lounging",
    "items": [
     "boxerbriefs",
+    "tanktop",
+    "sweatpants",
+    "slides"
+   ]
+  },
+  {
+   "name": "Socks + sweats",
+   "items": [
+    "boxerbriefs",
     "crewsocks",
     "tanktop",
     "sweatpants"
+   ]
+  },
+  {
+   "name": "Tee + jeans",
+   "items": [
+    "boxerbriefs",
+    "tshirt",
+    "jeans",
+    "sneakers"
+   ]
+  },
+  {
+   "name": "Flannel over tee",
+   "items": [
+    "boxerbriefs",
+    "tshirt",
+    "flannel",
+    "jeans",
+    "workboots"
+   ]
+  },
+  {
+   "name": "Denim jacket",
+   "items": [
+    "boxerbriefs",
+    "tshirt",
+    "denimjacket",
+    "jeans",
+    "sneakers"
+   ]
+  },
+  {
+   "name": "Hoodie + jeans",
+   "items": [
+    "boxerbriefs",
+    "hoodie",
+    "jeans",
+    "sneakers"
+   ]
+  },
+  {
+   "name": "Behind the bar",
+   "items": [
+    "boxerbriefs",
+    "workshirt",
+    "chinos",
+    "apron",
+    "blackshoes"
    ]
   }
  ]
