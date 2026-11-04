@@ -103,9 +103,12 @@ let quality = isPhone ? 'mobile' : 'desktop', current = null, anat = null, anatO
 // animation library: clips on a source skeleton, retargeted onto whichever body is shown
 const animSel = document.getElementById('anim');
 let packRest = null, packClips = [], mixer = null, bodyRest = null;
-loader.loadAsync('../assets/anims/meshy-pack-01.glb').then(g => {
-  packRest = captureRest(g.scene, { allNodes: true }); packClips = g.animations;
-  packClips.forEach((c, i) => animSel.add(new Option('Animation: ' + clipLabel(c.name), i)));
+// every pack's clips in one list, each retargeted from its own pack's rest pose (pack 01 first, so
+// the old indices hold: Walking 1, Air Squat 7, Running 0)
+let packRests = [];
+Promise.all(['meshy-pack-01', 'meshy-pack-02'].map(n => loader.loadAsync(`../assets/anims/${n}.glb`).catch(() => null))).then(gs => {
+  gs.forEach(g => { if (!g) return; const rest = captureRest(g.scene, { allNodes: true }); g.animations.forEach(c => { packClips.push(c); packRests.push(rest); animSel.add(new Option('Animation: ' + clipLabel(c.name), packClips.length - 1)); }); });
+  packRest = packRests[0] || null;
 }).catch(e => console.warn('animation pack', e));
 function stopAnim() {
   if (!mixer) return;
@@ -118,7 +121,7 @@ animSel.onchange = () => {
   if (mixer) mixer.stopAllAction();
   if (bodyRest) for (const r of Object.values(bodyRest)) { r.bone.quaternion.copy(r.q); r.bone.position.copy(r.p); }
   if (i === '' || !current || !packRest) return;
-  const clip = retargetClip(packClips[+i], packRest, bodyRest);
+  const clip = retargetClip(packClips[+i], packRests[+i], bodyRest);
   mixer.clipAction(clip).reset().play();
   anat?.sim.reset();
 };
