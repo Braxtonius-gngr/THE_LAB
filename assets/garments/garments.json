@@ -133,6 +133,13 @@
    "bodies": [
     "adult-base-01"
    ]
+  },
+  {
+   "id": "noshowsocks",
+   "name": "No-show socks",
+   "bodies": [
+    "adult-base-01"
+   ]
   }
  ],
  "outfits": [
@@ -181,6 +188,7 @@
     "boxerbriefs",
     "tshirt",
     "jeans",
+    "noshowsocks",
     "sneakers"
    ]
   },
@@ -191,6 +199,7 @@
     "tshirt",
     "flannel",
     "jeans",
+    "noshowsocks",
     "workboots"
    ]
   },
@@ -201,6 +210,7 @@
     "tshirt",
     "denimjacket",
     "jeans",
+    "noshowsocks",
     "sneakers"
    ]
   },
@@ -210,6 +220,7 @@
     "boxerbriefs",
     "hoodie",
     "jeans",
+    "noshowsocks",
     "sneakers"
    ]
   },
@@ -220,6 +231,7 @@
     "workshirt",
     "chinos",
     "apron",
+    "noshowsocks",
     "blackshoes"
    ]
   }
