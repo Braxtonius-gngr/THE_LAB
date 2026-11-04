@@ -30,11 +30,18 @@
   <button class="chip" data-view="side">Side</button>
   <label class="chip">Load image<input type="file" id="file" accept="image/*"></label>
   <button class="chip" id="undo">Undo</button>
-  <span class="dim">Height <input type="number" id="height" value="180" min="120" max="230"> cm</span>
+  <select class="chip" id="scaleby" title="What sets the scale: something of a known size in the photo">
+    <option value="height">Scale: body height</option>
+    <optgroup label="Hand"><option value="finger">Index finger (tip to knuckle crease)</option><option value="nail">Thumbnail width</option><option value="palm">Palm width</option></optgroup>
+    <optgroup label="Coins & cards"><option value="quarter">US quarter (diameter)</option><option value="penny">US penny (diameter)</option><option value="dollar">Dollar bill (long side)</option><option value="card">Credit card (long side)</option></optgroup>
+    <optgroup label="Around the house"><option value="can">Soda can (height)</option><option value="canw">Soda can (width)</option><option value="remote">TV remote (length)</option><option value="phone">Phone (length)</option><option value="lighter">Bic lighter (length)</option><option value="aa">AA battery (length)</option><option value="pen">Bic pen (length)</option><option value="paper">Letter paper (long side)</option></optgroup>
+    <option value="custom">Custom item…</option>
+  </select>
+  <span class="dim" id="refwrap"><span id="reflabel">Height</span> <input type="number" id="height" value="180" min="0.5" max="230" step="0.1"> cm</span>
 </header>
 <div id="step"></div>
 <div id="stage"><canvas id="cv"></canvas><div id="loupe"><canvas id="lc" width="120" height="120"></canvas></div>
-  <div id="empty">Load a <b>front</b> view, then a <b>side</b> view, and tap the points it asks for.<br>Drag to pan · pinch or scroll to zoom · hold to aim with the magnifier.<br><span class="dim">Images stay on this device. Nothing is uploaded.</span></div></div>
+  <div id="empty">Load a <b>front</b> view, then a <b>side</b> view, and tap the points it asks for.<br>Scale comes from his height, or from anything of a known size in the shot (a coin, a can, a finger…).<br>Drag to pan · pinch or scroll to zoom · hold to aim with the magnifier.<br><span class="dim">Images stay on this device. Nothing is uploaded.</span></div></div>
 <div id="results"></div>
 <script type="module">
 import { anatomyCm, getAnatomy } from '../assets/intro3d/figure.mjs';
@@ -59,6 +66,12 @@ const STEPS = {
     ['low',     'Lowest point of the scrotum'],
   ],
 };
+// reference objects: their measured length in cm (typical sizes; finger, nail and palm vary per
+// person - put your own in the box). Tap its two ends instead of head and floor.
+const REF = { height: ['Height', 180], finger: ['Finger', 7.0], nail: ['Thumbnail', 1.6], palm: ['Palm', 8.5], quarter: ['Quarter', 2.426], penny: ['Penny', 1.905], dollar: ['Dollar bill', 15.6], card: ['Card', 8.56], can: ['Can', 12.2], canw: ['Can width', 6.6], remote: ['Remote', 18.0], phone: ['Phone', 14.7], lighter: ['Lighter', 8.1], aa: ['AA', 5.05], pen: ['Pen', 14.9], paper: ['Paper', 27.94], custom: ['Item', 10] };
+const scaleSel = document.getElementById('scaleby'), refInput = document.getElementById('height');
+const byObj = () => scaleSel.value !== 'height';
+scaleSel.onchange = () => { const [l, v] = REF[scaleSel.value]; document.getElementById('reflabel').textContent = l; refInput.value = v; for (const k of ['front', 'side']) { const p = views[k].pts; delete p.headTop; delete p.floor; } draw(); };
 const COLORS = { headTop:'#7cf', floor:'#7cf', root:'#d8b25a', tip:'#d8b25a', wL:'#f8a', wR:'#f8a', tF:'#f8a', tB:'#f8a', fwd:'#9f9', low:'#c9f' };
 
 const views = { front: { img: null, pts: {} }, side: { img: null, pts: {} } };
@@ -68,7 +81,10 @@ const stage = document.getElementById('stage'), stepEl = document.getElementById
 const loupe = document.getElementById('loupe'), lctx = document.getElementById('lc').getContext('2d');
 let cam = { x: 0, y: 0, s: 1 };   // image->screen: screen = (img - cam.xy) * s
 
-function nextStep() { const v = views[view]; return STEPS[view].find(([k]) => !v.pts[k]); }
+// (with an object for scale, the first two taps are its ends - held in the same two slots - at the
+// same distance from the camera as the body, or perspective throws the scale off)
+function stepsOf(vw) { return byObj() ? STEPS[vw].map(([k, t]) => k === 'headTop' ? [k, `One end of the ${REF[scaleSel.value][0].toLowerCase()} (keep it level with the body, same distance from the camera)`] : k === 'floor' ? [k, `The other end of the ${REF[scaleSel.value][0].toLowerCase()}`] : [k, t]) : STEPS[vw]; }
+function nextStep() { const v = views[view]; return stepsOf(view).find(([k]) => !v.pts[k]); }
 function fit() {
   const v = views[view]; if (!v.img) return;
   const W = stage.clientWidth, H = stage.clientHeight, s = Math.min(W / v.img.width, H / v.img.height) * 0.95;
@@ -145,7 +161,12 @@ addEventListener('resize', resize);
 
 // ── maths ──
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-function cmPerPx(v) { return v.pts.headTop && v.pts.floor ? (+document.getElementById('height').value || 180) / Math.abs(v.pts.floor.y - v.pts.headTop.y) : null; }
+function cmPerPx(v) {
+  if (!v.pts.headTop || !v.pts.floor) return null;
+  const cm = +refInput.value || REF[scaleSel.value][1];
+  // body height: vertical only; an object: its full length, at any angle
+  return cm / (byObj() ? dist(v.pts.headTop, v.pts.floor) : Math.abs(v.pts.floor.y - v.pts.headTop.y));
+}
 const ellipseC = (a, b) => Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b)));   // Ramanujan
 function solve(key, targetCm, measure, base) {   // the slider value (0-100) whose anatomyCm()[measure] meets targetCm
   let lo = 0, hi = 100;
