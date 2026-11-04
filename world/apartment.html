@@ -212,7 +212,7 @@ let outfit = null, worn = [], dressing = 0, lastNeeds = null;
 async function dress(name) {
   if (!(name in OUTFITS)) return; const tok = ++dressing;
   worn.forEach(w => w.remove()); worn = []; outfit = name;
-  anat.setVisible(!OUTFITS[name].some(id => ['jeans', 'boxerbriefs', 'chinos', 'sweatpants', 'apron', 'pajamapants', 'sleepshorts'].includes(id)));
+  anat.setVisible(!OUTFITS[name].some(id => ['jeans', 'boxerbriefs', 'chinos', 'sweatpants', 'apron', 'pajamapants', 'sleepshorts', 'briefs', 'cargopants', 'chefpants', 'basketballshorts'].includes(id)));
   for (const id of OUTFITS[name]) { const w = await wear(loader, marco, `../assets/garments/${id}/${spec.id}${isPhone ? '.mobile' : ''}.glb`); if (tok !== dressing) { w.remove(); return; } worn.push(w); }
   window.__dressed = name; anat.setWarmth?.(warmthNow());
 }

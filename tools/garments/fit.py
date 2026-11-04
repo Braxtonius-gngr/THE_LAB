@@ -32,7 +32,7 @@ bw = np.fromfile(f'{B}/wgt.f32', np.float32).reshape(-1, 4)
 joints = {j['name']: np.array(j['world']) for j in json.load(open(f'{B}/joints.json'))}
 M = np.array(json.load(open(f'{B}/node.json'))['matrix']).reshape(4, 4).T   # column-major -> row-major
 
-D = dict(shoes=dict(top=0.12, bottom=0.0), top=dict(top=1.47, h=0.68), pants=dict(top=1.0, bottom=0.03), under=dict(top=0.98, bottom=0.72),
+D = dict(hat=dict(top=0, bottom=0), shoes=dict(top=0.12, bottom=0.0), top=dict(top=1.47, h=0.68), pants=dict(top=1.0, bottom=0.03), under=dict(top=0.98, bottom=0.72),
          socks=dict(top=0.32, bottom=0.0))[kind]
 D.update(spec)
 off = D.get('off', 0.006)
@@ -46,7 +46,11 @@ tree = cKDTree(bp)
 
 # ---- scale and place ----
 lo, hi = gp.min(0), gp.max(0)
-if kind == 'top':
+if kind == 'hat':
+    # a head's width (temple to temple) sets the size; its crown sits `lift` above the scalp
+    hy = bp[:, 1].max(); band = bp[(bp[:, 1] > hy - 0.12) & (bp[:, 1] < hy - 0.06)]
+    s = (band[:, 0].max() - band[:, 0].min()) * D.get('w', 1.12) / (hi[0] - lo[0]); ytop = hy + D.get('lift', 0.012)
+elif kind == 'top':
     s = D['h'] / (hi[1] - lo[1]); ytop = D['top']
 else:
     s = (D['top'] - D['bottom']) / (hi[1] - lo[1]); ytop = D['top']
@@ -54,7 +58,7 @@ g = gp * s
 g[:, 1] += ytop - g[:, 1].max()
 g[:, 0] -= (g[:, 0].max() + g[:, 0].min()) / 2
 # depth: centre on the body's own band at the garment's mid height
-band = (bp[:, 1] > g[:, 1].min()) & (bp[:, 1] < g[:, 1].max()) & (np.abs(bp[:, 0]) < 0.2)
+band = (bp[:, 1] > g[:, 1].min()) & (bp[:, 1] < g[:, 1].max()) & (np.abs(bp[:, 0]) < (0.12 if kind == 'hat' else 0.2))
 g[:, 2] += (bp[band, 2].max() + bp[band, 2].min()) / 2 - (g[:, 2].max() + g[:, 2].min()) / 2
 g[:, 2] += D.get('dz', 0)
 

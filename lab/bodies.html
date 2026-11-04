@@ -144,7 +144,7 @@ outfitSel.onchange = async () => {
   worn.forEach(w => w.remove()); worn = [];
   const o = outfitSel._outs?.[+outfitSel.value]; const id = pick.value;
   // (dressed below the waist: the anatomy sits under the garment's own shape - hidden first, not after)
-  if (anat) anat.setVisible(anatOn && !(o && o.items.some(it => ['jeans', 'boxerbriefs', 'chinos', 'sweatpants', 'pajamapants', 'sleepshorts'].includes(it))));
+  if (anat) anat.setVisible(anatOn && !(o && o.items.some(it => ['jeans', 'boxerbriefs', 'chinos', 'sweatpants', 'pajamapants', 'sleepshorts', 'briefs', 'cargopants', 'chefpants', 'basketballshorts'].includes(it))));
   if (o) for (const it of o.items) {
     const w = await wear(loader, current, `../assets/garments/${it}/${id}${quality === 'mobile' ? '.mobile' : ''}.glb`);
     if (tok !== wearTok) { w.remove(); return; }            // (picked something else meanwhile)

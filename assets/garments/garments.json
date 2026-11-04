@@ -140,6 +140,90 @@
    "bodies": [
     "adult-base-01"
    ]
+  },
+  {
+   "id": "briefs",
+   "name": "Briefs",
+   "bodies": [
+    "dante"
+   ]
+  },
+  {
+   "id": "graphictee",
+   "name": "Olive tee",
+   "bodies": [
+    "dante"
+   ]
+  },
+  {
+   "id": "longsleeve",
+   "name": "Thermal long sleeve",
+   "bodies": [
+    "dante"
+   ]
+  },
+  {
+   "id": "chefcoat",
+   "name": "Chef coat",
+   "bodies": [
+    "dante"
+   ]
+  },
+  {
+   "id": "bomberjacket",
+   "name": "Bomber jacket",
+   "bodies": [
+    "dante"
+   ]
+  },
+  {
+   "id": "cargopants",
+   "name": "Cargo pants",
+   "bodies": [
+    "dante"
+   ]
+  },
+  {
+   "id": "chefpants",
+   "name": "Chef pants",
+   "bodies": [
+    "dante"
+   ]
+  },
+  {
+   "id": "basketballshorts",
+   "name": "Basketball shorts",
+   "bodies": [
+    "dante"
+   ]
+  },
+  {
+   "id": "highsneakers",
+   "name": "High-top sneakers",
+   "bodies": [
+    "dante"
+   ]
+  },
+  {
+   "id": "kitchenshoes",
+   "name": "Kitchen clogs",
+   "bodies": [
+    "dante"
+   ]
+  },
+  {
+   "id": "cap",
+   "name": "Cap",
+   "bodies": [
+    "dante"
+   ]
+  },
+  {
+   "id": "bandana",
+   "name": "Bandana",
+   "bodies": [
+    "dante"
+   ]
   }
  ],
  "outfits": [
@@ -233,6 +317,57 @@
     "apron",
     "noshowsocks",
     "blackshoes"
+   ]
+  },
+  {
+   "name": "Underwear (briefs)",
+   "items": [
+    "briefs"
+   ]
+  },
+  {
+   "name": "Home: shorts + thermal",
+   "items": [
+    "briefs",
+    "longsleeve",
+    "basketballshorts"
+   ]
+  },
+  {
+   "name": "Home: shorts",
+   "items": [
+    "briefs",
+    "basketballshorts"
+   ]
+  },
+  {
+   "name": "Off duty",
+   "items": [
+    "briefs",
+    "graphictee",
+    "cargopants",
+    "highsneakers",
+    "cap"
+   ]
+  },
+  {
+   "name": "Off duty + bomber",
+   "items": [
+    "briefs",
+    "graphictee",
+    "bomberjacket",
+    "cargopants",
+    "highsneakers"
+   ]
+  },
+  {
+   "name": "In the kitchen",
+   "items": [
+    "briefs",
+    "chefcoat",
+    "chefpants",
+    "kitchenshoes",
+    "bandana"
    ]
   }
  ]

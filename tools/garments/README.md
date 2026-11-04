@@ -6,7 +6,7 @@ Meshy garments come normalised to a ~1 m cube, modelled as if worn in an A-pose 
 |---|---|---|
 | body | `../lab-fit/skindump.mjs <body.glb> <dir>` | world positions, joints, weights, node matrix - once per body and tier |
 | dump | `gdump.mjs <raw.glb> <dir>` | the garment's positions and triangles |
-| fit | `fit.py <garmentDir> <bodyDir> <kind> <outDir> [json]` | kinds `top` / `pants` / `under` / `socks` / `shoes` (each shoe scaled to its own foot's length + `room`, sole on the floor); json overrides `top`, `h`, `bottom`, `off` (cloth's distance off the skin), `sleeveless`, `cover`. Scales and places it, swings sleeves to the arm angle, pushes it out of the skin, copies weights from the nearest skin, and lists the body triangles it covers |
+| fit | `fit.py <garmentDir> <bodyDir> <kind> <outDir> [json]` | kinds `top` / `pants` / `under` / `socks` / `hat` (sized to the head's width x `w`, crown `lift` above the scalp) / `shoes` (each shoe scaled to its own foot's length + `room`, sole on the floor); json overrides `top`, `h`, `bottom`, `off` (cloth's distance off the skin), `sleeveless`, `cover`. Scales and places it, swings sleeves to the arm angle, pushes it out of the skin, copies weights from the nearest skin, and lists the body triangles it covers |
 | write | `gwrite.mjs <raw.glb> <fitDir> <out.glb>` | then copy `hide.u32` to `<out>.hide.bin` |
 | wear | `world/garments.mjs` `wear(loader, model, url)` | binds to the body's own skeleton; cuts the covered skin out while worn; cuts close-under inner layers |
 
@@ -20,3 +20,5 @@ Marco's fits (spec used): tshirt `top`; tanktop `top {"h":0.70,"sleeveless":true
 `pants {"off":0.009}`; boxerbriefs `under`; apron `under {"top":1.0,"bottom":0.5,"off":0.012}`; crewsocks `socks`.
 
 Footwear (batch 5): sneakers `shoes {"top":0.12}`, slides `{"top":0.055,"room":0.015}`, workboots `{"top":0.17,"room":0.03}`, blackshoes `{"top":0.115}`; sleepwear: pajamapants `pants {"off":0.012}`, sleepshorts `under {"top":0.99,"bottom":0.6}`, sleeptee `top {"h":0.74}`. Shoes go on bare feet (crew socks are bulkier than the shoes and poke through).
+
+Dante (batch 7, `_d170`): briefs `under {"top":0.97,"bottom":0.78}`, graphictee `top {"top":1.48,"h":0.7}`, longsleeve `top {"top":1.48,"h":0.68}`, chefcoat `top {"top":1.5,"h":0.74,"off":0.01}`, bomberjacket `top {"top":1.5,"h":0.66,"off":0.016}`, cargopants and chefpants `pants {"off":0.01,"hemkeep":0.16}`, basketballshorts `under {"top":0.99,"bottom":0.5}`, highsneakers `shoes {"top":0.16}`, kitchenshoes `shoes {"top":0.1}`, cap `hat {"lift":0.035,"w":1.04}`, bandana `hat {"lift":0.012,"w":0.97}`.
