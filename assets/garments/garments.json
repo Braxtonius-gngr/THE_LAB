@@ -1,5 +1,5 @@
 {
- "_": "Fitted garments: assets/garments/<id>/<bodyId>[.mobile].glb + .hide.bin (tools/garments). outfits: sets worn together, inner layers first. Nude is always available (no items).",
+ "_": "Fitted garments: assets/garments/<id>/<bodyId>[.mobile].glb + .hide.bin (tools/garments). outfits: sets worn together, inner layers first (underwear, socks, trousers, shoes, tops, outer, hats): each later piece cuts what lies close under it. Nude is always available (no items).",
  "garments": [
   {
    "id": "boxerbriefs",
@@ -237,8 +237,8 @@
    "name": "Sleepwear",
    "items": [
     "boxerbriefs",
-    "sleeptee",
-    "pajamapants"
+    "pajamapants",
+    "sleeptee"
    ]
   },
   {
@@ -252,9 +252,9 @@
    "name": "Lounging",
    "items": [
     "boxerbriefs",
-    "tanktop",
     "sweatpants",
-    "slides"
+    "slides",
+    "tanktop"
    ]
   },
   {
@@ -262,61 +262,61 @@
    "items": [
     "boxerbriefs",
     "crewsocks",
-    "tanktop",
-    "sweatpants"
+    "sweatpants",
+    "tanktop"
    ]
   },
   {
    "name": "Tee + jeans",
    "items": [
     "boxerbriefs",
-    "tshirt",
-    "jeans",
     "noshowsocks",
-    "sneakers"
+    "jeans",
+    "sneakers",
+    "tshirt"
    ]
   },
   {
    "name": "Flannel over tee",
    "items": [
     "boxerbriefs",
-    "tshirt",
-    "flannel",
-    "jeans",
     "noshowsocks",
-    "workboots"
+    "jeans",
+    "workboots",
+    "tshirt",
+    "flannel"
    ]
   },
   {
    "name": "Denim jacket",
    "items": [
     "boxerbriefs",
-    "tshirt",
-    "denimjacket",
-    "jeans",
     "noshowsocks",
-    "sneakers"
+    "jeans",
+    "sneakers",
+    "tshirt",
+    "denimjacket"
    ]
   },
   {
    "name": "Hoodie + jeans",
    "items": [
     "boxerbriefs",
-    "hoodie",
-    "jeans",
     "noshowsocks",
-    "sneakers"
+    "jeans",
+    "sneakers",
+    "hoodie"
    ]
   },
   {
    "name": "Behind the bar",
    "items": [
     "boxerbriefs",
-    "workshirt",
-    "chinos",
-    "apron",
     "noshowsocks",
-    "blackshoes"
+    "chinos",
+    "blackshoes",
+    "workshirt",
+    "apron"
    ]
   },
   {
@@ -329,8 +329,8 @@
    "name": "Home: shorts + thermal",
    "items": [
     "briefs",
-    "longsleeve",
-    "basketballshorts"
+    "basketballshorts",
+    "longsleeve"
    ]
   },
   {
@@ -344,9 +344,9 @@
    "name": "Off duty",
    "items": [
     "briefs",
-    "graphictee",
     "cargopants",
     "highsneakers",
+    "graphictee",
     "cap"
    ]
   },
@@ -354,19 +354,19 @@
    "name": "Off duty + bomber",
    "items": [
     "briefs",
-    "graphictee",
-    "bomberjacket",
     "cargopants",
-    "highsneakers"
+    "highsneakers",
+    "graphictee",
+    "bomberjacket"
    ]
   },
   {
    "name": "In the kitchen",
    "items": [
     "briefs",
-    "chefcoat",
     "chefpants",
     "kitchenshoes",
+    "chefcoat",
     "bandana"
    ]
   }
