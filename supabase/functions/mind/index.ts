@@ -4,7 +4,7 @@
 //   text    what the player just said (or null for an event)
 //   event   'arrive' (player enters: the character notices and greets or doesn't),
 //           'leave'  (player leaves: the character reflects on the visit; session closes)
-//   scene   { location, time, player_distance_m, player_pos: [x,z], spots: ['sofa','kitchen',...], wearing, wardrobe }
+//   scene   { location, time, hour, comfort, player_distance_m, player_pos: [x,z], spots: ['sofa','kitchen',...], wearing, wardrobe }
 //   history recent turns this session, [{ who: 'player'|'me', text }], kept by the page
 // → { say, actions, mood, session_id, recalled, memory }
 //
@@ -52,6 +52,31 @@ async function think(system: string, messages: { role: string; content: string }
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+// ---- needs: drift since they were last saved, by the hour of his day (a bartender: asleep about 4-11) ----
+type Needs = { energy: number; hunger: number; social: number; intimacy: number; comfort: number };
+const NEED0: Needs = { energy: 0.7, hunger: 0.3, social: 0.4, intimacy: 0.4, comfort: 0.2 };
+function drift(n: Needs, fromIso: string | null, hourNow: number): Needs {
+  const out = { ...NEED0, ...n };
+  let h = Math.min(72, Math.max(0, (Date.now() - new Date(fromIso || Date.now()).getTime()) / 3.6e6));
+  // walk the hours: asleep restores energy and slows hunger; awake drains it
+  for (let t = h; t > 0; t -= 1) {
+    const step = Math.min(1, t), hr = ((hourNow - t) % 24 + 24) % 24, asleep = hr >= 4 && hr < 11;
+    out.energy = clamp(out.energy + (asleep ? 0.12 : -0.045) * step, 0, 1);
+    out.hunger = clamp(out.hunger + (asleep ? 0.02 : 0.07) * step, 0, 1);
+    out.social = clamp(out.social + 0.03 * step, 0, 1);       // alone: wants company more
+    out.intimacy = clamp(out.intimacy + 0.012 * step, 0, 1);  // closeness: slow
+    out.comfort = clamp(out.comfort - 0.1 * step, 0, 1);      // discomfort fades on its own
+  }
+  return out;
+}
+const word = (k: string, v: number) => {
+  if (k === "energy") return v < 0.2 ? "exhausted" : v < 0.4 ? "tired" : v > 0.8 ? "wide awake" : "fine";
+  if (k === "hunger") return v > 0.75 ? "starving" : v > 0.5 ? "hungry" : v > 0.3 ? "could eat" : "full";
+  if (k === "social") return v > 0.7 ? "lonely, craving company" : v > 0.4 ? "open to company" : v > 0.15 ? "content" : "peopled out, wants to be alone";
+  if (k === "intimacy") return v > 0.7 ? "missing closeness - affection, touch, someone who knows him" : v > 0.45 ? "would like some closeness" : "fine on closeness";
+  return v > 0.6 ? "uncomfortable (too warm/cold or dressed wrong for it)" : v > 0.3 ? "a little uncomfortable" : "comfortable";
+};
 const ago = (iso: string) => {
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
   if (s < 90) return "just now";
@@ -87,19 +112,25 @@ Deno.serve(async (req) => {
     const memLines = (recalled || []).map((m: { content: string; created_at: string; kind: string }) => `- (${ago(m.created_at)}, ${m.kind}) ${m.content}`).join("\n");
     const { count: past } = await supabase.from("sessions").select("id", { count: "exact", head: true }).contains("attendees", [player_id]);
     const visits = (past || 0) + (session_id ? 0 : 1);   // this visit counts, once
+    const hourNow = Number(scene.hour ?? new Date().getUTCHours() - 6);
+    const needs = drift(state?.needs || NEED0, state?.needs_at || null, ((hourNow % 24) + 24) % 24);
+    if (scene.comfort != null) needs.comfort = clamp(Number(scene.comfort), 0, 1);
+    const needLine = (Object.keys(NEED0) as (keyof Needs)[]).map(k => `${k}: ${word(k, needs[k])}`).join("; ");
 
     const system = `${me.persona}
 
 You are in your ${scene.location || me.home_location || "apartment"}. Time: ${scene.time || "evening"}.${scene.wearing ? ` You're wearing: ${scene.wearing === "Nude" ? "nothing" : scene.wearing}. Clothes you could change into: ${(scene.wardrobe || []).join(", ")}.` : ""} ${who} is ${scene.player_distance_m != null ? `${Number(scene.player_distance_m).toFixed(1)} m away` : "here"}. Places you can walk to: ${(scene.spots || ["sofa", "kitchen", "window", "door"]).join(", ")}.
 This is visit number ${visits || 1} from ${who}.${rel ? ` How you feel about ${who}: affection ${rel.affection.toFixed(2)}, trust ${rel.trust.toFixed(2)}, familiarity ${rel.familiarity.toFixed(2)}. Your take on them so far: ${rel.summary || "no take yet"}.` : ` You have never met this person before${knowsName ? "" : " and don't know their name"}.`}
 Your mood: ${JSON.stringify(state?.mood || { valence: 0, energy: 0.5 })}.
+How you feel in yourself right now: ${needLine}. These drive you like they drive anyone - let them show in what you say and do, not as a report.
 ${memLines ? `Things you remember (most relevant first):\n${memLines}` : "You have no memories of this person yet."}
 
 Respond ONLY with JSON, no prose around it:
 {"say": "what you say out loud, 1-3 short sentences, or \\"\\" if you stay quiet",
- "actions": [{"type":"look_at","target":"player"} | {"type":"walk_to","target":"<spot>"} | {"type":"turn_to","target":"player"} | {"type":"gesture","name":"nod"|"shrug"|"wave"} | {"type":"change","outfit":"<one of your clothes>"} | {"type":"idle"}],
+ "actions": [{"type":"look_at","target":"player"} | {"type":"walk_to","target":"<spot>"} | {"type":"turn_to","target":"player"} | {"type":"gesture","name":"nod"|"shrug"|"wave"} | {"type":"change","outfit":"<one of your clothes>"} | {"type":"eat"} | {"type":"rest"} | {"type":"idle"}],
  "mood": {"valence": -1..1, "energy": 0..1},
  "memory": {"content": "one thing worth remembering from this moment, in first person, or null", "importance": 1-10},
+ "needs": {"energy": -0.3..0.3, "hunger": -1..0.2, "social": -0.3..0.3, "intimacy": -0.3..0.2} - how this moment changed them (eating drops hunger; good company drops social, wears it thin when you're peopled out; real warmth or affection eases intimacy),
  "relationship": {"affection": -0.2..0.2, "trust": -0.2..0.2, "familiarity": 0..0.1, "summary": "your one-line take on ${who} now"}}
 Be a person, not a helper. Don't ask how you can help. Reference memories naturally when they matter, not as a list. If this person wronged you, it shows. If it's the first meeting, you don't know their name unless they tell you.
 Don't end every line with a question; often just react, or say something of your own, or let a silence sit. You already know what time it is, so don't keep saying it. You're at home: every few exchanges do something physical (walk_to a spot, turn away and back) instead of standing at attention. Keep "say" to spoken words only.
@@ -146,11 +177,15 @@ What you wear is yours to decide, like anyone at home: what suits the hour, the 
       updated_at: new Date().toISOString(),
     }));
     const mood = out.mood && typeof out.mood === "object" ? { valence: clamp(Number(out.mood.valence) || 0, -1, 1), energy: clamp(Number(out.mood.energy) || 0.5, 0, 1) } : state?.mood;
-    writes.push(supabase.from("character_state").upsert({ character_id, mood, location: scene.location || me.home_location, current_task: actions[0]?.type || "idle", updated_at: new Date().toISOString() }));
+    const dn = out.needs && typeof out.needs === "object" ? out.needs : {};
+    for (const k of Object.keys(NEED0) as (keyof Needs)[]) if (k !== "comfort") needs[k] = clamp(needs[k] + (Number(dn[k]) || 0), 0, 1);
+    if (actions.some((a: { type: string }) => a.type === "eat")) needs.hunger = Math.min(needs.hunger, 0.1);
+    if (text) needs.social = clamp(needs.social - 0.015, 0, 1);
+    writes.push(supabase.from("character_state").upsert({ character_id, mood, needs, needs_at: new Date().toISOString(), location: scene.location || me.home_location, current_task: actions[0]?.type || "idle", updated_at: new Date().toISOString() }));
     if (event === "leave") writes.push(supabase.from("sessions").update({ ended_at: new Date().toISOString() }).eq("id", session_id));
     await Promise.all(writes);
 
-    return json({ say, actions, mood, session_id, model: MODEL, salvaged: !!out.salvaged, recalled: (recalled || []).map((m: { content: string; created_at: string }) => ({ content: m.content, when: ago(m.created_at) })), memory: out.memory || null });
+    return json({ say, actions, mood, needs, session_id, model: MODEL, salvaged: !!out.salvaged, recalled: (recalled || []).map((m: { content: string; created_at: string }) => ({ content: m.content, when: ago(m.created_at) })), memory: out.memory || null });
   } catch (e) {
     return json({ error: String((e as Error).message || e) }, 500);
   }

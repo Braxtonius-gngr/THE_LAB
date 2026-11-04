@@ -205,20 +205,29 @@ function outfitFor(h = new Date().getHours()) {
   if (h >= 11 && h < 18) return 'Lounging';
   return 'Tee + jeans';
 }
-let outfit = null, worn = [], dressing = 0;
+let outfit = null, worn = [], dressing = 0, lastNeeds = null;
 async function dress(name) {
   if (!(name in OUTFITS)) return; const tok = ++dressing;
   worn.forEach(w => w.remove()); worn = []; outfit = name;
   anat.setVisible(!OUTFITS[name].some(id => ['jeans', 'boxerbriefs', 'chinos', 'sweatpants', 'apron', 'pajamapants', 'sleepshorts'].includes(id)));
   for (const id of OUTFITS[name]) { const w = await wear(loader, marco, `../assets/garments/${id}/${spec.id}${isPhone ? '.mobile' : ''}.glb`); if (tok !== dressing) { w.remove(); return; } worn.push(w); }
-  window.__dressed = name;
+  window.__dressed = name; anat.setWarmth?.(warmthNow());
 }
 await dress(outfitFor());
 reflex.onChange = name => dress(name);
-function sceneState() { return { time: timeOfDay(), player_distance_m: +player.pos.distanceTo(marco.position).toFixed(2), spots: Object.keys(SPOTS), wearing: outfit, wardrobe: Object.keys(OUTFITS) }; }
+// comfort: how wrong what he has on is for the room (a warm Texas apartment, ~25 C): bundled up is
+// uncomfortable, and so is nothing at all when someone he barely knows is standing there
+const WARM = { Nude: -2, Underwear: -1, 'Sleep shorts': -1, Lounging: 0, 'Socks + sweats': 0, Sleepwear: 0.5, 'Tee + jeans': 0.5, 'Behind the bar': 1, 'Flannel over tee': 1.5, 'Hoodie + jeans': 2, 'Denim jacket': 2 };
+const comfortNow = () => Math.max(0, Math.min(1, Math.abs(WARM[outfit] ?? 0) / 3));
+function sceneState() { return { time: timeOfDay(), hour: new Date().getHours(), comfort: +comfortNow().toFixed(2), player_distance_m: +player.pos.distanceTo(marco.position).toFixed(2), spots: Object.keys(SPOTS), wearing: outfit, wardrobe: Object.keys(OUTFITS) }; }
+// warmth (the hang's state): warm clothes or a hot room relax it, little on in a cooled room draws it up a touch
+function warmthNow() { return 50 + 6 * (WARM[outfit] ?? 0) + (lastNeeds && lastNeeds.energy < 0.3 ? 10 : 0); }
 function showMemories(d) {
   if (!d) return;
-  memEl.innerHTML = `<b>model</b> ${d.model || ''}${d.salvaged ? ' <i>(reply was cut short; line salvaged)</i>' : ''}<br><b>mood</b> ${JSON.stringify(d.mood)}<br><b>remembered now</b> ${d.memory && d.memory.content ? `(${d.memory.importance}) ${d.memory.content}` : '–'}<br><b>recalled</b><br>` + (d.recalled || []).map(m => `· ${m.content} <i>(${m.when})</i>`).join('<br>');
+  lastNeeds = d.needs || lastNeeds; anat.setWarmth?.(warmthNow());
+  const bar = (k, v, inv) => { const x = inv ? 1 - v : v; return `<span style="display:inline-block;width:70px">${k}</span><span style="display:inline-block;width:90px;height:7px;background:#333;border-radius:4px;vertical-align:middle"><span style="display:block;height:7px;width:${Math.round(x * 90)}px;border-radius:4px;background:${x > 0.66 ? '#d9534f' : x > 0.4 ? '#d8b25a' : '#6c6'}"></span></span>`; };
+  const needsHtml = d.needs ? '<b>needs</b> <i>(bar = how pressing)</i><br>' + bar('tired', d.needs.energy, true) + '<br>' + bar('hunger', d.needs.hunger) + '<br>' + bar('company', d.needs.social) + '<br>' + bar('closeness', d.needs.intimacy) + '<br>' + bar('discomfort', d.needs.comfort) + '<br>' : '';
+  memEl.innerHTML = needsHtml + `<b>model</b> ${d.model || ''}${d.salvaged ? ' <i>(reply was cut short; line salvaged)</i>' : ''}<br><b>mood</b> ${JSON.stringify(d.mood)}<br><b>remembered now</b> ${d.memory && d.memory.content ? `(${d.memory.importance}) ${d.memory.content}` : '–'}<br><b>recalled</b><br>` + (d.recalled || []).map(m => `· ${m.content} <i>(${m.when})</i>`).join('<br>');
 }
 async function talk(opts) {
   status.textContent = 'thinking…';

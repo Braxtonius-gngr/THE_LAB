@@ -48,6 +48,9 @@ export class Reflexes {
       else if (a.type === 'look_at') this.lookAt(a.target === 'player' ? this.player : null);
       else if (a.type === 'gesture') this.gesture(a.name || 'nod');
       // (changing clothes: off to where he keeps them - the bed - then the page dresses him)
+      // eat: off to the kitchen and a moment there; rest: to the sofa (sitting comes with the animation batch)
+      else if (a.type === 'eat') { if (spots.kitchen) this.walkTo(spots.kitchen, () => this.gesture('nod', 2.5)); this.current = { type: 'walk_to' }; }
+      else if (a.type === 'rest') { if (spots.sofa) this.walkTo(spots.sofa, () => this.turnTarget = this.player?.clone?.() || null); this.current = { type: 'walk_to' }; }
       else if (a.type === 'change') { const at = spots.bed || spots.shelf; if (at) this.walkTo(at, () => this.onChange?.(a.outfit)); else this.onChange?.(a.outfit); this.current = { type: 'walk_to' }; }
       else this.current = null;
     }
