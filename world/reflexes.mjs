@@ -1,7 +1,9 @@
 // Reflexes: the fast, local layer of a character. Runs every frame with no
 // model in the loop - breathing and weight shifts while idle, eyes and head
 // following the player, walking to a spot (the Walking clip retargeted in
-// place, the body moved by hand), turning, and small gestures. The mind
+// place, the body moved by hand), turning, small gestures, sitting and lying
+// (Meshy clips), one-off clips (drink, phone, stretch) and held poses built by
+// hand (arms crossed, leaning on the counter, playing the bass). The mind
 // (world/mind.mjs) only ever says *what* to do; this does it.
 //
 // Rotations are given in the body's rest frame (x pitch, y yaw, z roll), so
@@ -11,57 +13,121 @@ import { captureRest, retargetClip } from './retarget.mjs';
 
 const _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _w = new THREE.Vector3(), _y = new THREE.Vector3(0, 1, 0);
 const lerpAngle = (a, b, t) => { let d = ((b - a + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI; return a + d * t; };
+const ease = t => t * t * (3 - 2 * t);
 
 export class Reflexes {
-  // model: the GLTF scene (faces +z at rest); pack: { rest, clips } from the animation library
-  constructor(model, pack, { speed = 1.1 } = {}) {
-    this.model = model; this.rest = captureRest(model); this.pack = pack; this.speed = speed;
+  // model: the GLTF scene (faces +z at rest); packs: { rest, clips } or a list of them
+  // seats: { sofa: { pos, yaw }, bed: { pos, yaw, y } } - where his hips go when he sits or lies
+  constructor(model, packs, { speed = 1.1, seats = {} } = {}) {
+    this.model = model; this.rest = captureRest(model); this.speed = speed; this.seats = seats;
     this.mixer = new THREE.AnimationMixer(model);
     this.clips = {};
-    for (const c of pack.clips) this.clips[c.name] = retargetClip(c, pack.rest, this.rest, { inPlace: true });
+    for (const pack of [].concat(packs)) for (const c of pack.clips) this.clips[c.name] = retargetClip(c, pack.rest, this.rest, { inPlace: true });
     this.bone = n => this.rest[n]?.bone || null;
     this.t = 0; this.queue = []; this.current = null; this.gazeTarget = null; this.gaze = { yaw: 0, pitch: 0 };
     this.walkAction = null; this.walking = false; this.moveTarget = null; this.onArrive = null;
+    this.posture = 'stand';      // stand | sit | lie
+    this.clipAct = null;         // the clip holding the body now (sit, lie, a one-off)
+    this.hold = null; this.holdW = 0;   // a hand-built pose layered on top (cross_arms, lean_counter, play_bass)
+    this.glide = null;           // the body carried from one place to another (onto the bed)
     this.phase = Math.random() * 10;
   }
 
   // --- the API the mind's actions map onto ---
   do(action) { this.queue.push(action); }
-  clear() { this.queue.length = 0; }
+  clear() { this.queue.length = 0; this.current = null; }   // (a new thought drops whatever was half done)
   lookAt(target) { this.gazeTarget = target; }            // Vector3 or null
   walkTo(pos, onArrive) { this.moveTarget = pos.clone(); this.onArrive = onArrive || null; }
   turnTo(pos) { this.turnTarget = pos.clone(); }
   gesture(name, dur = 1.2) { this.gestureName = name; this.gestureT = 0; this.gestureDur = dur; }
-  get busy() { return !!this.moveTarget || this.queue.length > 0 || !!this.current; }
+  get busy() { return !!this.moveTarget || this.queue.length > 0 || !!this.current || !!this.glide; }
 
-  // run one queued action at a time: walk_to waits for arrival, gestures for their length
+  // play a clip: once (then `then`), or looped; fades from whatever was holding the body
+  play(name, { loop = false, then = null, fade = 0.35 } = {}) {
+    const clip = this.clips[name]; if (!clip) { then?.(); return false; }
+    const a = this.mixer.clipAction(clip).reset();
+    a.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1); a.clampWhenFinished = !loop;
+    if (this.clipAct && this.clipAct !== a) { a.crossFadeFrom(this.clipAct, fade, false); }
+    a.play(); this.clipAct = a;
+    if (!loop) { const done = e => { if (e.action !== a) return; this.mixer.removeEventListener('finished', done); then?.(); }; this.mixer.addEventListener('finished', done); }
+    return true;
+  }
+  _release() { if (this.clipAct) { this.clipAct.fadeOut(0.3); const a = this.clipAct; this.clipAct = null; setTimeout(() => { if (this.clipAct !== a) a.stop(); }, 320); } }
+
+  // sit on a seat: walk to it, turn his back to it, sit down, stay sitting
+  sit(where = 'sofa', then = null) {
+    const S = this.seats[where]; if (!S) { then?.(); return; }
+    this._standThen(() => this.walkTo(S.pos, () => {
+      this.model.rotation.y = S.yaw; if (S.y != null) this.model.position.y = S.y;
+      this.posture = 'sit'; this.hold = null;
+      this.play('sit_down', { then: () => { this.play('sit_idle', { loop: true }); then?.(); } }) || (this.play('sit_idle', { loop: true }), then?.());
+    }));
+  }
+  // lie on the bed: walk to its side, then onto it and settle
+  lie(then = null) {
+    const S = this.seats.bed; if (!S) { then?.(); return; }
+    this._standThen(() => this.walkTo(S.side, () => {
+      this.posture = 'lie'; this.hold = null; this.gazeTarget = null;
+      this.play('lie_idle', { loop: true, fade: 0.8 });
+      this.glide = { from: this.model.position.clone(), fromYaw: this.model.rotation.y, to: S.pos.clone(), toYaw: S.yaw, t: 0, dur: 1.4, then };
+    }));
+  }
+  // on his feet again, from whatever he was doing
+  stand(then = null) {
+    if (this.posture === 'stand') { this._release(); then?.(); return; }
+    const was = this.posture; this.hold = null;
+    if (was === 'lie') {
+      const S = this.seats.bed;
+      this.glide = { from: this.model.position.clone(), fromYaw: this.model.rotation.y, to: S.side.clone(), toYaw: S.yaw + Math.PI / 2, t: 0, dur: 1.2, then: () => { this.posture = 'stand'; this._release(); then?.(); } };
+      this.play('get_up', { fade: 0.6 });
+    } else {
+      this.play('stand_up', { then: () => { this.posture = 'stand'; this.model.position.y = this.model.userData.y0 || 0; this._release(); then?.(); } }) || (this.posture = 'stand', this._release(), then?.());
+    }
+  }
+  _standThen(f) { if (this.posture === 'stand') f(); else this.stand(f); }
+  // a one-off clip standing: stand first if he must
+  once(name, then) { this._standThen(() => { this.hold = null; this.play(name, { then: () => { this._release(); then?.(); } }) || then?.(); }); }
+
+  // run one queued action at a time: each sets `current`, cleared when it is done
   _step(dt, spots) {
-    if (this.current) {
-      if (this.current.type === 'walk_to' && !this.moveTarget) this.current = null;
-      else if (this.current.type === 'gesture' && this.gestureName == null) this.current = null;
-      else if (this.current.type !== 'walk_to' && this.current.type !== 'gesture') this.current = null;
-    }
-    if (!this.current && this.queue.length) {
-      const a = this.queue.shift(); this.current = a;
-      if (a.type === 'walk_to' && spots[a.target]) this.walkTo(spots[a.target]);
-      else if (a.type === 'turn_to' && a.target === 'player' && this.player) this.turnTo(this.player);
-      else if (a.type === 'look_at') this.lookAt(a.target === 'player' ? this.player : null);
-      else if (a.type === 'gesture') this.gesture(a.name || 'nod');
-      // (changing clothes: off to where he keeps them - the bed - then the page dresses him)
-      // eat: off to the kitchen and a moment there; rest: to the sofa (sitting comes with the animation batch)
-      else if (a.type === 'eat') { if (spots.kitchen) this.walkTo(spots.kitchen, () => this.gesture('nod', 2.5)); this.current = { type: 'walk_to' }; }
-      else if (a.type === 'rest') { if (spots.sofa) this.walkTo(spots.sofa, () => this.turnTarget = this.player?.clone?.() || null); this.current = { type: 'walk_to' }; }
-      else if (a.type === 'change') { const at = spots.bed || spots.shelf; if (at) this.walkTo(at, () => this.onChange?.(a.outfit)); else this.onChange?.(a.outfit); this.current = { type: 'walk_to' }; }
-      else this.current = null;
-    }
+    if (this.current && this.current.done) this.current = null;
+    if (this.current || !this.queue.length) return;
+    const a = this.queue.shift(); const cur = this.current = { type: a.type, done: false }; const fin = () => { cur.done = true; };
+    const walk = (at, then) => this._standThen(() => this.walkTo(at, () => { then?.(); fin(); }));
+    if (a.type === 'walk_to' && spots[a.target]) { this.hold = null; walk(spots[a.target]); }
+    else if (a.type === 'turn_to' && a.target === 'player' && this.player) { if (this.posture === 'stand') this.turnTo(this.player); fin(); }
+    else if (a.type === 'look_at') { this.lookAt(a.target === 'player' ? this.player : null); fin(); }
+    else if (a.type === 'gesture') { this.gesture(a.name || 'nod'); setTimeout(fin, 1200); }
+    else if (a.type === 'sit' || a.type === 'rest') this.sit(a.target || 'sofa', fin);
+    else if (a.type === 'lie_down') this.lie(fin);
+    else if (a.type === 'stand') this.stand(fin);
+    else if (a.type === 'drink') this.once('drink', fin);
+    else if (a.type === 'phone') this.once('phone_check', fin);
+    else if (a.type === 'stretch') this.once('stretch_yawn', fin);
+    else if (a.type === 'cross_arms') { this._standThen(() => { this.hold = 'cross_arms'; fin(); }); }
+    else if (a.type === 'lean_counter') { const at = this.seats.counter; this.hold = null; if (at) walk(at.pos, () => { this.model.rotation.y = at.yaw; this.hold = 'lean_counter'; }); else fin(); }
+    else if (a.type === 'play_bass') this.sit('sofa', () => { this.hold = 'play_bass'; this.onHold?.('play_bass', true); fin(); });
+    // eat: off to the kitchen and a moment there
+    else if (a.type === 'eat') { this.hold = null; walk(spots.kitchen || this.model.position, () => this.gesture('nod', 2.5)); }
+    // changing clothes: off to where he keeps them - the bed - then the page dresses him
+    else if (a.type === 'change') { this.hold = null; walk(spots.bed || spots.shelf || this.model.position, () => this.onChange?.(a.outfit)); }
+    else fin();
   }
 
   update(dt, { player = null, spots = {} } = {}) {
     this.t += dt; this.player = player;
     this._step(dt, spots);
     const m = this.model;
+    if (this.hold !== 'play_bass' && this._bassOn) this.onHold?.('play_bass', false);
+    this._bassOn = this.hold === 'play_bass';
+    // --- carried (onto the bed, off it) ---
+    if (this.glide) {
+      const G = this.glide; G.t += dt; const k = ease(Math.min(1, G.t / G.dur));
+      m.position.lerpVectors(G.from, G.to, k); m.rotation.y = lerpAngle(G.fromYaw, G.toYaw, k);
+      if (G.t >= G.dur) { this.glide = null; G.then?.(); }
+    }
     // --- locomotion: move the body, face the way it goes, keep the clip playing ---
-    if (this.moveTarget) {
+    else if (this.moveTarget) {
       _v.subVectors(this.moveTarget, m.position); _v.y = 0; const d = _v.length();
       if (d < 0.08) { this.moveTarget = null; this._stopWalk(); if (this.onArrive) { const f = this.onArrive; this.onArrive = null; f(); } }
       else {
@@ -78,10 +144,13 @@ export class Reflexes {
       if (Math.abs(lerpAngle(m.rotation.y, yaw, 1) - m.rotation.y) < 0.03) this.turnTarget = null;
     }
     // --- the clip or the idle ---
-    if (this.walking) this.mixer.update(dt);
+    if (this.walking || this.clipAct) this.mixer.update(dt);
     else this._idle(dt);
-    // --- gaze, on top of whatever the body is doing ---
-    this._gaze(dt);
+    // --- held pose, eased in and out, on top ---
+    this.holdW += ((this.hold ? 1 : 0) - this.holdW) * Math.min(1, dt * 3);
+    if (this.holdW > 0.01) this._hold(this._lastHold = this.hold || this._lastHold, this.holdW);
+    // --- gaze (not lying down), on top of whatever the body is doing ---
+    if (this.posture !== 'lie') this._gaze(dt);
     // --- gesture, additive ---
     if (this.gestureName != null) this._gesture(dt);
   }
@@ -89,6 +158,7 @@ export class Reflexes {
   _startWalk() {
     if (this.walking) return;
     const clip = this.clips.Walking; if (!clip) return;
+    this._release();
     this.walkAction = this.mixer.clipAction(clip).reset().setEffectiveTimeScale(1.0).fadeIn(0.25).play();
     this.walking = true;
   }
@@ -96,7 +166,7 @@ export class Reflexes {
     if (!this.walking) return;
     this.walkAction?.fadeOut(0.25);
     this.walking = false; this.restT = 0;
-    setTimeout(() => { if (!this.walking) { this.mixer.stopAllAction(); this._toRest(); } }, 300);
+    setTimeout(() => { if (!this.walking && !this.clipAct) { this.mixer.stopAllAction(); this._toRest(); } }, 300);
   }
   _toRest() { for (const r of Object.values(this.rest)) { r.bone.quaternion.copy(r.q); r.bone.position.copy(r.p); } }
 
@@ -122,11 +192,36 @@ export class Reflexes {
     this.model.position.y = (this.model.userData.y0 || 0) + 0.002 * (sway * 0.5 + 0.5);
   }
 
+  // hand-built poses, as rest-frame turns on top of what the body is doing, scaled by w (0-1)
+  // (z rolls an arm down toward the side / up; x pitches it forward; y twists across the body)
+  _hold(name, w) {
+    const t = this.t + this.phase, A = (b, x, y, z) => this._setRest(b, x * w, y * w, z * w, true);
+    if (name === 'cross_arms') {
+      // upper arms in at the sides and a little forward, forearms folded across the chest
+      A('LeftArm', -0.35, 0.55, -0.95); A('RightArm', -0.35, -0.55, 0.95);
+      A('LeftForeArm', 0, -1.9, 0.25); A('RightForeArm', 0, -1.9, -0.25);
+      A('Spine', 0.02 * Math.sin(t * 0.5), 0, 0);
+    } else if (name === 'lean_counter') {
+      // weight back onto the counter behind him, hands on its edge, a slow shift
+      A('Hips', 0.08, 0, 0.02 * Math.sin(t * 0.3)); A('Spine01', -0.12, 0, 0); A('Spine', -0.05, 0, 0);
+      A('LeftArm', 0.55, 0, -0.85); A('RightArm', 0.55, 0, 0.85);
+      A('LeftForeArm', 0.3, 0, 0); A('RightForeArm', 0.3, 0, 0);
+      A('LeftUpLeg', 0, 0, 0.06); A('RightUpLeg', 0, 0, -0.06);
+    } else if (name === 'play_bass') {
+      // seated, the neck to his left: fretting hand out along it, plucking hand over the body, head with the beat
+      const beat = Math.sin(t * Math.PI * 2 * 1.6), pluck = Math.sin(t * Math.PI * 2 * 3.2);
+      A('Spine', 0.06, 0.08, 0); A('Head', 0.08 + 0.04 * beat, 0.25, 0);
+      A('LeftArm', -0.9, 0.35, -0.55); A('LeftForeArm', 0, -0.9, 0.2);
+      A('RightArm', -0.55, -0.6, 0.6); A('RightForeArm', 0.05 * pluck, 1.15, 0);
+      A('RightHand', 0.15 * pluck, 0, 0);
+    }
+  }
+
   // head and eyes toward the target, clamped like a person's, with the neck taking a share
   _gaze(dt) {
     const head = this.bone('Head'); if (!head) return;
     let yaw = 0, pitch = 0;
-    if (this.gazeTarget) {
+    if (this.gazeTarget && this.hold !== 'play_bass') {
       head.getWorldPosition(_w); _v.subVectors(this.gazeTarget, _w);
       // into the body's frame (its yaw)
       _v.applyAxisAngle(_y, -this.model.rotation.y);

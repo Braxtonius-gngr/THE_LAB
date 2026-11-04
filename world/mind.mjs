@@ -6,7 +6,7 @@
 export const SUPABASE_URL = 'https://qyphdwcjzhgobsfpeonh.supabase.co';
 export const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF5cGhkd2Nqemhnb2JzZnBlb25oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM1OTUxMzksImV4cCI6MjEwOTE3MTEzOX0.amjwhpx3GG4GSenJ2F0KErfAvZXw7636YAltYfhGlWs';
 export const PLAYER_ID = '00000000-0000-4000-8000-000000000001';   // Brax
-export const CHARACTERS = { marco: '00000000-0000-4000-8000-000000000101' };
+export const CHARACTERS = { marco: '00000000-0000-4000-8000-000000000101', dante: '00000000-0000-4000-8000-000000000102' };
 
 export class Mind {
   constructor(characterId, { playerId = PLAYER_ID, location = 'marco-apartment' } = {}) {
@@ -32,6 +32,8 @@ export class Mind {
       return d;
     } finally { this.busy = false; }
   }
+  // what someone else in the room said, so this mind hears it next turn
+  hear(name, text) { if (text) this.history.push({ who: 'other', name, text }); }
 }
 
 export const timeOfDay = (d = new Date()) => {

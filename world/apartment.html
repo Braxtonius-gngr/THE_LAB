@@ -173,82 +173,119 @@ const say = (cls, text) => { const d = document.createElement('div'); d.classNam
 const loader = new GLTFLoader();
 const bodies = await (await fetch('../assets/bodies/bodies.json')).json();
 const spec = bodies.find(b => b.id === 'adult-base-01');
-const [g, pack, props] = await Promise.all([loader.loadAsync('../assets/bodies/' + spec[isPhone ? 'mobile' : 'desktop']), loader.loadAsync('../assets/anims/meshy-pack-01.glb'), loadProps(loader, PROPS, { tier: isPhone ? 'mobile' : 'desktop' })]);
+const Q = new URLSearchParams(location.search), HR = new Date().getHours();
+// Dante (the chef) comes over after his shift, about 2-5 am - or ?dante=1 to have him here now
+const withDante = Q.has('dante') || (HR >= 2 && HR < 5);
+const dspec = bodies.find(b => b.id === 'dante');
+const tier = isPhone ? 'mobile' : 'desktop';
+const [g, pack, pack2, props, gd] = await Promise.all([loader.loadAsync('../assets/bodies/' + spec[tier]), loader.loadAsync('../assets/anims/meshy-pack-01.glb'), loader.loadAsync('../assets/anims/meshy-pack-02.glb'), loadProps(loader, PROPS, { tier }), withDante ? loader.loadAsync('../assets/bodies/' + dspec[tier]) : null]);
 for (const o of props) scene.add(o);
-// the lamp shade glows; the TV is off this late
 props.filter(o => o.name === 'floorlamp').forEach(o => o.traverse(m => { if (m.isMesh) { m.material = m.material.clone(); m.material.emissive.set(0xffc77a); m.material.emissiveIntensity = 0.35; } }));
-const marco = g.scene; marco.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
-scene.add(marco);
-// (rest capture and the anatomy attach read the model at the origin; place him after)
-const reflex = new Reflexes(marco, { rest: captureRest(pack.scene, { allNodes: true }), clips: pack.animations });
-const anat = attachAnatomy(marco, spec.anatomy, {}, { seed: 'marco' });   // the same man every visit
-marco.position.copy(SPOTS.kitchen); marco.rotation.y = Math.PI / 2 - 0.5;   // at the counter
-const mind = new Mind(CHARACTERS.marco);
-let bubbleUntil = 0;
-function showBubble(text) { bubble.textContent = text; bubble.style.display = text ? 'block' : 'none'; bubbleUntil = performance.now() + 1500 + text.length * 55; }
-const headBone = reflex.bone('Head'), _hp = new THREE.Vector3();
+const PACKS = [{ rest: captureRest(pack.scene, { allNodes: true }), clips: pack.animations }, { rest: captureRest(pack2.scene, { allNodes: true }), clips: pack2.animations }];
+// where the hips go: the sofa seat, the bed (lying head to the pillows), his back to the kitchen counter
+const SEATS = { sofa: { pos: new THREE.Vector3(-0.8, 0, 1.74), yaw: Math.PI, y: 0.02 }, sofa2: { pos: new THREE.Vector3(-0.2, 0, 1.74), yaw: Math.PI, y: 0.02 },
+  bed: { pos: new THREE.Vector3(1.75, 0.43, 1.46), yaw: Math.PI, side: new THREE.Vector3(1.05, 0, 1.35) }, counter: { pos: SPOTS.kitchen.clone(), yaw: -Math.PI / 2 } };
+const wardrobe = await (await fetch('../assets/garments/garments.json')).json();
+const LOWER = ['jeans', 'boxerbriefs', 'chinos', 'sweatpants', 'apron', 'pajamapants', 'sleepshorts', 'briefs', 'cargopants', 'chefpants', 'basketballshorts'];
+const WARM = { Nude: -2, Underwear: -1, 'Underwear (briefs)': -1, 'Sleep shorts': -1, 'Home: shorts': -1, Lounging: 0, 'Socks + sweats': 0, 'Home: shorts + thermal': 0, Sleepwear: 0.5, 'Tee + jeans': 0.5, 'Off duty': 0.5, 'Behind the bar': 1, 'In the kitchen': 1, 'Flannel over tee': 1.5, 'Off duty + bomber': 2, 'Hoodie + jeans': 2, 'Denim jacket': 2 };
+const bass = props.find(o => o.name === 'bassguitar'), bassHome = bass && { p: bass.position.clone(), r: bass.rotation.clone() };
+
+// one person living (or visiting) here: body, reflexes, anatomy, clothes, mind
+async function resident({ key, name, model, bodySpec, seed, outfitFor, place }) {
+  model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
+  scene.add(model);
+  // (rest capture and the anatomy attach read the model at the origin; place him after)
+  const reflex = new Reflexes(model, PACKS, { seats: key === 'marco' ? SEATS : { ...SEATS, sofa: SEATS.sofa2 } });
+  const anat = attachAnatomy(model, bodySpec.anatomy, {}, { seed });
+  const R = { key, name, model, reflex, anat, mind: new Mind(CHARACTERS[key]), place, outfit: null, worn: [], dressing: 0, needs: null, head: reflex.bone('Head') };
+  R.OUTFITS = { Nude: [] };
+  for (const o of wardrobe.outfits) if (o.items.every(id => (wardrobe.garments.find(g => g.id === id)?.bodies || []).includes(bodySpec.id))) R.OUTFITS[o.name] = o.items;
+  R.comfort = () => Math.max(0, Math.min(1, Math.abs(WARM[R.outfit] ?? 0) / 3));
+  R.warmth = () => 50 + 6 * (WARM[R.outfit] ?? 0) + (R.needs && R.needs.energy < 0.3 ? 10 : 0);
+  R.dress = async nm => {
+    if (!(nm in R.OUTFITS)) return; const tok = ++R.dressing;
+    R.worn.forEach(w => w.remove()); R.worn = []; R.outfit = nm;
+    anat.setVisible(!R.OUTFITS[nm].some(id => LOWER.includes(id)));
+    for (const id of R.OUTFITS[nm]) { const w = await wear(loader, model, `../assets/garments/${id}/${bodySpec.id}${isPhone ? '.mobile' : ''}.glb`); if (tok !== R.dressing) { w.remove(); return; } R.worn.push(w); }
+    window.__dressed = window.__dressed || {}; window.__dressed[key] = nm; anat.setWarmth?.(R.warmth());
+  };
+  await R.dress(outfitFor(R.OUTFITS));
+  reflex.onChange = nm => R.dress(nm);
+  // the bass: off its stand and into his lap while he plays, back after
+  reflex.onHold = (h, on) => { if (h !== 'play_bass' || !bass) return; R.bassOn = on; if (!on) { bass.position.copy(bassHome.p); bass.rotation.copy(bassHome.r); } };
+  return R;
+}
+
+// (a bartender's day: off work about 2 am, asleep till late morning, home in the afternoon, at the bar
+// by evening - if you find him home then, it's his night off)
+const marcoOutfit = O => { const h = HR; if (h >= 2 && h < 4) return O['Behind the bar'] ? 'Behind the bar' : 'Tee + jeans'; if (h >= 4 && h < 11) return O['Sleepwear'] ? 'Sleepwear' : 'Nude'; if (h >= 11 && h < 18) return 'Lounging'; return 'Tee + jeans'; };
+// (Dante comes straight from the line: still in his kitchen whites if they fit, else off-duty)
+const danteOutfit = O => O['In the kitchen'] ? 'In the kitchen' : O['Off duty'] ? 'Off duty' : Object.keys(O)[1] || 'Nude';
+const M = await resident({ key: 'marco', name: 'Marco', model: g.scene, bodySpec: spec, seed: 'marco', outfitFor: marcoOutfit });
+M.model.position.copy(SPOTS.kitchen); M.model.rotation.y = Math.PI / 2 - 0.5;   // at the counter
+const RES = [M];
+if (withDante) {
+  const Dn = await resident({ key: 'dante', name: 'Dante', model: gd.scene, bodySpec: dspec, seed: 'dante', outfitFor: danteOutfit, place: "at your friend Marco's apartment - you came over after your shift" });
+  Dn.model.position.copy(SPOTS.door); Dn.model.rotation.y = 0;
+  Dn.reflex.do({ type: 'walk_to', target: 'table' });
+  RES.push(Dn);
+}
+const marco = M.model, reflex = M.reflex, mind = M.mind, anat = M.anat;
+let bubbleUntil = 0, bubbleOf = M;
+function showBubble(R, text) { bubbleOf = R; bubble.textContent = text; bubble.style.display = text ? 'block' : 'none'; bubbleUntil = performance.now() + 1500 + text.length * 55; }
+const _hp = new THREE.Vector3();
 function placeBubble() {
   if (bubble.style.display === 'none') return;
   if (performance.now() > bubbleUntil) { bubble.style.display = 'none'; return; }
-  headBone.getWorldPosition(_hp); _hp.y += 0.25; _hp.project(cam);
+  bubbleOf.head.getWorldPosition(_hp); _hp.y += 0.25; _hp.project(cam);
   const behind = _hp.z > 1; bubble.style.left = ((_hp.x + 1) / 2 * innerWidth) + 'px'; bubble.style.top = ((1 - _hp.y) / 2 * innerHeight) + 'px'; bubble.style.opacity = behind ? 0 : 1;
 }
-// ---------- his wardrobe: what he has on, chosen by the hour, changed when he wants to ----------
-const wardrobe = await (await fetch('../assets/garments/garments.json')).json();
-const OUTFITS = { Nude: [] };
-for (const o of wardrobe.outfits) if (o.items.every(id => (wardrobe.garments.find(g => g.id === id)?.bodies || []).includes(spec.id))) OUTFITS[o.name] = o.items;
-// (a bartender's day: off work about 2 am, asleep till late morning, home in the afternoon, at the bar
-// by evening - if you find him home then, it's his night off)
-function outfitFor(h = new Date().getHours()) {
-  if (h >= 2 && h < 4) return OUTFITS['Behind the bar'] ? 'Behind the bar' : 'Tee + jeans';   // just got in
-  if (h >= 4 && h < 11) return OUTFITS['Sleepwear'] ? 'Sleepwear' : 'Nude';
-  if (h >= 11 && h < 18) return 'Lounging';
-  return 'Tee + jeans';
+function sceneState(R) {
+  return { time: timeOfDay(), hour: HR, comfort: +R.comfort().toFixed(2), player_distance_m: +player.pos.distanceTo(R.model.position).toFixed(2), spots: Object.keys(SPOTS), wearing: R.outfit, wardrobe: Object.keys(R.OUTFITS),
+    ...(R.place ? { place: R.place } : {}),
+    others: RES.filter(o => o !== R).map(o => ({ id: CHARACTERS[o.key], name: o.name, wearing: o.outfit, distance_m: +o.model.position.distanceTo(R.model.position).toFixed(1) })) };
 }
-// comfort: how wrong what he has on is for the room (a warm Texas apartment, ~25 C): bundled up is
-// uncomfortable, and so is nothing at all when someone he barely knows is standing there
-const WARM = { Nude: -2, Underwear: -1, 'Sleep shorts': -1, Lounging: 0, 'Socks + sweats': 0, Sleepwear: 0.5, 'Tee + jeans': 0.5, 'Behind the bar': 1, 'Flannel over tee': 1.5, 'Hoodie + jeans': 2, 'Denim jacket': 2 };
-let outfit = null, worn = [], dressing = 0, lastNeeds = null;
-async function dress(name) {
-  if (!(name in OUTFITS)) return; const tok = ++dressing;
-  worn.forEach(w => w.remove()); worn = []; outfit = name;
-  anat.setVisible(!OUTFITS[name].some(id => ['jeans', 'boxerbriefs', 'chinos', 'sweatpants', 'apron', 'pajamapants', 'sleepshorts', 'briefs', 'cargopants', 'chefpants', 'basketballshorts'].includes(id)));
-  for (const id of OUTFITS[name]) { const w = await wear(loader, marco, `../assets/garments/${id}/${spec.id}${isPhone ? '.mobile' : ''}.glb`); if (tok !== dressing) { w.remove(); return; } worn.push(w); }
-  window.__dressed = name; anat.setWarmth?.(warmthNow());
-}
-await dress(outfitFor());
-reflex.onChange = name => dress(name);
-const comfortNow = () => Math.max(0, Math.min(1, Math.abs(WARM[outfit] ?? 0) / 3));
-function sceneState() { return { time: timeOfDay(), hour: new Date().getHours(), comfort: +comfortNow().toFixed(2), player_distance_m: +player.pos.distanceTo(marco.position).toFixed(2), spots: Object.keys(SPOTS), wearing: outfit, wardrobe: Object.keys(OUTFITS) }; }
-// warmth (the hang's state): warm clothes or a hot room relax it, little on in a cooled room draws it up a touch
-function warmthNow() { return 50 + 6 * (WARM[outfit] ?? 0) + (lastNeeds && lastNeeds.energy < 0.3 ? 10 : 0); }
-function showMemories(d) {
+function showMemories(R, d) {
   if (!d) return;
-  lastNeeds = d.needs || lastNeeds; anat.setWarmth?.(warmthNow());
+  R.needs = d.needs || R.needs; R.anat.setWarmth?.(R.warmth());
   const bar = (k, v, inv) => { const x = inv ? 1 - v : v; return `<span style="display:inline-block;width:70px">${k}</span><span style="display:inline-block;width:90px;height:7px;background:#333;border-radius:4px;vertical-align:middle"><span style="display:block;height:7px;width:${Math.round(x * 90)}px;border-radius:4px;background:${x > 0.66 ? '#d9534f' : x > 0.4 ? '#d8b25a' : '#6c6'}"></span></span>`; };
-  const needsHtml = d.needs ? '<b>needs</b> <i>(bar = how pressing)</i><br>' + bar('tired', d.needs.energy, true) + '<br>' + bar('hunger', d.needs.hunger) + '<br>' + bar('company', d.needs.social) + '<br>' + bar('closeness', d.needs.intimacy) + '<br>' + bar('discomfort', d.needs.comfort) + '<br>' : '';
+  const needsHtml = d.needs ? `<b>${R.name}'s needs</b> <i>(bar = how pressing)</i><br>` + bar('tired', d.needs.energy, true) + '<br>' + bar('hunger', d.needs.hunger) + '<br>' + bar('company', d.needs.social) + '<br>' + bar('closeness', d.needs.intimacy) + '<br>' + bar('discomfort', d.needs.comfort) + '<br>' : '';
   memEl.innerHTML = needsHtml + `<b>model</b> ${d.model || ''}${d.salvaged ? ' <i>(reply was cut short; line salvaged)</i>' : ''}<br><b>mood</b> ${JSON.stringify(d.mood)}<br><b>remembered now</b> ${d.memory && d.memory.content ? `(${d.memory.importance}) ${d.memory.content}` : '–'}<br><b>recalled</b><br>` + (d.recalled || []).map(m => `· ${m.content} <i>(${m.when})</i>`).join('<br>');
 }
-async function talk(opts) {
-  status.textContent = 'thinking…';
+// one mind's turn; what it says, everyone else in the room hears
+async function talk(opts, R = M) {
+  status.textContent = `${R.name} is thinking…`;
   try {
-    const d = await mind.send({ ...opts, scene: sceneState() });
-    if (!d) return;
-    reflex.clear(); reflex.lookAt(new THREE.Vector3(player.pos.x, EYE - 0.05, player.pos.z));
-    for (const a of d.actions || []) reflex.do(a);
-    if (d.say) { say('him', 'Marco: ' + d.say); showBubble(d.say); }
-    showMemories(d); status.textContent = `visit · ${mind.history.length} turns`;
-  } catch (e) { say('sys', 'Marco is out of reach: ' + e.message); status.textContent = 'offline'; }
+    const d = await R.mind.send({ ...opts, scene: sceneState(R) });
+    if (!d) return null;
+    R.reflex.clear(); if (R.reflex.posture === 'stand') R.reflex.lookAt(new THREE.Vector3(player.pos.x, EYE - 0.05, player.pos.z));
+    for (const a of d.actions || []) R.reflex.do(a);
+    if (d.say) { say('him', `${R.name}: ${d.say}`); showBubble(R, d.say); for (const o of RES) if (o !== R) o.mind.hear(R.name, d.say); }
+    showMemories(R, d); status.textContent = `visit · ${R.mind.history.length} turns`;
+    return d;
+  } catch (e) { say('sys', `${R.name} is out of reach: ${e.message}`); status.textContent = 'offline'; return null; }
 }
-// on a phone the keyboard's Enter/Go key sends half-typed lines; there, only the Send button sends
+// you talk to whoever you're facing (or nearest): the other one hears you and may chime in
+function addressee() {
+  if (RES.length < 2) return M;
+  const fwd = new THREE.Vector3(-Math.sin(player.yaw ?? 0), 0, -Math.cos(player.yaw ?? 0));
+  let best = M, bs = -1e9;
+  for (const R of RES) { const v = R.model.position.clone().sub(player.pos); v.y = 0; const d = v.length(); const s = v.normalize().dot(fwd) * 2 - d * 0.5; if (s > bs) { bs = s; best = R; } }
+  return best;
+}
 if (isPhone) document.getElementById('say').addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
 document.getElementById('form').addEventListener('submit', async e => {
-  e.preventDefault(); const inp = document.getElementById('say'); const t = inp.value.trim(); if (!t || mind.busy) return;
-  inp.value = ''; say('me', t); await talk({ text: t });
+  e.preventDefault(); const inp = document.getElementById('say'); const t = inp.value.trim(); if (!t || RES.some(R => R.mind.busy)) return;
+  inp.value = ''; say('me', t);
+  const R = addressee(); for (const o of RES) if (o !== R) o.mind.hear('the visitor', t);
+  await talk({ text: t }, R);
+  // the other one sometimes answers too (a third of the time, or if named)
+  const O = RES.find(o => o !== R); if (O && (new RegExp(O.name, 'i').test(t) || Math.random() < 0.33)) await talk({ event: 'overheard' }, O);
 });
-document.getElementById('leave').onclick = async () => { if (mind.busy) return; say('sys', 'you leave'); await talk({ event: 'leave' }); mind.sessionId = null; mind.history = []; document.getElementById('leave').textContent = 'Left · reload to come back'; document.getElementById('form').style.display = 'none'; };
+document.getElementById('leave').onclick = async () => { if (RES.some(R => R.mind.busy)) return; say('sys', 'you leave'); for (const R of RES) { await talk({ event: 'leave' }, R); R.mind.sessionId = null; R.mind.history = []; } document.getElementById('leave').textContent = 'Left · reload to come back'; document.getElementById('form').style.display = 'none'; };
 document.getElementById('memtoggle').onclick = e => { memEl.style.display = memEl.style.display === 'block' ? 'none' : 'block'; e.target.classList.toggle('on'); };
-window.__world = { marco, reflex, mind, player, talk, SPOTS, props };
+window.__world = { marco, reflex, mind, player, talk, SPOTS, SEATS, props, RES };
+const _f = new THREE.Vector3();
 
 // ---------- loop ----------
 let last = performance.now(); status.textContent = 'you arrive';
@@ -257,9 +294,13 @@ r.setAnimationLoop(now => {
   movePlayer(dt); placeCam();
   const eye = new THREE.Vector3(player.pos.x, EYE - 0.05, player.pos.z);
   // he keeps an eye on you when you're close, otherwise on what he's doing
-  if (!reflex.busy && player.pos.distanceTo(marco.position) < 3.2) reflex.lookAt(eye); else if (!reflex.busy) reflex.lookAt(null);
-  reflex.update(dt, { player: eye, spots: SPOTS });
-  anat.update(dt);
+  for (const R of RES) {
+    const rf = R.reflex;
+    if (!rf.busy && rf.posture !== 'lie') { const other = RES.find(o => o !== R); rf.lookAt(player.pos.distanceTo(R.model.position) < 3.2 ? eye : other ? other.head.getWorldPosition(new THREE.Vector3()) : null); }
+    rf.update(dt, { player: eye, spots: SPOTS });
+    R.anat.update(dt);
+    if (R.bassOn && bass) { _f.set(Math.sin(R.model.rotation.y), 0, Math.cos(R.model.rotation.y)); bass.position.copy(R.model.position).addScaledVector(_f, 0.3); bass.position.y = 0.5; bass.rotation.set(0, R.model.rotation.y + Math.PI / 2, 1.15); }
+  }
   placeBubble();
   r.render(scene, cam);
 });
