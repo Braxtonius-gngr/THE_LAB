@@ -205,6 +205,9 @@ function outfitFor(h = new Date().getHours()) {
   if (h >= 11 && h < 18) return 'Lounging';
   return 'Tee + jeans';
 }
+// comfort: how wrong what he has on is for the room (a warm Texas apartment, ~25 C): bundled up is
+// uncomfortable, and so is nothing at all when someone he barely knows is standing there
+const WARM = { Nude: -2, Underwear: -1, 'Sleep shorts': -1, Lounging: 0, 'Socks + sweats': 0, Sleepwear: 0.5, 'Tee + jeans': 0.5, 'Behind the bar': 1, 'Flannel over tee': 1.5, 'Hoodie + jeans': 2, 'Denim jacket': 2 };
 let outfit = null, worn = [], dressing = 0, lastNeeds = null;
 async function dress(name) {
   if (!(name in OUTFITS)) return; const tok = ++dressing;
@@ -215,9 +218,6 @@ async function dress(name) {
 }
 await dress(outfitFor());
 reflex.onChange = name => dress(name);
-// comfort: how wrong what he has on is for the room (a warm Texas apartment, ~25 C): bundled up is
-// uncomfortable, and so is nothing at all when someone he barely knows is standing there
-const WARM = { Nude: -2, Underwear: -1, 'Sleep shorts': -1, Lounging: 0, 'Socks + sweats': 0, Sleepwear: 0.5, 'Tee + jeans': 0.5, 'Behind the bar': 1, 'Flannel over tee': 1.5, 'Hoodie + jeans': 2, 'Denim jacket': 2 };
 const comfortNow = () => Math.max(0, Math.min(1, Math.abs(WARM[outfit] ?? 0) / 3));
 function sceneState() { return { time: timeOfDay(), hour: new Date().getHours(), comfort: +comfortNow().toFixed(2), player_distance_m: +player.pos.distanceTo(marco.position).toFixed(2), spots: Object.keys(SPOTS), wearing: outfit, wardrobe: Object.keys(OUTFITS) }; }
 // warmth (the hang's state): warm clothes or a hot room relax it, little on in a cooled room draws it up a touch
