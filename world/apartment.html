@@ -22,6 +22,8 @@
   form{display:flex;gap:6px;pointer-events:auto}
   input{flex:1;background:var(--panel);border:1px solid #3d3a35;color:var(--ink);padding:11px 14px;border-radius:999px;font:inherit;outline:none;backdrop-filter:blur(6px)}
   button.send{background:var(--gold);border:0;color:#1b1a18;padding:0 16px;border-radius:999px;font:inherit;font-weight:600}
+  button.send.on{background:#d9534f;color:#fff}
+  #mic{padding:0 12px}
   #pad{position:fixed;left:16px;bottom:calc(max(10px,env(safe-area-inset-bottom)) + 120px);width:110px;height:110px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);display:none}
   #knob{position:absolute;left:35px;top:35px;width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.25)}
   @media (pointer:coarse){#pad{display:block}}
@@ -33,6 +35,7 @@
   <a class="chip" href="../">← Lab</a>
   <button class="chip" id="leave">Leave</button>
   <button class="chip" id="memtoggle">Memories</button>
+  <button class="chip on" id="voicetoggle" title="Hear them speak (tap to mute)">🔊</button>
   <span id="status">loading…</span>
 </div>
 <div id="hint">Drag to look · WASD or the pad to move · type to talk</div>
@@ -41,7 +44,7 @@
 <div id="pad"><div id="knob"></div></div>
 <div id="chat">
   <div id="log"></div>
-  <form id="form" autocomplete="off"><input id="say" placeholder="Say something to Marco…" maxlength="400"><button class="send">Send</button></form>
+  <form id="form" autocomplete="off"><button type="button" class="send" id="mic" title="Talk (tap, speak, it sends when you stop)">🎤</button><input id="say" placeholder="Say something to Marco…" maxlength="400"><button class="send">Send</button></form>
 </div>
 <script type="module">
 import * as THREE from '../assets/vendor/three/three.module.js';
@@ -50,6 +53,7 @@ import { attachAnatomy } from './attach-anatomy.mjs';
 import { captureRest } from './retarget.mjs';
 import { Reflexes, POSES, setPoses } from './reflexes.mjs';
 import { Nav } from './nav.mjs';
+import { voice, ears } from './voice.mjs';
 import { Mind, CHARACTERS, timeOfDay } from './mind.mjs';
 import { loadProps } from './props.mjs';
 import { wear } from './garments.mjs';
@@ -267,7 +271,7 @@ async function talk(opts, R = M) {
     if (!d) return null;
     R.reflex.clear(); if (R.reflex.posture === 'stand') R.reflex.lookAt(new THREE.Vector3(player.pos.x, EYE - 0.05, player.pos.z));
     for (const a of d.actions || []) R.reflex.do(a);
-    if (d.say) { say('him', `${R.name}: ${d.say}`); showBubble(R, d.say); for (const o of RES) if (o !== R) o.mind.hear(R.name, d.say); }
+    if (d.say) { say('him', `${R.name}: ${d.say}`); showBubble(R, d.say); bubbleUntil += 1e6; voice.speak(R.key, d.say, { onEnd: () => { bubbleUntil = performance.now() + 1200; } }); for (const o of RES) if (o !== R) o.mind.hear(R.name, d.say); }
     showMemories(R, d); status.textContent = `visit · ${R.mind.history.length} turns`;
     return d;
   } catch (e) { say('sys', `${R.name} is out of reach: ${e.message}`); status.textContent = 'offline'; return null; }
@@ -291,7 +295,18 @@ document.getElementById('form').addEventListener('submit', async e => {
 });
 document.getElementById('leave').onclick = async () => { if (RES.some(R => R.mind.busy)) return; say('sys', 'you leave'); for (const R of RES) { await talk({ event: 'leave' }, R); R.mind.sessionId = null; R.mind.history = []; } document.getElementById('leave').textContent = 'Left · reload to come back'; document.getElementById('form').style.display = 'none'; };
 document.getElementById('memtoggle').onclick = e => { memEl.style.display = memEl.style.display === 'block' ? 'none' : 'block'; e.target.classList.toggle('on'); };
-window.__world = { nav, marco, reflex, mind, player, talk, SPOTS, SEATS, props, RES };
+// voice: on by default (remembered per device); the mic fills the box and sends when you stop talking
+try { voice.on = localStorage.getItem('lab.voice') !== 'off'; } catch (_) { /* default on */ }
+const vt = document.getElementById('voicetoggle'); vt.classList.toggle('on', voice.on); vt.textContent = voice.on ? '🔊' : '🔇';
+vt.onclick = () => { voice.on = !voice.on; vt.classList.toggle('on', voice.on); vt.textContent = voice.on ? '🔊' : '🔇'; if (!voice.on) voice.stop(); try { localStorage.setItem('lab.voice', voice.on ? 'on' : 'off'); } catch (_) { /* fine */ } };
+const mic = document.getElementById('mic'), sayBox = document.getElementById('say');
+if (!ears.available) mic.style.display = 'none';
+mic.onclick = () => {
+  if (ears.listening) { ears.stop(); return; }
+  ears.listen({ onPartial: t => { sayBox.value = t; }, onText: t => { sayBox.value = t; document.getElementById('form').requestSubmit(); },
+    onState: (on, err) => { mic.classList.toggle('on', on); mic.textContent = on ? '● ' : '🎤'; if (err && err !== 'no-speech' && err !== 'aborted') say('sys', `mic: ${err}${err === 'not-allowed' ? ' - allow the microphone for this site' : ''}`); } });
+};
+window.__world = { voice, nav, marco, reflex, mind, player, talk, SPOTS, SEATS, props, RES };
 const _f = new THREE.Vector3(), _s = new THREE.Vector3();
 // the bass in his lap: forward/side/up from his hips' spot, turned with him, tilted by roll
 function placeBass(o, m, P) { const y = m.rotation.y; _f.set(Math.sin(y), 0, Math.cos(y)); _s.set(Math.cos(y), 0, -Math.sin(y)); o.position.copy(m.position).addScaledVector(_f, P.fwd).addScaledVector(_s, P.side); o.position.y = P.y; o.rotation.set(0, y + P.yaw, P.roll, 'YXZ'); }
