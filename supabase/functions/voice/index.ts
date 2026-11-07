@@ -1,6 +1,7 @@
 // THE_LAB · voice: real voices and real ears, through ElevenLabs.
 //
 // POST JSON { action: 'speak', character_id, text }       -> audio/mpeg (his voice saying it)
+// POST JSON { action: 'models' }                           -> the TTS models on the account
 // POST JSON { action: 'voices' }                           -> the account's voices, for choosing
 // POST JSON { action: 'set_voice', character_id, voice_id } -> pin a voice to a character
 // POST form-data { action: 'hear', audio }                 -> { text } (what you said, from the mic)
@@ -16,7 +17,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const XI = "https://api.elevenlabs.io/v1";
-const TTS_MODEL = Deno.env.get("XI_TTS_MODEL") || "eleven_multilingual_v2";
+const TTS_MODEL = Deno.env.get("XI_TTS_MODEL") || "eleven_v4_turbo";
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 const key = () => { const k = Deno.env.get("ELEVENLABS_API_KEY"); if (!k) throw new Error("ELEVENLABS_API_KEY is not set"); return k; };
@@ -68,6 +69,7 @@ Deno.serve(async (req) => {
       return json({ text: await transcribe(audio, action === "lyrics") });
     }
     const b = await req.json();
+    if (b.action === "models") { const r = await fetch(`${XI}/models`, { headers: { "xi-api-key": key() } }); const d = await r.json(); return json({ status: r.status, models: Array.isArray(d) ? d.map((m: { model_id: string; name: string }) => ({ id: m.model_id, name: m.name })) : d }); }
     if (b.action === "voices") return json({ voices: (await voices()).map((v) => ({ id: v.voice_id, name: v.name, labels: v.labels, description: v.description })) });
     if (!b.character_id) return json({ error: "character_id required" }, 400);
     const { data: c } = await db.from("characters").select("id,name,voice_id").eq("id", b.character_id).single();
@@ -77,7 +79,7 @@ Deno.serve(async (req) => {
     const text = String(b.text || "").slice(0, 600).trim(); if (!text) return json({ error: "nothing to say" }, 400);
     const vid = await voiceFor(c), fit = FIT[c.name] || FIT.Marco;
     const r = await fetch(`${XI}/text-to-speech/${vid}?output_format=mp3_44100_128`, { method: "POST", headers: { "xi-api-key": key(), "content-type": "application/json", accept: "audio/mpeg" },
-      body: JSON.stringify({ text, model_id: TTS_MODEL, voice_settings: fit.settings }) });
+      body: JSON.stringify({ text, model_id: b.model || TTS_MODEL, voice_settings: fit.settings }) });
     if (!r.ok) return json({ error: `speak ${r.status}: ${(await r.text()).slice(0, 200)}` }, r.status === 401 || r.status === 429 ? 402 : 502);
     return new Response(r.body, { headers: { ...CORS, "Content-Type": "audio/mpeg", "Cache-Control": "no-store" } });
   } catch (e) {
