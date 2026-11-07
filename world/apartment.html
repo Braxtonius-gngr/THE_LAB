@@ -49,6 +49,7 @@ import { GLTFLoader } from '../assets/vendor/three/three.addons.js';
 import { attachAnatomy } from './attach-anatomy.mjs';
 import { captureRest } from './retarget.mjs';
 import { Reflexes, POSES, setPoses } from './reflexes.mjs';
+import { Nav } from './nav.mjs';
 import { Mind, CHARACTERS, timeOfDay } from './mind.mjs';
 import { loadProps } from './props.mjs';
 import { wear } from './garments.mjs';
@@ -184,6 +185,8 @@ props.filter(o => o.name === 'floorlamp').forEach(o => o.traverse(m => { if (m.i
 // held poses: the repo's tuned set, then any you've saved on this device from lab/pose.html
 try { setPoses(await (await fetch('poses.json')).json()); } catch (_) { /* defaults */ }
 try { const mine = localStorage.getItem('lab.poses'); if (mine) setPoses(JSON.parse(mine)); } catch (_) { /* none */ }
+// the floor map: every resident walks around the furniture
+const nav = new Nav(W, D, props);
 const PACKS = [{ rest: captureRest(pack.scene, { allNodes: true }), clips: pack.animations }, { rest: captureRest(pack2.scene, { allNodes: true }), clips: pack2.animations }];
 // where the hips go: the sofa seat, the bed (lying head to the pillows), his back to the kitchen counter
 const SEATS = { sofa: { pos: new THREE.Vector3(-0.8, 0, 1.74), yaw: Math.PI, y: 0.02 }, sofa2: { pos: new THREE.Vector3(-0.2, 0, 1.74), yaw: Math.PI, y: 0.02 },
@@ -200,6 +203,7 @@ async function resident({ key, name, model, bodySpec, seed, outfitFor, place }) 
   // (rest capture and the anatomy attach read the model at the origin; place him after)
   const reflex = new Reflexes(model, PACKS, { seats: key === 'marco' ? SEATS : { ...SEATS, sofa: SEATS.sofa2 } });
   const anat = attachAnatomy(model, bodySpec.anatomy, {}, { seed });
+  reflex.nav = nav;
   const R = { key, name, model, reflex, anat, mind: new Mind(CHARACTERS[key]), place, outfit: null, worn: [], dressing: 0, needs: null, head: reflex.bone('Head') };
   R.OUTFITS = { Nude: [] };
   for (const o of wardrobe.outfits) if (o.items.every(id => (wardrobe.garments.find(g => g.id === id)?.bodies || []).includes(bodySpec.id))) R.OUTFITS[o.name] = o.items;
@@ -287,7 +291,7 @@ document.getElementById('form').addEventListener('submit', async e => {
 });
 document.getElementById('leave').onclick = async () => { if (RES.some(R => R.mind.busy)) return; say('sys', 'you leave'); for (const R of RES) { await talk({ event: 'leave' }, R); R.mind.sessionId = null; R.mind.history = []; } document.getElementById('leave').textContent = 'Left · reload to come back'; document.getElementById('form').style.display = 'none'; };
 document.getElementById('memtoggle').onclick = e => { memEl.style.display = memEl.style.display === 'block' ? 'none' : 'block'; e.target.classList.toggle('on'); };
-window.__world = { marco, reflex, mind, player, talk, SPOTS, SEATS, props, RES };
+window.__world = { nav, marco, reflex, mind, player, talk, SPOTS, SEATS, props, RES };
 const _f = new THREE.Vector3(), _s = new THREE.Vector3();
 // the bass in his lap: forward/side/up from his hips' spot, turned with him, tilted by roll
 function placeBass(o, m, P) { const y = m.rotation.y; _f.set(Math.sin(y), 0, Math.cos(y)); _s.set(Math.cos(y), 0, -Math.sin(y)); o.position.copy(m.position).addScaledVector(_f, P.fwd).addScaledVector(_s, P.side); o.position.y = P.y; o.rotation.set(0, y + P.yaw, P.roll, 'YXZ'); }

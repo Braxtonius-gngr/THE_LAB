@@ -45,7 +45,11 @@ export class Reflexes {
   do(action) { this.queue.push(action); }
   clear() { this.queue.length = 0; this.current = null; }   // (a new thought drops whatever was half done)
   lookAt(target) { this.gazeTarget = target; }            // Vector3 or null
-  walkTo(pos, onArrive) { this.moveTarget = pos.clone(); this.onArrive = onArrive || null; }
+  // walk there - around the furniture when the page has given us a floor map (world/nav.mjs)
+  walkTo(pos, onArrive) {
+    this.waypoints = this.nav ? this.nav.path(this.model.position, pos) : [pos.clone()];
+    this.moveTarget = this.waypoints.shift(); this.onArrive = onArrive || null;
+  }
   turnTo(pos) { this.turnTarget = pos.clone(); }
   gesture(name, dur = 1.2) { this.gestureName = name; this.gestureT = 0; this.gestureDur = dur; }
   get busy() { return !!this.moveTarget || this.queue.length > 0 || !!this.current || !!this.glide; }
@@ -137,7 +141,8 @@ export class Reflexes {
     // --- locomotion: move the body, face the way it goes, keep the clip playing ---
     else if (this.moveTarget) {
       _v.subVectors(this.moveTarget, m.position); _v.y = 0; const d = _v.length();
-      if (d < 0.08) { this.moveTarget = null; this._stopWalk(); if (this.onArrive) { const f = this.onArrive; this.onArrive = null; f(); } }
+      if (d < 0.18 && this.waypoints?.length) { this.moveTarget = this.waypoints.shift(); }   // a corner: on to the next, no stop
+      else if (d < 0.08) { this.moveTarget = null; this._stopWalk(); if (this.onArrive) { const f = this.onArrive; this.onArrive = null; f(); } }
       else {
         const yaw = Math.atan2(_v.x, _v.z);
         m.rotation.y = lerpAngle(m.rotation.y, yaw, Math.min(1, dt * 6));
