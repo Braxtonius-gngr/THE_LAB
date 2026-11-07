@@ -40,7 +40,7 @@
 </div>
 <div id="hint">Drag to look · WASD or the pad to move · type to talk</div>
 <div id="bubble"></div>
-<div id="mem"></div>
+<div id="mem"><div id="memlive"></div><div id="away"></div></div>
 <div id="pad"><div id="knob"></div></div>
 <div id="chat">
   <div id="log"></div>
@@ -173,7 +173,7 @@ function movePlayer(dt) {
 addEventListener('resize', () => { r.setSize(innerWidth, innerHeight); cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); });
 
 // ---------- Marco ----------
-const status = document.getElementById('status'), log = document.getElementById('log'), bubble = document.getElementById('bubble'), memEl = document.getElementById('mem');
+const status = document.getElementById('status'), log = document.getElementById('log'), bubble = document.getElementById('bubble'), memEl = document.getElementById('mem'), memLive = document.getElementById('memlive');
 const say = (cls, text) => { const d = document.createElement('div'); d.className = 'msg ' + cls; d.textContent = text; log.appendChild(d); log.scrollTop = log.scrollHeight; };
 const loader = new GLTFLoader();
 const bodies = await (await fetch('../assets/bodies/bodies.json')).json();
@@ -261,7 +261,7 @@ function showMemories(R, d) {
   R.needs = d.needs || R.needs; R.anat.setWarmth?.(R.warmth());
   const bar = (k, v, inv) => { const x = inv ? 1 - v : v; return `<span style="display:inline-block;width:70px">${k}</span><span style="display:inline-block;width:90px;height:7px;background:#333;border-radius:4px;vertical-align:middle"><span style="display:block;height:7px;width:${Math.round(x * 90)}px;border-radius:4px;background:${x > 0.66 ? '#d9534f' : x > 0.4 ? '#d8b25a' : '#6c6'}"></span></span>`; };
   const needsHtml = d.needs ? `<b>${R.name}'s needs</b> <i>(bar = how pressing)</i><br>` + bar('tired', d.needs.energy, true) + '<br>' + bar('hunger', d.needs.hunger) + '<br>' + bar('company', d.needs.social) + '<br>' + bar('closeness', d.needs.intimacy) + '<br>' + bar('discomfort', d.needs.comfort) + '<br>' : '';
-  memEl.innerHTML = needsHtml + `<b>model</b> ${d.model || ''}${d.salvaged ? ' <i>(reply was cut short; line salvaged)</i>' : ''}<br><b>mood</b> ${JSON.stringify(d.mood)}<br><b>remembered now</b> ${d.memory && d.memory.content ? `(${d.memory.importance}) ${d.memory.content}` : '–'}<br><b>recalled</b><br>` + (d.recalled || []).map(m => `· ${m.content} <i>(${m.when})</i>`).join('<br>');
+  memLive.innerHTML = needsHtml + `<b>model</b> ${d.model || ''}${d.salvaged ? ' <i>(reply was cut short; line salvaged)</i>' : ''}<br><b>mood</b> ${JSON.stringify(d.mood)}<br><b>remembered now</b> ${d.memory && d.memory.content ? `(${d.memory.importance}) ${d.memory.content}` : '–'}<br><b>recalled</b><br>` + (d.recalled || []).map(m => `· ${m.content} <i>(${m.when})</i>`).join('<br>');
 }
 // one mind's turn; what it says, everyone else in the room hears
 async function talk(opts, R = M) {
@@ -306,6 +306,20 @@ mic.onclick = () => {
   ears.listen({ onPartial: t => { sayBox.value = t; }, onText: t => { sayBox.value = t; document.getElementById('form').requestSubmit(); },
     onState: (on, err) => { mic.classList.toggle('on', on); mic.textContent = on ? '● ' : '🎤'; if (err && err !== 'no-speech' && err !== 'aborted') say('sys', `mic: ${err}${err === 'not-allowed' ? ' - allow the microphone for this site' : ''}`); } });
 };
+// while you were away: their last few off-screen stretches (supabase/functions/life)
+(async () => {
+  try {
+    const { ticks } = await (await fetch('https://qyphdwcjzhgobsfpeonh.supabase.co/functions/v1/life')).json();
+    if (!ticks?.length) return;
+    const esc = t => String(t).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+    const when = iso => new Date(iso).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+    document.getElementById('away').innerHTML = '<hr style="border-color:#444"><b>While you were away</b><br>' + ticks.map(t => {
+      const S = t.story || {}, P = Object.entries(S.people || {}).map(([n, p]) => `<i>${esc(n)}</i>: ${(p.happened || []).map(h => esc(h.content)).join(' · ')}${p.now ? ` <span style="color:#a49c8c">(now: ${esc(p.now)})</span>` : ''}`).join('<br>');
+      const T = S.together?.exchange?.length ? `<br><span style="color:#d8b25a">${S.together.how === 'texts' ? '💬' : '🗣'} ${esc(S.together.where || '')}${S.together.when ? ', ' + esc(S.together.when) : ''}</span><br>` + S.together.exchange.map(l => `${esc(l.who)}: “${esc(l.text)}”`).join('<br>') : '';
+      return `<div style="margin:6px 0"><span style="color:#a49c8c">${when(t.at)} · ${(+t.hours).toFixed(1)} h</span><br>${P}${T}</div>`;
+    }).join('');
+  } catch (_) { /* nothing yet */ }
+})();
 window.__world = { voice, nav, marco, reflex, mind, player, talk, SPOTS, SEATS, props, RES };
 const _f = new THREE.Vector3(), _s = new THREE.Vector3();
 // the bass in his lap: forward/side/up from his hips' spot, turned with him, tilted by roll
