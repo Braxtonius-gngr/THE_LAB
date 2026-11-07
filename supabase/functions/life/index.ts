@@ -1,19 +1,20 @@
 // THE_LAB · life: what the characters do while no one is watching.
 //
-// Called on a schedule (pg_cron, every 4 hours; see db/migrations/0006_life.sql). One model
+// Called on a schedule (pg_cron, every 2 hours; 0006/0008 migrations). One model
 // call lives the hours since the last tick for everyone at once: each man's own stretch of
 // day (sleep, the shift, food, errands, moods), and - when it fits their lives - time
 // between them: texts, a smoke break on the line, coming over after close. What happened is
 // written as their memories (recalled later like any other), their needs and moods move,
 // and their takes on each other shift. The tick is logged in life_ticks.
 //
+// { reflect: true } (nightly, 4:30 am): each one looks back on his day instead.
 // Auth: the scheduler sends x-life-key, checked against private.life_key (never leaves the DB).
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const embedder = new Supabase.ai.Session("gte-small");
-const MODEL = Deno.env.get("MIND_MODEL") || "claude-sonnet-5-5";
+const MODEL = Deno.env.get("MIND_MODEL") || "claude-opus-5-5";
 const PLAYER = "00000000-0000-4000-8000-000000000001";
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, apikey, content-type", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };
@@ -21,18 +22,53 @@ const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { sta
 const embed = async (t: string) => JSON.stringify(await embedder.run(t, { mean_pool: true, normalize: true }));
 const local = (d: Date) => d.toLocaleString("en-US", { timeZone: "America/Chicago", weekday: "long", hour: "numeric", minute: "2-digit" });
 
+const logUse = (fn: string, d: { usage?: { input_tokens?: number; output_tokens?: number } }) =>
+  db.from("api_usage").insert({ fn, model: MODEL, input_tokens: d.usage?.input_tokens || 0, output_tokens: d.usage?.output_tokens || 0 }).then(() => {});
+
+// once a night: each one looks back over his last day - what mattered, what he makes of the
+// people in it (the visitor too) - and keeps that as reflections, which recall weighs highly.
+// This is how a person's memory works: the day's details fade, what they meant stays.
+async function reflect() {
+  const { data: chars } = await db.from("characters").select("id,name,persona").not("persona", "is", null);
+  const k = Deno.env.get("ANTHROPIC_API_KEY"); if (!k) throw new Error("ANTHROPIC_API_KEY is not set");
+  const since = new Date(Date.now() - 26 * 3.6e6).toISOString(), out: Record<string, unknown> = {};
+  for (const c of chars || []) {
+    const { data: mem } = await db.from("memories").select("content,created_at,kind,importance").eq("owner_id", c.id).gte("created_at", since).order("created_at");
+    if (!mem || mem.length < 3) continue;
+    const { data: rels } = await db.from("relationships").select("target_id,summary").eq("owner_id", c.id);
+    const names = Object.fromEntries((chars || []).map((x) => [x.id, x.name])); names[PLAYER] = "Brax (the visitor)";
+    const system = `${c.persona}\n\nIt's late; the day is done. Look back over it as yourself, privately, the way a person does before sleep. Respond ONLY with JSON:\n{"reflections": [{"content": "first person: what something meant to you, what you've realised about someone (the visitor included, if he came), what you want or worry about now - not a recap", "importance": 4-9}], "takes": {"<name>": "your one-line take on them now, if it changed"}}\n1-3 reflections. Only what genuinely stayed with you.`;
+    const user = `Your day (oldest first):\n${mem.map((m) => `- ${local(new Date(m.created_at))}: ${m.content}`).join("\n")}\n\nHow you saw people this morning: ${(rels || []).map((r) => `${names[r.target_id] || "someone"}: ${r.summary || "-"}`).join("; ")}`;
+    const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": k, "anthropic-version": "2023-06-01", "content-type": "application/json" }, body: JSON.stringify({ model: MODEL, max_tokens: 1200, system, messages: [{ role: "user", content: user }] }) });
+    if (!r.ok) { out[c.name] = `error ${r.status}`; continue; }
+    const rd = await r.json(); logUse("reflect", rd);
+    const o = JSON.parse(((rd.content || []).map((x: { text?: string }) => x.text || "").join("")).match(/\{[\s\S]*\}/)![0]);
+    for (const f of (o.reflections || []).slice(0, 3)) if (f?.content) await db.from("memories").insert({ owner_id: c.id, kind: "reflection", content: String(f.content), importance: clamp(Math.round(f.importance) || 6, 1, 10), embedding: await embed(String(f.content)), about_ids: [] });
+    for (const [n, t] of Object.entries(o.takes || {})) { const id = Object.keys(names).find((i) => names[i].toLowerCase().startsWith(n.toLowerCase())); if (id && t) await db.from("relationships").update({ summary: String(t).slice(0, 200) }).eq("owner_id", c.id).eq("target_id", id); }
+    out[c.name] = o;
+  }
+  return { ok: true, reflected: out };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   try {
     // GET: the latest off-screen stretches, for the apartment's "While you were away" panel
     if (req.method === "GET") {
-      const { data } = await db.from("life_ticks").select("at,hours,story").order("at", { ascending: false }).limit(6);
-      return json({ ticks: data || [] });
+      const month = new Date(); month.setUTCDate(1); month.setUTCHours(0, 0, 0, 0);
+      const [{ data }, { data: use }] = await Promise.all([
+        db.from("life_ticks").select("at,hours,story").order("at", { ascending: false }).limit(6),
+        db.from("api_usage").select("model,input_tokens,output_tokens").gte("at", month.toISOString()),
+      ]);
+      // this month's Claude spend, estimated from tokens (Opus 5.5 $4 / $20 per million in / out; Sonnet $3 / $15)
+      let usd = 0; for (const u of use || []) { const [i, o] = /opus/.test(u.model) ? [4, 20] : [3, 15]; usd += (u.input_tokens * i + u.output_tokens * o) / 1e6; }
+      return json({ ticks: data || [], usage: { month_usd: +usd.toFixed(2), calls: (use || []).length } });
     }
     const key = req.headers.get("x-life-key");
     const { data: ok } = await db.rpc("life_key_ok", { k: key || "" });
     if (!ok) return json({ error: "no" }, 401);
     const body = await req.json().catch(() => ({}));
+    if (body.reflect) return json(await reflect());
 
     const { data: chars } = await db.from("characters").select("id,name,persona,home_location").not("persona", "is", null);
     if (!chars || chars.length === 0) return json({ error: "no characters" }, 404);
@@ -73,7 +109,8 @@ Respond ONLY with JSON:
     const k = Deno.env.get("ANTHROPIC_API_KEY"); if (!k) throw new Error("ANTHROPIC_API_KEY is not set");
     const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": k, "anthropic-version": "2023-06-01", "content-type": "application/json" }, body: JSON.stringify({ model: MODEL, max_tokens: 2500, system, messages: [{ role: "user", content: user }] }) });
     if (!r.ok) throw new Error(`model ${r.status}: ${(await r.text()).slice(0, 300)}`);
-    const text = ((await r.json()).content || []).map((c: { text?: string }) => c.text || "").join("");
+    const rd = await r.json(); logUse("life", rd);
+    const text = (rd.content || []).map((c: { text?: string }) => c.text || "").join("");
     const out = JSON.parse(text.match(/\{[\s\S]*\}/)![0]);
 
     const writes: Promise<unknown>[] = [];

@@ -18,7 +18,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const embedder = new Supabase.ai.Session("gte-small");
-const MODEL = Deno.env.get("MIND_MODEL") || "claude-sonnet-5-5";
+const MODEL = Deno.env.get("MIND_MODEL") || "claude-opus-5-5";
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -41,6 +41,8 @@ async function think(system: string, messages: { role: string; content: string }
   });
   if (!r.ok) throw new Error(`model ${r.status}: ${(await r.text()).slice(0, 300)}`);
   const d = await r.json();
+  // (what it cost, for the usage counter)
+  supabase.from("api_usage").insert({ fn: "mind", model: MODEL, input_tokens: d.usage?.input_tokens || 0, output_tokens: d.usage?.output_tokens || 0 }).then(() => {});
   const text = (d.content || []).map((c: { text?: string }) => c.text || "").join("");
   const m = text.match(/\{[\s\S]*\}/);
   if (!m) return { say: text.trim(), actions: [], mood: null, memory: null, relationship: null };

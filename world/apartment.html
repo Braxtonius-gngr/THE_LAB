@@ -320,7 +320,8 @@ mic.onclick = () => {
 // while you were away: their last few off-screen stretches (supabase/functions/life)
 (async () => {
   try {
-    const { ticks } = await (await fetch('https://qyphdwcjzhgobsfpeonh.supabase.co/functions/v1/life')).json();
+    const { ticks, usage } = await (await fetch('https://qyphdwcjzhgobsfpeonh.supabase.co/functions/v1/life')).json();
+    if (usage) document.getElementById('away').insertAdjacentHTML('beforebegin', `<div style="color:#a49c8c;font-size:12px;margin-top:6px">Claude this month: ~$${usage.month_usd.toFixed(2)} of $95 · ${usage.calls} calls</div>`);
     if (!ticks?.length) return;
     const esc = t => String(t).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
     const when = iso => new Date(iso).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
