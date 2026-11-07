@@ -47,14 +47,14 @@
   <label style="display:block;margin:6px 0"><input type="checkbox" id="songmine"> I made this</label>
   <input id="songartist" placeholder="Artist (if it isn't yours)" style="width:100%;box-sizing:border-box;margin:4px 0;padding:6px;border-radius:6px;border:1px solid #444;background:#1b1a18;color:#eee">
   <input id="songstyle" placeholder="Style, e.g. your Suno prompt (optional)" style="width:100%;box-sizing:border-box;margin:4px 0;padding:6px;border-radius:6px;border:1px solid #444;background:#1b1a18;color:#eee">
-  <textarea id="songlyrics" rows="4" placeholder="Lyrics (optional - so he can follow the words)" style="width:100%;box-sizing:border-box;margin:4px 0;padding:6px;border-radius:6px;border:1px solid #444;background:#1b1a18;color:#eee"></textarea>
+  <textarea id="songlyrics" rows="4" placeholder="Lyrics (optional - if you leave this empty, the words are taken down from the song)" style="width:100%;box-sizing:border-box;margin:4px 0;padding:6px;border-radius:6px;border:1px solid #444;background:#1b1a18;color:#eee"></textarea>
   <div style="display:flex;gap:6px"><button class="chip" id="songplay">▶ Play</button><button class="chip" id="songstop">■ Stop</button><span id="songstate" style="color:#a49c8c;align-self:center;font-size:12px"></span></div>
 </div>
 <div id="mem"><div id="memlive"></div><div id="away"></div></div>
 <div id="pad"><div id="knob"></div></div>
 <div id="chat">
   <div id="log"></div>
-  <form id="form" autocomplete="off"><button type="button" class="send" id="mic" title="Talk (tap, speak, it sends when you stop)">🎤</button><input id="say" placeholder="Say something to Marco…" maxlength="400"><button class="send">Send</button></form>
+  <form id="form" autocomplete="off"><button type="button" class="send" id="mic" title="Talk: tap, speak, tap again to send">🎤</button><input id="say" placeholder="Say something to Marco…" maxlength="400"><button class="send">Send</button></form>
 </div>
 <script type="module">
 import * as THREE from '../assets/vendor/three/three.module.js';
@@ -63,7 +63,7 @@ import { attachAnatomy } from './attach-anatomy.mjs';
 import { captureRest } from './retarget.mjs';
 import { Reflexes, POSES, setPoses } from './reflexes.mjs';
 import { Nav } from './nav.mjs';
-import { voice, ears } from './voice.mjs';
+import { voice, ears, transcribe } from './voice.mjs';
 import { Listener } from './listen.mjs';
 import { Mind, CHARACTERS, timeOfDay } from './mind.mjs';
 import { loadProps } from './props.mjs';
@@ -351,6 +351,8 @@ document.getElementById('songplay').onclick = async () => {
       onMoment: () => RES.forEach(R => { if (R.reflex.posture !== 'lie') { R.reflex.lookAt(deckAt()); R.lookHold = performance.now() + 2500; } }),
       onEnd: async sum => { RES.forEach(R => R.reflex.groove(0)); songState.textContent = ''; say('sys', `♪ ${sum?.title || 'the song'} ended`); if (sum) { const R = addressee(); await talk({ event: 'song', song: { ...sum, ...songMeta } }, R); const O = RES.find(o => o !== R); if (O) await talk({ event: 'overheard' }, O); } },
     });
+    // no lyrics given: have the words taken down from the song itself while it plays
+    if (!songMeta.lyrics && f.size < 25e6) transcribe(f, 'lyrics').then(t => { if (t && t.split(' ').length > 8) songMeta.lyrics = t + '\n(taken down by ear - some words may be off)'; }).catch(() => {});
     musicEl.style.display = 'none'; document.getElementById('musictoggle').classList.remove('on');
     songState.textContent = `playing · ${Math.round(duration)} s`; say('sys', `♪ you put on ${listener.title}`);
     // they settle into it: no nodding for the first ~15 s, then a little, more if it keeps grooving
