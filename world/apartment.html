@@ -35,11 +35,21 @@
   <a class="chip" href="../">← Lab</a>
   <button class="chip" id="leave">Leave</button>
   <button class="chip" id="memtoggle">Memories</button>
+  <button class="chip" id="musictoggle" title="Play him a song">🎵</button>
   <button class="chip on" id="voicetoggle" title="Hear them speak (tap to mute)">🔊</button>
   <span id="status">loading…</span>
 </div>
 <div id="hint">Drag to look · WASD or the pad to move · type to talk</div>
 <div id="bubble"></div>
+<div id="music" style="display:none;position:fixed;left:10px;right:10px;top:60px;max-width:420px;background:rgba(44,42,39,.96);border-radius:12px;padding:12px;z-index:5">
+  <b>Play him a song</b>
+  <div style="margin:8px 0"><input type="file" id="songfile" accept="audio/*"></div>
+  <label style="display:block;margin:6px 0"><input type="checkbox" id="songmine"> I made this</label>
+  <input id="songartist" placeholder="Artist (if it isn't yours)" style="width:100%;box-sizing:border-box;margin:4px 0;padding:6px;border-radius:6px;border:1px solid #444;background:#1b1a18;color:#eee">
+  <input id="songstyle" placeholder="Style, e.g. your Suno prompt (optional)" style="width:100%;box-sizing:border-box;margin:4px 0;padding:6px;border-radius:6px;border:1px solid #444;background:#1b1a18;color:#eee">
+  <textarea id="songlyrics" rows="4" placeholder="Lyrics (optional - so he can follow the words)" style="width:100%;box-sizing:border-box;margin:4px 0;padding:6px;border-radius:6px;border:1px solid #444;background:#1b1a18;color:#eee"></textarea>
+  <div style="display:flex;gap:6px"><button class="chip" id="songplay">▶ Play</button><button class="chip" id="songstop">■ Stop</button><span id="songstate" style="color:#a49c8c;align-self:center;font-size:12px"></span></div>
+</div>
 <div id="mem"><div id="memlive"></div><div id="away"></div></div>
 <div id="pad"><div id="knob"></div></div>
 <div id="chat">
@@ -54,6 +64,7 @@ import { captureRest } from './retarget.mjs';
 import { Reflexes, POSES, setPoses } from './reflexes.mjs';
 import { Nav } from './nav.mjs';
 import { voice, ears } from './voice.mjs';
+import { Listener } from './listen.mjs';
 import { Mind, CHARACTERS, timeOfDay } from './mind.mjs';
 import { loadProps } from './props.mjs';
 import { wear } from './garments.mjs';
@@ -267,7 +278,7 @@ function showMemories(R, d) {
 async function talk(opts, R = M) {
   status.textContent = `${R.name} is thinking…`;
   try {
-    const d = await R.mind.send({ ...opts, scene: sceneState(R) });
+    const { song, ...rest } = opts; const d = await R.mind.send({ ...rest, scene: { ...sceneState(R), ...(song ? { song } : {}) } });
     if (!d) return null;
     R.reflex.clear(); if (R.reflex.posture === 'stand') R.reflex.lookAt(new THREE.Vector3(player.pos.x, EYE - 0.05, player.pos.z));
     for (const a of d.actions || []) R.reflex.do(a);
@@ -320,7 +331,34 @@ mic.onclick = () => {
     }).join('');
   } catch (_) { /* nothing yet */ }
 })();
-window.__world = { voice, nav, marco, reflex, mind, player, talk, SPOTS, SEATS, props, RES };
+// music: you play a file on the turntable; they listen (a nod in time, a look at the big moments)
+// and when it's over the one you're with tells you what he thought
+const deck = props.find(o => o.name === 'turntable') || props.find(o => o.name === 'bassamp');
+const deckAt = () => deck ? deck.position.clone().setY(0.6) : new THREE.Vector3(-2.8, 0.6, 1.1);
+const listener = new Listener({ at: deckAt, ear: () => player.pos });
+const musicEl = document.getElementById('music'), songState = document.getElementById('songstate');
+document.getElementById('musictoggle').onclick = e => { const on = musicEl.style.display !== 'block'; musicEl.style.display = on ? 'block' : 'none'; e.target.classList.toggle('on', on); };
+let songMeta = null;
+document.getElementById('songplay').onclick = async () => {
+  const f = document.getElementById('songfile').files[0]; if (!f) { songState.textContent = 'pick a file first'; return; }
+  voice.stop(); songState.textContent = 'loading…';
+  songMeta = { made_by_visitor: document.getElementById('songmine').checked, artist: document.getElementById('songartist').value.trim() || null,
+    style: document.getElementById('songstyle').value.trim() || null, lyrics: document.getElementById('songlyrics').value.trim() || null };
+  try {
+    const { duration } = await listener.play(f, {
+      onBeat: () => RES.forEach(R => R.reflex.beat()),
+      // a big moment: they look over at the speaker for a couple of seconds
+      onMoment: () => RES.forEach(R => { if (R.reflex.posture !== 'lie') { R.reflex.lookAt(deckAt()); R.lookHold = performance.now() + 2500; } }),
+      onEnd: async sum => { RES.forEach(R => R.reflex.groove(0)); songState.textContent = ''; say('sys', `♪ ${sum?.title || 'the song'} ended`); if (sum) { const R = addressee(); await talk({ event: 'song', song: { ...sum, ...songMeta } }, R); const O = RES.find(o => o !== R); if (O) await talk({ event: 'overheard' }, O); } },
+    });
+    musicEl.style.display = 'none'; document.getElementById('musictoggle').classList.remove('on');
+    songState.textContent = `playing · ${Math.round(duration)} s`; say('sys', `♪ you put on ${listener.title}`);
+    // they settle into it: no nodding for the first ~15 s, then a little, more if it keeps grooving
+    RES.forEach(R => R.reflex.groove(0)); setTimeout(() => { if (listener.playing) RES.forEach(R => R.reflex.groove(0.6)); }, 15000);
+  } catch (e) { songState.textContent = 'could not play that file'; }
+};
+document.getElementById('songstop').onclick = () => listener.cut();
+window.__world = { listener, voice, nav, marco, reflex, mind, player, talk, SPOTS, SEATS, props, RES };
 const _f = new THREE.Vector3(), _s = new THREE.Vector3();
 // the bass in his lap: forward/side/up from his hips' spot, turned with him, tilted by roll
 function placeBass(o, m, P) { const y = m.rotation.y; _f.set(Math.sin(y), 0, Math.cos(y)); _s.set(Math.cos(y), 0, -Math.sin(y)); o.position.copy(m.position).addScaledVector(_f, P.fwd).addScaledVector(_s, P.side); o.position.y = P.y; o.rotation.set(0, y + P.yaw, P.roll, 'YXZ'); }
@@ -332,8 +370,10 @@ r.setAnimationLoop(now => {
   movePlayer(dt); placeCam();
   const eye = new THREE.Vector3(player.pos.x, EYE - 0.05, player.pos.z);
   // he keeps an eye on you when you're close, otherwise on what he's doing
+  listener.update();
   for (const R of RES) {
     const rf = R.reflex;
+    if (R.lookHold && performance.now() < R.lookHold) { rf.update(dt, { player: eye, spots: SPOTS }); R.anat.update(dt); continue; }
     if (!rf.busy && rf.posture !== 'lie') { const other = RES.find(o => o !== R); rf.lookAt(player.pos.distanceTo(R.model.position) < 3.2 ? eye : other ? other.head.getWorldPosition(new THREE.Vector3()) : null); }
     rf.update(dt, { player: eye, spots: SPOTS });
     R.anat.update(dt);

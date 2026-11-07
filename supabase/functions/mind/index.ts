@@ -77,6 +77,17 @@ const word = (k: string, v: number) => {
   if (k === "intimacy") return v > 0.7 ? "missing closeness - affection, touch, someone who knows him" : v > 0.45 ? "would like some closeness" : "fine on closeness";
   return v > 0.6 ? "uncomfortable (too warm/cold or dressed wrong for it)" : v > 0.3 ? "a little uncomfortable" : "comfortable";
 };
+// a song the visitor played him: what the page heard, in words, plus anything they gave him
+function songCue(S: Record<string, unknown>, who: string) {
+  const L = (k: string) => Array.isArray(S[k]) ? (S[k] as string[]).join("; ") : "";
+  return `${who} just played you a song on the speaker in the room${S.stopped_early ? ` (they stopped it at ${S.stopped_early})` : ""}, and you listened to it${S.stopped_early ? "" : " all the way through"}. ${S.made_by_visitor ? `${who} made it - it's their own song.` : S.artist ? `It's by ${S.artist}.` : "You don't know who made it."}
+Title: ${S.title || "untitled"}. Length ${S.length}${S.tempo_bpm ? `, about ${S.tempo_bpm} bpm` : ""}, ${S.overall}.
+How it moved: ${L("how_it_moves")}.
+${L("moments") ? `What stood out: ${L("moments")}.` : ""}
+${S.style ? `What it's meant to be (their words): ${S.style}` : ""}
+${S.lyrics ? `The lyrics:\n${String(S.lyrics).slice(0, 2500)}` : "You couldn't make out the words."}
+This is what you actually heard. React as yourself - your own ear and taste (if you play music, you hear it as a player: the low end, the groove, what works and what doesn't), honest the way a friend is: specific, not gushing, not a review. If they made it, that matters to how you say it, not to whether you mean it. Remember it.`;
+}
 const ago = (iso: string) => {
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
   if (s < 90) return "just now";
@@ -113,7 +124,7 @@ Deno.serve(async (req) => {
     const knowsName = !!rel?.knows_name || history.some((h: { who: string; text: string }) => h.who === "player" && told(h.text)) || told(text);
     const who = knowsName ? player.name : "the visitor";
     // what is on the character's mind right now: the cue is what was said, or the event
-    const cue = text || (event === "arrive" ? `${who} has just arrived` : event === "leave" ? `${who} is leaving` : event === "overheard" ? "you just heard what was said in the room (see the conversation); add something only if a person would - otherwise say nothing (empty say)" : "nothing in particular");
+    const cue = text || (event === "arrive" ? `${who} has just arrived` : event === "leave" ? `${who} is leaving` : event === "song" && scene.song ? songCue(scene.song, who) : event === "overheard" ? "you just heard what was said in the room (see the conversation); add something only if a person would - otherwise say nothing (empty say)" : "nothing in particular");
     const qv = await embed(cue);
     const { data: recalled } = await supabase.rpc("recall", { p_owner: character_id, p_query: JSON.stringify(qv), p_limit: 10 });
     const memLines = (recalled || []).map((m: { content: string; created_at: string; kind: string }) => `- (${ago(m.created_at)}, ${m.kind}) ${m.content}`).join("\n");

@@ -52,6 +52,9 @@ export class Reflexes {
   }
   turnTo(pos) { this.turnTarget = pos.clone(); }
   gesture(name, dur = 1.2) { this.gestureName = name; this.gestureT = 0; this.gestureDur = dur; }
+  // music in the room: on each beat a small nod, scaled by how into it he is (0-1)
+  groove(amount) { this.grooveAmt = amount; }
+  beat() { if (this.grooveAmt > 0) this.beatT = 0; }
   get busy() { return !!this.moveTarget || this.queue.length > 0 || !!this.current || !!this.glide; }
 
   // play a clip: once (then `then`), or looped; fades from whatever was holding the body
@@ -164,6 +167,8 @@ export class Reflexes {
     if (this.holdW > 0.01) this._hold(this._lastHold = this.hold || this._lastHold, this.holdW);
     // --- gaze (not lying down), on top of whatever the body is doing ---
     if (this.posture !== 'lie') this._gaze(dt);
+    // --- the music: a nod on the beat (down quick, up slow) ---
+    if (this.grooveAmt > 0 && this.beatT != null && this.beatT < 0.45) { this.beatT += dt; const k = this.beatT < 0.12 ? this.beatT / 0.12 : 1 - (this.beatT - 0.12) / 0.33; this._setRest('Head', 0.07 * this.grooveAmt * Math.max(0, k), 0, 0, true); this._setRest('neck', 0.03 * this.grooveAmt * Math.max(0, k), 0, 0, true); }
     // --- gesture, additive ---
     if (this.gestureName != null) this._gesture(dt);
   }
