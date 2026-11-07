@@ -28,13 +28,16 @@ const size = b2.max.map((v, i) => +(v - b2.min[i]).toFixed(3));
 for (const m of root.listMaterials()) { m.setName(name); if (m.getMetallicFactor() > 0.5 && !m.getMetallicRoughnessTexture()) m.setMetallicFactor(0); }
 await doc.transform(dedup(), prune(), resample());
 mkdirSync(outDir, { recursive: true });
-// desktop: as modelled, webp textures
+// triangle budgets: Meshy sometimes exports millions of triangles; a prop needs tens of thousands at most
+const count = d => { let t = 0; for (const me of d.getRoot().listMeshes()) for (const p of me.listPrimitives()) t += (p.getIndices()?.getCount() || p.getAttribute('POSITION').getCount()) / 3; return t; };
+const DESK_TRIS = +(process.env.DESK_TRIS || 40000), MOB_TRIS = +(process.env.MOB_TRIS || 12000), srcTris = count(doc);
+// desktop: as modelled (within budget), webp textures
 const desk = cloneDocument(doc);
-await desk.transform(textureCompress({ encoder: sharp, targetFormat: 'webp', quality: 88 }));
+await desk.transform(weld(), ...(srcTris > DESK_TRIS ? [simplify({ simplifier: MeshoptSimplifier, ratio: DESK_TRIS / srcTris, error: 0.001 })] : []), textureCompress({ encoder: sharp, targetFormat: 'webp', quality: 88 }));
 await io.write(`${outDir}/desktop.glb`, desk);
 // mobile: 1024 textures, simplified
 const mob = cloneDocument(doc);
-await mob.transform(weld(), simplify({ simplifier: MeshoptSimplifier, ratio: 0.35, error: 0.002 }), textureCompress({ encoder: sharp, targetFormat: 'webp', quality: 80, resize: [1024, 1024] }));
+await mob.transform(weld(), simplify({ simplifier: MeshoptSimplifier, ratio: Math.min(0.35, MOB_TRIS / srcTris), error: 0.002 }), textureCompress({ encoder: sharp, targetFormat: 'webp', quality: 80, resize: [1024, 1024] }));
 await io.write(`${outDir}/mobile.glb`, mob);
 let tri = 0; for (const me of mob.getRoot().listMeshes()) for (const p of me.listPrimitives()) tri += (p.getIndices()?.getCount() || 0) / 3;
-console.log(JSON.stringify({ name, size, scale, mobileTris: Math.round(tri) }));
+console.log(JSON.stringify({ name, size, scale, srcTris: Math.round(srcTris), desktopTris: Math.round(count(desk)), mobileTris: Math.round(tri) }));

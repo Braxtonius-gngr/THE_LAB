@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
-<title>THE_LAB · Marco's apartment</title>
+<title>THE_LAB · Apartment</title>
 <style>
   :root{--panel:rgba(28,26,23,.86);--ink:#eee;--dim:#a49c8c;--gold:#d8b25a}
   *{box-sizing:border-box}
@@ -54,7 +54,7 @@
 <div id="pad"><div id="knob"></div></div>
 <div id="chat">
   <div id="log"></div>
-  <form id="form" autocomplete="off"><button type="button" class="send" id="mic" title="Talk: tap, speak, tap again to send">🎤</button><input id="say" placeholder="Say something to Marco…" maxlength="400"><button class="send">Send</button></form>
+  <form id="form" autocomplete="off"><button type="button" class="send" id="mic" title="Talk: tap, speak, tap again to send">🎤</button><input id="say" placeholder="Say something…" maxlength="400"><button class="send">Send</button></form>
 </div>
 <script type="module">
 import * as THREE from '../assets/vendor/three/three.module.js';
@@ -67,6 +67,7 @@ import { voice, ears, transcribe } from './voice.mjs';
 import { Listener } from './listen.mjs';
 import { Mind, CHARACTERS, timeOfDay } from './mind.mjs';
 import { loadProps } from './props.mjs';
+import { PLACES } from './places.mjs';
 import { wear } from './garments.mjs';
 
 const isPhone = matchMedia('(pointer:coarse)').matches;
@@ -76,86 +77,29 @@ r.outputColorSpace = THREE.SRGBColorSpace; r.toneMapping = THREE.ACESFilmicToneM
 document.body.prepend(r.domElement);
 const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0e0d0b);
 
-// ---------- the room: 6 x 4.5 m studio, door on the -z wall, window on +z ----------
-const W = 6, D = 4.5, H = 2.7;
+// ---------- the place (world/places.mjs): ?place=marco (default) or ?place=dante ----------
+const Q = new URLSearchParams(location.search), HR = new Date().getHours();
+const PLACE = PLACES[Q.get('place')] || PLACES.marco;
+const { W, D, H } = PLACE;
+document.title = `THE_LAB · ${PLACE.name}`;
 const mat = (c, rough = 0.9) => new THREE.MeshStandardMaterial({ color: c, roughness: rough, metalness: 0 });
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D), mat(0x6b5236, 0.75)); floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D), mat(PLACE.floor, 0.75)); floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
 const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), mat(0xe9e4da)); ceil.rotation.x = Math.PI / 2; ceil.position.y = H; scene.add(ceil);
-const wallM = mat(0xcfc6b8);
+const wallM = mat(PLACE.wall);
 const wall = (w, h, x, y, z, ry) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), wallM); m.position.set(x, y, z); m.rotation.y = ry; m.receiveShadow = true; scene.add(m); return m; };
 wall(W, H, 0, H / 2, -D / 2, 0); wall(W, H, 0, H / 2, D / 2, Math.PI); wall(D, H, -W / 2, H / 2, 0, Math.PI / 2); wall(D, H, W / 2, H / 2, 0, -Math.PI / 2);
-// night sky behind the window glass (the frame itself is a prop)
-const win = new THREE.Mesh(new THREE.PlaneGeometry(1.25, 1.4), new THREE.MeshStandardMaterial({ color: 0x1c2740, emissive: 0x3e5f8e, emissiveIntensity: 0.7, roughness: 1 })); win.position.set(-0.8, 1.75, D / 2 - 0.005); win.rotation.y = Math.PI; scene.add(win);
+// sky behind the window glass (the frame itself is a prop); night or day by the hour
+const night = HR < 7 || HR >= 19, WIN = PLACE.window;
+const win = new THREE.Mesh(new THREE.PlaneGeometry(WIN.w, WIN.h), new THREE.MeshStandardMaterial({ color: night ? 0x1c2740 : 0x9fc3e6, emissive: night ? 0x3e5f8e : 0xbfdcf5, emissiveIntensity: night ? 0.7 : 0.9, roughness: 1 })); win.position.set(WIN.x, WIN.y, D / 2 - 0.005); win.rotation.y = Math.PI; scene.add(win);
 
-// ---------- the furniture: Meshy props (assets/props), placed by floor centre + yaw ----------
-// Entry wall (-z): door, TV, the table and two chairs.  Kitchen along +x: fridge in the corner,
-// the island.  Bed on the +z wall with the nightstand in the corner.  Living on the -x side:
-// sofa under the window, coffee table, armchair, floor lamp in the corner, bookshelf on the -x wall.
-const PROPS = [
-  { id: 'door',        x: 0,     z: -D / 2 + 0.095, ry: 0 },
-  { id: 'tv',          x: -1.3,  z: -D / 2 + 0.14,  ry: 0 },
-  { id: 'diningtable', x: 1.0,   z: -1.55, ry: 0 },
-  { id: 'chair',       x: 0.7,   z: -0.82, ry: Math.PI },
-  { id: 'chair',       x: 1.3,   z: -0.82, ry: Math.PI },
-  { id: 'fridge',      x: W / 2 - 0.24, z: -D / 2 + 0.30, ry: -Math.PI / 2 },
-  { id: 'counter',     x: W / 2 - 0.54, z: -0.85, ry: -Math.PI / 2 },
-  { id: 'bed',         x: 1.75,  z: D / 2 - 0.92, ry: Math.PI },
-  { id: 'nightstand',  x: W / 2 - 0.26, z: D / 2 - 0.24, ry: -Math.PI / 2 },
-  { id: 'window',      x: -0.8,  y: 1.0, z: D / 2 - 0.07, ry: Math.PI, shadow: false },   // sill at 1 m
-  { id: 'sofa',        x: -0.8,  z: D / 2 - 0.46, ry: Math.PI },
-  { id: 'coffeetable', x: -0.8,  z: 0.75, ry: 0 },
-  { id: 'armchair',    x: -2.3,  z: 0.45, ry: Math.PI / 2 },
-  { id: 'floorlamp',   x: -2.15, z: 2.0,  ry: 0, shadow: false },
-  { id: 'bookshelf',   x: -W / 2 + 0.21, z: -0.95, ry: Math.PI / 2 },
-  // small things (batch 2): surface heights are the baked tops (table 0.718, counter 1.043, coffee table 0.322)
-  { id: 'bassguitar',  x: 0.45,  z: 1.95, ry: Math.PI - 0.3 },
-  { id: 'laptop',      x: 0.85,  y: 0.718, z: -1.4, ry: 0.15 },
-  { id: 'mug',         x: 1.35,  y: 0.718, z: -1.3, ry: 0.8, shadow: false },
-  { id: 'keysbowl',    x: 0.45,  y: 0.718, z: -1.85, ry: 0, shadow: false },
-  { id: 'plate',       x: 2.45,  y: 1.043, z: -0.42, ry: 0, shadow: false },
-  { id: 'glass',       x: 2.2,   y: 1.043, z: -0.62, ry: 0, shadow: false },
-  { id: 'pintglass',   x: 2.35,  y: 1.043, z: -1.42, ry: 0, shadow: false },
-  { id: 'beerbottle',  x: -0.55, y: 0.322, z: 0.82, ry: 0, shadow: false },
-  // batch 3: making it his
-  { id: 'rug',          x: -0.8,  z: 0.75, ry: 0, shadow: false },
-  { id: 'stove',        x: W / 2 - 0.33, z: 0.18, ry: -Math.PI / 2 },
-  { id: 'microwave',    x: 2.6,   y: 1.043, z: -1.45, ry: -Math.PI / 2 },
-  { id: 'wallshelf',    x: W / 2 - 0.125, y: 1.6, z: -0.85, ry: -Math.PI / 2, shadow: false },
-  { id: 'liquorbottle', x: 2.25,  y: 1.043, z: -1.15, ry: 0.4, shadow: false },
-  { id: 'trashcan',     x: 2.15,  z: -2.02, ry: 0 },
-  { id: 'barcart',      x: -W / 2 + 0.16, z: -0.2, ry: Math.PI / 2 },
-  { id: 'shaker',       x: -2.84, y: 0.81, z: -0.38, ry: 0, shadow: false },
-  { id: 'bassamp',      x: 0.78,  z: 2.08, ry: Math.PI - 0.15 },
-  { id: 'turntable',    x: -W / 2 + 0.16, z: 1.15, ry: Math.PI / 2 },
-  { id: 'recordcrate',  x: -2.86, z: 0.75, ry: Math.PI / 2, shadow: false },
-  { id: 'wallart',      x: -W / 2 + 0.045, y: 1.25, z: 0.45, ry: Math.PI / 2, shadow: false },
-  { id: 'wallclock',    x: 1.0,   y: 2.0, z: -D / 2 + 0.012, ry: 0, shadow: false },
-  { id: 'plant',        x: -2.68, z: 1.95, ry: 0.6 },
-  { id: 'smallplant',   x: -2.79, y: 1.9, z: -0.95, ry: 0, shadow: false },
-  { id: 'throwblanket', x: -1.55, y: 0.45, z: 1.85, ry: 0.3, shadow: false },
-  { id: 'bookstack',    x: 2.74,  y: 0.551, z: 1.99, ry: 0.2, shadow: false },
-  { id: 'coatrack',     x: -0.56, z: -1.85, ry: 0 },
-  { id: 'shoes',        x: -0.95, z: -1.7, ry: 0.3, shadow: false },
-  { id: 'laundrybasket', x: 2.78, z: 0.78, ry: -Math.PI / 2 },
-  { id: 'curtain',      x: -1.72, y: 0.32, z: D / 2 - 0.09, ry: Math.PI, shadow: false },
-  { id: 'curtain',      x: 0.12,  y: 0.32, z: D / 2 - 0.09, ry: Math.PI, shadow: false },
-  { id: 'ceilinglight', x: -0.8,  y: H - 0.64, z: 0.75, ry: 0, shadow: false },
-  { id: 'bathroomdoor', x: -W / 2 + 0.1, z: -1.8, ry: Math.PI / 2 },
-  { id: 'towel',        x: -2.3,  y: 0.9, z: -D / 2 + 0.1, ry: 0, shadow: false },
-];
-
-// ---------- light: lamp + window + a soft fill ----------
-scene.add(new THREE.HemisphereLight(0xe9dcc6, 0x2a221a, 0.45));
-const lamp = new THREE.PointLight(0xffc27a, 14, 9, 1.6); lamp.position.set(-2.15, 1.45, 2.0); lamp.castShadow = true; lamp.shadow.mapSize.set(1024, 1024); lamp.shadow.bias = -0.002; scene.add(lamp);
-const cool = new THREE.DirectionalLight(0xa9c4e6, 0.9); cool.position.set(-0.8, 1.8, D / 2 - 0.2); cool.target.position.set(-0.3, 0.6, 0); scene.add(cool, cool.target);
-const kitchen = new THREE.PointLight(0xfff1dc, 5, 6, 1.8); kitchen.position.set(2.1, 2.15, -0.85); scene.add(kitchen);
-
+const PROPS = PLACE.props(W, D, H);
+PLACE.lights(scene, W, D, H);
 // where the mind can send him (standing spots in front of each piece)
-const SPOTS = { sofa: new THREE.Vector3(-0.4, 0, 1.22), kitchen: new THREE.Vector3(1.5, 0, -0.3), window: new THREE.Vector3(0.65, 0, 1.6), door: new THREE.Vector3(0, 0, -1.3), table: new THREE.Vector3(0.3, 0, -0.4), bed: new THREE.Vector3(1.75, 0, 0.2), shelf: new THREE.Vector3(-2.2, 0, -1.0) };
+const SPOTS = PLACE.spots;
 
 // ---------- the player: a first-person camera on the floor ----------
 const cam = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.05, 50);
-const player = { pos: new THREE.Vector3(0, 0, -1.6), yaw: Math.PI, pitch: 0 };   // in at the door, facing the room
+const player = { pos: PLACE.playerStart.pos.clone(), yaw: PLACE.playerStart.yaw, pitch: 0 };   // in at the door, facing the room
 const EYE = 1.62;
 function placeCam() { cam.position.set(player.pos.x, EYE, player.pos.z); cam.rotation.set(0, 0, 0, 'YXZ'); cam.rotation.y = player.yaw; cam.rotation.x = player.pitch; }
 const keys = {}; addEventListener('keydown', e => { if (e.target.tagName !== 'INPUT') keys[e.key.toLowerCase()] = true; }); addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
@@ -183,43 +127,43 @@ function movePlayer(dt) {
 }
 addEventListener('resize', () => { r.setSize(innerWidth, innerHeight); cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); });
 
-// ---------- Marco ----------
+// ---------- the people ----------
 const status = document.getElementById('status'), log = document.getElementById('log'), bubble = document.getElementById('bubble'), memEl = document.getElementById('mem'), memLive = document.getElementById('memlive');
 const say = (cls, text) => { const d = document.createElement('div'); d.className = 'msg ' + cls; d.textContent = text; log.appendChild(d); log.scrollTop = log.scrollHeight; };
 const loader = new GLTFLoader();
 const bodies = await (await fetch('../assets/bodies/bodies.json')).json();
-const spec = bodies.find(b => b.id === 'adult-base-01');
-const Q = new URLSearchParams(location.search), HR = new Date().getHours();
-// Dante (the chef) comes over after his shift, about 2-5 am - or ?dante=1 to have him here now
-const withDante = Q.has('dante') || (HR >= 2 && HR < 5);
-const dspec = bodies.find(b => b.id === 'dante');
+const BODY = { marco: 'adult-base-01', dante: 'dante' };
+const hostKey = PLACE.host, G = PLACE.guest;
+// the guest is here in his hours, or on request (?dante=1 at Marco's, ?marco=1 at Dante's)
+const withGuest = !!G && (Q.has(G.param) || (HR >= G.hours[0] && HR < G.hours[1]));
+const hspec = bodies.find(b => b.id === BODY[hostKey]), gspec = G && bodies.find(b => b.id === BODY[G.key]);
 const tier = isPhone ? 'mobile' : 'desktop';
-const [g, pack, pack2, props, gd] = await Promise.all([loader.loadAsync('../assets/bodies/' + spec[tier]), loader.loadAsync('../assets/anims/meshy-pack-01.glb'), loader.loadAsync('../assets/anims/meshy-pack-02.glb'), loadProps(loader, PROPS, { tier }), withDante ? loader.loadAsync('../assets/bodies/' + dspec[tier]) : null]);
+const [g, pack, pack2, props, gd] = await Promise.all([loader.loadAsync('../assets/bodies/' + hspec[tier]), loader.loadAsync('../assets/anims/meshy-pack-01.glb'), loader.loadAsync('../assets/anims/meshy-pack-02.glb'), loadProps(loader, PROPS, { tier }), withGuest ? loader.loadAsync('../assets/bodies/' + gspec[tier]) : null]);
 for (const o of props) scene.add(o);
-props.filter(o => o.name === 'floorlamp').forEach(o => o.traverse(m => { if (m.isMesh) { m.material = m.material.clone(); m.material.emissive.set(0xffc77a); m.material.emissiveIntensity = 0.35; } }));
+// things that glow (the floor lamp, a candle)
+for (const P of PROPS) if (P.glow) props.filter(o => o.name === P.id).forEach(o => o.traverse(m => { if (m.isMesh) { m.material = m.material.clone(); m.material.emissive.set(P.glow); m.material.emissiveIntensity = 0.35; } }));
 // held poses: the repo's tuned set, then any you've saved on this device from lab/pose.html
 try { setPoses(await (await fetch('poses.json')).json()); } catch (_) { /* defaults */ }
 try { const mine = localStorage.getItem('lab.poses'); if (mine) setPoses(JSON.parse(mine)); } catch (_) { /* none */ }
 // the floor map: every resident walks around the furniture
 const nav = new Nav(W, D, props);
 const PACKS = [{ rest: captureRest(pack.scene, { allNodes: true }), clips: pack.animations }, { rest: captureRest(pack2.scene, { allNodes: true }), clips: pack2.animations }];
-// where the hips go: the sofa seat, the bed (lying head to the pillows), his back to the kitchen counter
-const SEATS = { sofa: { pos: new THREE.Vector3(-0.8, 0, 1.74), yaw: Math.PI, y: 0.02 }, sofa2: { pos: new THREE.Vector3(-0.2, 0, 1.74), yaw: Math.PI, y: 0.02 },
-  bed: { pos: new THREE.Vector3(1.75, 0.43, 1.46), yaw: Math.PI, side: new THREE.Vector3(1.05, 0, 1.35) }, counter: { pos: SPOTS.kitchen.clone(), yaw: -Math.PI / 2 } };
+// where the hips go: the sofa seat (the host's end, the guest's), the bed, a back to the counter
+const SEATS = PLACE.seats;
 const wardrobe = await (await fetch('../assets/garments/garments.json')).json();
 const LOWER = ['jeans', 'boxerbriefs', 'chinos', 'sweatpants', 'apron', 'pajamapants', 'sleepshorts', 'briefs', 'cargopants', 'chefpants', 'basketballshorts'];
 const WARM = { Nude: -2, Underwear: -1, 'Underwear (briefs)': -1, 'Sleep shorts': -1, 'Home: shorts': -1, Lounging: 0, 'Socks + sweats': 0, 'Home: shorts + thermal': 0, Sleepwear: 0.5, 'Tee + jeans': 0.5, 'Off duty': 0.5, 'Behind the bar': 1, 'In the kitchen': 1, 'Flannel over tee': 1.5, 'Off duty + bomber': 2, 'Hoodie + jeans': 2, 'Denim jacket': 2 };
-const bass = props.find(o => o.name === 'bassguitar'), bassHome = bass && { p: bass.position.clone(), r: bass.rotation.clone() };
+const bass = PLACE.bass && props.find(o => o.name === PLACE.bass), bassHome = bass && { p: bass.position.clone(), r: bass.rotation.clone() };
 
 // one person living (or visiting) here: body, reflexes, anatomy, clothes, mind
-async function resident({ key, name, model, bodySpec, seed, outfitFor, place }) {
+async function resident({ key, name, model, bodySpec, seed, outfitFor, place, isHost }) {
   model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
   scene.add(model);
   // (rest capture and the anatomy attach read the model at the origin; place him after)
-  const reflex = new Reflexes(model, PACKS, { seats: key === 'marco' ? SEATS : { ...SEATS, sofa: SEATS.sofa2 } });
+  const reflex = new Reflexes(model, PACKS, { seats: isHost ? SEATS : { ...SEATS, sofa: SEATS.sofa2 } });
   const anat = attachAnatomy(model, bodySpec.anatomy, {}, { seed });
   reflex.nav = nav;
-  const R = { key, name, model, reflex, anat, mind: new Mind(CHARACTERS[key]), place, outfit: null, worn: [], dressing: 0, needs: null, head: reflex.bone('Head') };
+  const R = { key, name, model, reflex, anat, mind: new Mind(CHARACTERS[key], { location: PLACE.location }), place, outfit: null, worn: [], dressing: 0, needs: null, head: reflex.bone('Head') };
   R.OUTFITS = { Nude: [] };
   for (const o of wardrobe.outfits) if (o.items.every(id => (wardrobe.garments.find(g => g.id === id)?.bodies || []).includes(bodySpec.id))) R.OUTFITS[o.name] = o.items;
   R.comfort = () => Math.max(0, Math.min(1, Math.abs(WARM[R.outfit] ?? 0) / 3));
@@ -238,18 +182,23 @@ async function resident({ key, name, model, bodySpec, seed, outfitFor, place }) 
   return R;
 }
 
-// (a bartender's day: off work about 2 am, asleep till late morning, home in the afternoon, at the bar
-// by evening - if you find him home then, it's his night off)
-const marcoOutfit = O => { const h = HR; if (h >= 2 && h < 4) return O['Behind the bar'] ? 'Behind the bar' : 'Tee + jeans'; if (h >= 4 && h < 11) return O['Sleepwear'] ? 'Sleepwear' : 'Nude'; if (h >= 11 && h < 18) return 'Lounging'; return 'Tee + jeans'; };
-// (Dante comes straight from the line: still in his kitchen whites if they fit, else off-duty)
-const danteOutfit = O => O['In the kitchen'] ? 'In the kitchen' : O['Off duty'] ? 'Off duty' : Object.keys(O)[1] || 'Nude';
-const M = await resident({ key: 'marco', name: 'Marco', model: g.scene, bodySpec: spec, seed: 'marco', outfitFor: marcoOutfit });
-M.model.position.copy(SPOTS.kitchen); M.model.rotation.y = Math.PI / 2 - 0.5;   // at the counter
+// what each one wears at home by the hour, and what he turns up in as a guest
+const pick = (O, ...names) => names.find(n => O[n]) || 'Nude';
+const HOME = {
+  // (a bartender's day: off work about 2 am, asleep till late morning, home in the afternoon, at the bar by evening)
+  marco: O => { const h = HR; if (h >= 2 && h < 4) return pick(O, 'Behind the bar', 'Tee + jeans'); if (h >= 4 && h < 11) return pick(O, 'Sleepwear'); if (h >= 11 && h < 18) return pick(O, 'Lounging', 'Tee + jeans'); return pick(O, 'Tee + jeans'); },
+  // (a line cook: home from close about 1, asleep till 10, his own morning, in by 3)
+  dante: O => { const h = HR; if (h >= 1 && h < 3) return pick(O, 'In the kitchen', 'Off duty'); if (h >= 3 && h < 10) return pick(O, 'Sleepwear', 'Home: shorts'); if (h >= 10 && h < 14) return pick(O, 'Home: shorts', 'Home: shorts + thermal', 'Off duty'); return pick(O, 'Off duty', 'Tee + jeans'); },
+};
+const GUEST = { dante: O => pick(O, 'In the kitchen', 'Off duty'), marco: O => pick(O, 'Tee + jeans', 'Off duty') };
+const NAME = { marco: 'Marco', dante: 'Dante' };
+const M = await resident({ key: hostKey, name: NAME[hostKey], model: g.scene, bodySpec: hspec, seed: hostKey, outfitFor: HOME[hostKey], isHost: true });
+M.model.position.copy(SPOTS[PLACE.spawnHost.at]); M.model.rotation.y = PLACE.spawnHost.yaw;
 const RES = [M];
-if (withDante) {
-  const Dn = await resident({ key: 'dante', name: 'Dante', model: gd.scene, bodySpec: dspec, seed: 'dante', outfitFor: danteOutfit, place: "at your friend Marco's apartment - you came over after your shift" });
+if (withGuest) {
+  const Dn = await resident({ key: G.key, name: NAME[G.key], model: gd.scene, bodySpec: gspec, seed: G.key, outfitFor: GUEST[G.key], place: G.place });
   Dn.model.position.copy(SPOTS.door); Dn.model.rotation.y = 0;
-  Dn.reflex.do({ type: 'walk_to', target: 'table' });
+  Dn.reflex.do({ type: 'walk_to', target: G.first });
   RES.push(Dn);
 }
 const marco = M.model, reflex = M.reflex, mind = M.mind, anat = M.anat;
@@ -334,7 +283,7 @@ mic.onclick = () => {
 })();
 // music: you play a file on the turntable; they listen (a nod in time, a look at the big moments)
 // and when it's over the one you're with tells you what he thought
-const deck = props.find(o => o.name === 'turntable') || props.find(o => o.name === 'bassamp');
+const deck = props.find(o => o.name === PLACE.speaker) || props.find(o => o.name === 'bassamp');
 const deckAt = () => deck ? deck.position.clone().setY(0.6) : new THREE.Vector3(-2.8, 0.6, 1.1);
 const listener = new Listener({ at: deckAt, ear: () => player.pos });
 const musicEl = document.getElementById('music'), songState = document.getElementById('songstate');
