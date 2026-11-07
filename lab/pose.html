@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>THE_LAB · Poses</title>
+<style>
+  :root{--bg:#1b1a18;--panel:#2c2a27;--ink:#eee;--dim:#a49c8c;--gold:#d8b25a}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px system-ui,sans-serif;overflow:hidden}
+  canvas{display:block;touch-action:none}
+  #bar{position:fixed;top:10px;left:10px;right:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;pointer-events:none}
+  #bar>*{pointer-events:auto}
+  .chip{background:var(--panel);border:0;color:var(--ink);padding:8px 12px;border-radius:999px;font:inherit;cursor:pointer}
+  .chip.on{background:var(--gold);color:#1b1a18}
+  a.chip{text-decoration:none}
+  #panel{position:fixed;right:10px;top:60px;bottom:10px;width:340px;background:rgba(44,42,39,.94);border-radius:12px;padding:10px 12px;overflow:auto}
+  @media (max-width:700px){#panel{left:10px;right:10px;width:auto;top:auto;height:44vh}}
+  .bone{border-top:1px solid #444;padding:6px 0}
+  .bone b{display:flex;justify-content:space-between;align-items:center}
+  .bone b button{background:none;border:0;color:var(--dim);cursor:pointer;font-size:16px}
+  .ax{display:grid;grid-template-columns:16px 1fr 48px;gap:6px;align-items:center;margin:4px 0}
+  .ax input[type=range]{width:100%;height:26px}
+  .ax input[type=number]{width:48px;background:#1b1a18;color:var(--ink);border:1px solid #444;border-radius:6px;padding:2px}
+  .ax span{color:var(--dim)}
+  .row{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+  #msg{color:var(--dim);font-size:12px;margin-top:6px;line-height:1.4}
+  h4{margin:10px 0 2px;color:var(--gold);font-weight:600}
+</style></head><body>
+<div id="bar">
+  <a class="chip" href="../">← Lab</a>
+  <select id="poseSel" class="chip"></select>
+  <select id="baseSel" class="chip"><option value="stand">Standing</option><option value="sit">Sitting (sofa)</option></select>
+  <button class="chip on" id="live" title="Breathing, the beat, the pluck">Living motion</button>
+  <button class="chip" id="front">Front</button><button class="chip" id="side">Side</button><button class="chip" id="top">Above</button>
+</div>
+<div id="panel">
+  <div class="row">
+    <button class="chip" id="save" title="The apartment on this device uses it right away">💾 Save on this device</button>
+    <button class="chip" id="copy">Copy for Claude</button>
+    <button class="chip" id="reset">Reset pose</button>
+  </div>
+  <div class="row">
+    <select id="addSel" class="chip" style="max-width:190px"></select><button class="chip" id="add">+ Bone</button>
+    <button class="chip" id="mirror" title="Copy every Left* bone onto its Right* twin, mirrored">Mirror L→R</button>
+  </div>
+  <div id="propBox"></div>
+  <div id="bones"></div>
+  <div id="msg">Drag the figure to orbit, wheel or pinch to zoom. Each bone turns on top of the base pose in its own rest frame: <b>x</b> pitches (forward/back), <b>y</b> twists, <b>z</b> rolls (arms: toward / away from the side). Values are radians (1.57 = 90°).</div>
+</div>
+<script type="module">
+import * as THREE from '../assets/vendor/three/three.module.js';
+import { GLTFLoader } from '../assets/vendor/three/three.addons.js';
+import { captureRest } from '../world/retarget.mjs';
+import { Reflexes, POSES, setPoses } from '../world/reflexes.mjs';
+import { attachAnatomy } from '../world/attach-anatomy.mjs';
+import { wear } from '../world/garments.mjs';
+
+const isPhone = matchMedia('(max-width:700px)').matches;
+const r = new THREE.WebGLRenderer({ antialias: true }); r.setPixelRatio(Math.min(devicePixelRatio, 2)); r.setSize(innerWidth, innerHeight); r.shadowMap.enabled = true;
+document.body.prepend(r.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x24221f);
+scene.add(new THREE.HemisphereLight(0xfff3e0, 0x3a3530, 1.4));
+const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.set(2, 4, 3); sun.castShadow = true; scene.add(sun);
+const floor = new THREE.Mesh(new THREE.CircleGeometry(3, 48), new THREE.MeshStandardMaterial({ color: 0x4a4038 })); floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+const cam = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.05, 50);
+// orbit (no addon): yaw/pitch/distance about a target
+const orb = { yaw: 0.35, pitch: 0.12, dist: 2.6, target: new THREE.Vector3(0, 1.0, 0) };
+const placeCam = () => { const c = Math.cos(orb.pitch); cam.position.set(orb.target.x + orb.dist * c * Math.sin(orb.yaw), orb.target.y + orb.dist * Math.sin(orb.pitch), orb.target.z + orb.dist * c * Math.cos(orb.yaw)); cam.lookAt(orb.target); };
+const ptrs = new Map(); let pinch = 0;
+r.domElement.addEventListener('pointerdown', e => { ptrs.set(e.pointerId, [e.clientX, e.clientY]); r.domElement.setPointerCapture(e.pointerId); });
+r.domElement.addEventListener('pointerup', e => { ptrs.delete(e.pointerId); pinch = 0; });
+r.domElement.addEventListener('pointermove', e => {
+  const p = ptrs.get(e.pointerId); if (!p) return;
+  if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; ptrs.set(e.pointerId, [e.clientX, e.clientY]); const [c, d] = [...ptrs.values()]; const dd = Math.hypot(c[0] - d[0], c[1] - d[1]); if (pinch) orb.dist = THREE.MathUtils.clamp(orb.dist * pinch / dd, 0.6, 6); pinch = dd; return; }
+  orb.yaw -= (e.clientX - p[0]) * 0.008; orb.pitch = THREE.MathUtils.clamp(orb.pitch + (e.clientY - p[1]) * 0.006, -0.4, 1.4); ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+});
+r.domElement.addEventListener('wheel', e => { orb.dist = THREE.MathUtils.clamp(orb.dist * (1 + e.deltaY * 0.001), 0.6, 6); e.preventDefault(); }, { passive: false });
+addEventListener('resize', () => { r.setSize(innerWidth, innerHeight); cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); });
+document.getElementById('front').onclick = () => { orb.yaw = 0; orb.pitch = 0.1; };
+document.getElementById('side').onclick = () => { orb.yaw = Math.PI / 2; orb.pitch = 0.1; };
+document.getElementById('top').onclick = () => { orb.yaw = 0.2; orb.pitch = 1.3; };
+
+// ---- Marco, both packs, his tee + jeans, the sofa and the bass ----
+const msg = document.getElementById('msg'), msg0 = msg.innerHTML; msg.textContent = 'Loading Marco…';
+const loader = new GLTFLoader(), tier = isPhone ? 'mobile' : 'desktop';
+const bodies = await (await fetch('../assets/bodies/bodies.json')).json(), spec = bodies.find(b => b.id === 'adult-base-01');
+const [g, p1, p2, sofa, bass] = await Promise.all([loader.loadAsync('../assets/bodies/' + spec[tier]), loader.loadAsync('../assets/anims/meshy-pack-01.glb'), loader.loadAsync('../assets/anims/meshy-pack-02.glb'), loader.loadAsync(`../assets/props/sofa/${tier}.glb`), loader.loadAsync(`../assets/props/bassguitar/${tier}.glb`)]);
+try { setPoses(await (await fetch('../world/poses.json')).json()); } catch (_) { /* defaults */ }
+try { const mine = localStorage.getItem('lab.poses'); if (mine) setPoses(JSON.parse(mine)); } catch (_) { /* none */ }
+const BASE = JSON.parse(JSON.stringify(POSES));   // what Reset goes back to
+const model = g.scene; model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } }); scene.add(model);
+const rf = new Reflexes(model, [{ rest: captureRest(p1.scene, { allNodes: true }), clips: p1.animations }, { rest: captureRest(p2.scene, { allNodes: true }), clips: p2.animations }]);
+const anat = attachAnatomy(model, spec.anatomy, {}, { seed: 'marco' });
+try { const W = await (await fetch('../assets/garments/garments.json')).json(); const o = W.outfits.find(o => o.name === 'Tee + jeans'); if (o) { anat.setVisible(false); for (const id of o.items) await wear(loader, model, `../assets/garments/${id}/${spec.id}${isPhone ? '.mobile' : ''}.glb`); } } catch (_) { /* nude is fine */ }
+// the sofa behind him where he sits (as in the apartment: hips ~13 cm in front of the sofa's origin)
+sofa.scene.position.set(0, 0, -0.13); sofa.scene.traverse(o => { if (o.isMesh) o.receiveShadow = true; }); scene.add(sofa.scene);
+const bassO = bass.scene; scene.add(bassO);
+msg.innerHTML = msg0;
+
+// ---- state ----
+const poseSel = document.getElementById('poseSel'), baseSel = document.getElementById('baseSel');
+for (const k of Object.keys(POSES)) poseSel.add(new Option(k.replace('_', ' '), k));
+const BONES = Object.keys(rf.rest).filter(n => /Hips|Spine|neck|Head|Shoulder|Arm|Hand|Leg|Foot/.test(n) && !/End|Thumb|Index|Middle|Ring|Pinky/.test(n));
+const addSel = document.getElementById('addSel'); for (const b of BONES) addSel.add(new Option(b, b));
+let live = true;
+document.getElementById('live').onclick = e => { live = !live; e.target.classList.toggle('on', live); };
+function applyBase() {
+  const sit = baseSel.value === 'sit';
+  model.position.set(0, sit ? 0.02 : 0, 0);
+  sofa.scene.visible = sit; bassO.visible = poseSel.value === 'play_bass';
+  if (sit) { rf.play('sit_idle', { loop: true, fade: 0 }); } else { rf._release(); rf.mixer.stopAllAction(); rf.clipAct = null; }
+  orb.target.y = sit ? 0.75 : 1.0;
+}
+poseSel.onchange = () => { baseSel.value = poseSel.value === 'play_bass' ? 'sit' : 'stand'; applyBase(); build(); };
+baseSel.onchange = applyBase;
+
+// ---- the panel: one block of three sliders per bone ----
+const bonesEl = document.getElementById('bones'), propBox = document.getElementById('propBox');
+const AX = ['x', 'y', 'z'];
+function slider(label, get, set, min = -3.14, max = 3.14) {
+  const d = document.createElement('div'); d.className = 'ax';
+  d.innerHTML = `<span>${label}</span><input type="range" min="${min}" max="${max}" step="0.01"><input type="number" step="0.01">`;
+  const [rg, nm] = d.querySelectorAll('input'); rg.value = nm.value = (+get()).toFixed(2);
+  rg.oninput = () => { set(+rg.value); nm.value = (+rg.value).toFixed(2); };
+  nm.onchange = () => { set(+nm.value); rg.value = nm.value; };
+  return d;
+}
+function build() {
+  const P = POSES[poseSel.value]; bonesEl.innerHTML = ''; propBox.innerHTML = '';
+  if (P.prop) {
+    propBox.innerHTML = '<h4>The bass</h4>';
+    const L = { fwd: ['forward', -0.3, 0.8], side: ['side', -0.6, 0.6], y: ['height', 0, 1.4], yaw: ['turn', -3.14, 3.14], roll: ['tilt', -3.14, 3.14] };
+    for (const [k, [lab, mn, mx]] of Object.entries(L)) { const s = slider('', () => P.prop[k] ?? 0, v => P.prop[k] = v, mn, mx); s.style.gridTemplateColumns = '56px 1fr 48px'; s.firstElementChild.textContent = lab; propBox.appendChild(s); }
+    propBox.insertAdjacentHTML('beforeend', '<h4>Bones</h4>');
+  }
+  for (const [b, v] of Object.entries(P.bones)) {
+    const box = document.createElement('div'); box.className = 'bone';
+    box.innerHTML = `<b>${b}<button title="Remove">✕</button></b>`;
+    box.querySelector('button').onclick = () => { delete P.bones[b]; build(); };
+    AX.forEach((a, i) => box.appendChild(slider(a, () => v[i], x => v[i] = x)));
+    bonesEl.appendChild(box);
+  }
+}
+document.getElementById('add').onclick = () => { const P = POSES[poseSel.value]; if (!P.bones[addSel.value]) P.bones[addSel.value] = [0, 0, 0]; build(); };
+// mirror: the right side as the left's reflection across the body's midline (x kept, y and z flipped)
+document.getElementById('mirror').onclick = () => { const B = POSES[poseSel.value].bones; for (const k of Object.keys(B)) if (k.startsWith('Left')) { const v = B[k]; B['Right' + k.slice(4)] = [v[0], -v[1], -v[2]]; } build(); };
+document.getElementById('reset').onclick = () => { POSES[poseSel.value] = JSON.parse(JSON.stringify(BASE[poseSel.value])); build(); };
+const round = o => JSON.parse(JSON.stringify(o, (k, v) => typeof v === 'number' ? +v.toFixed(3) : v));
+document.getElementById('save').onclick = () => { try { localStorage.setItem('lab.poses', JSON.stringify(round(POSES))); msg.textContent = 'Saved on this device - the apartment here uses it now. Copy for Claude to put it in the repo for every device.'; } catch (e) { msg.textContent = 'Could not save: ' + e.message; } };
+document.getElementById('copy').onclick = async () => { const t = JSON.stringify(round(POSES)); try { await navigator.clipboard.writeText(t); msg.textContent = 'Copied - paste it to me in chat.'; } catch (_) { msg.textContent = t; } };
+
+applyBase(); build();
+window.__pose = { POSES, rf, model };
+
+// ---- loop: base pose, then the held pose at full weight, the bass placed as the apartment does ----
+const _f = new THREE.Vector3(), _s = new THREE.Vector3();
+let last = performance.now();
+r.setAnimationLoop(now => {
+  const dt = Math.min((now - last) / 1000, 0.05); last = now;
+  if (rf.clipAct) { rf.mixer.update(live ? dt : 0); } else rf._toRest();
+  if (live) rf.t += dt;
+  rf._hold(poseSel.value, 1);
+  const P = POSES[poseSel.value];
+  if (P.prop && bassO.visible) { const y = model.rotation.y; _f.set(Math.sin(y), 0, Math.cos(y)); _s.set(Math.cos(y), 0, -Math.sin(y)); bassO.position.copy(model.position).addScaledVector(_f, P.prop.fwd).addScaledVector(_s, P.prop.side); bassO.position.y = P.prop.y; bassO.rotation.set(0, y + P.prop.yaw, P.prop.roll, 'YXZ'); }
+  anat.update(dt);
+  placeCam(); r.render(scene, cam);
+});
+</script>
+</body></html>

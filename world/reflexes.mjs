@@ -13,6 +13,14 @@ import { captureRest, retargetClip } from './retarget.mjs';
 
 const _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _w = new THREE.Vector3(), _y = new THREE.Vector3(0, 1, 0);
 const lerpAngle = (a, b, t) => { let d = ((b - a + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI; return a + d * t; };
+// the held poses; the page can swap in tuned ones (setPoses) from world/poses.json or the pose page
+export const POSES = {
+  cross_arms: { bones: { LeftArm: [-0.35, 0.55, -0.95], RightArm: [-0.35, -0.55, 0.95], LeftForeArm: [0, -1.9, 0.25], RightForeArm: [0, -1.9, -0.25] } },
+  lean_counter: { bones: { Hips: [0.08, 0, 0], Spine01: [-0.12, 0, 0], Spine: [-0.05, 0, 0], LeftArm: [0.55, 0, -0.85], RightArm: [0.55, 0, 0.85], LeftForeArm: [0.3, 0, 0], RightForeArm: [0.3, 0, 0], LeftUpLeg: [0, 0, 0.06], RightUpLeg: [0, 0, -0.06] } },
+  play_bass: { bones: { Spine: [0.06, 0.08, 0], Head: [0.08, 0.25, 0], LeftArm: [-0.9, 0.35, -0.55], LeftForeArm: [0, -0.9, 0.2], RightArm: [-0.55, -0.6, 0.6], RightForeArm: [0, 1.15, 0] },
+    prop: { fwd: 0.3, side: 0, y: 0.5, yaw: 1.5708, roll: 1.15 } },
+};
+export function setPoses(p) { for (const k in p) if (p[k] && p[k].bones) POSES[k] = p[k]; }
 const ease = t => t * t * (3 - 2 * t);
 
 export class Reflexes {
@@ -192,29 +200,15 @@ export class Reflexes {
     this.model.position.y = (this.model.userData.y0 || 0) + 0.002 * (sway * 0.5 + 0.5);
   }
 
-  // hand-built poses, as rest-frame turns on top of what the body is doing, scaled by w (0-1)
-  // (z rolls an arm down toward the side / up; x pitches it forward; y twists across the body)
+  // hand-built poses (world/poses.json, tuned on lab/pose.html): rest-frame turns per bone on top
+  // of what the body is doing, scaled by w (0-1); the small living motion stays here in code
   _hold(name, w) {
+    const P = POSES[name]; if (!P) return;
     const t = this.t + this.phase, A = (b, x, y, z) => this._setRest(b, x * w, y * w, z * w, true);
-    if (name === 'cross_arms') {
-      // upper arms in at the sides and a little forward, forearms folded across the chest
-      A('LeftArm', -0.35, 0.55, -0.95); A('RightArm', -0.35, -0.55, 0.95);
-      A('LeftForeArm', 0, -1.9, 0.25); A('RightForeArm', 0, -1.9, -0.25);
-      A('Spine', 0.02 * Math.sin(t * 0.5), 0, 0);
-    } else if (name === 'lean_counter') {
-      // weight back onto the counter behind him, hands on its edge, a slow shift
-      A('Hips', 0.08, 0, 0.02 * Math.sin(t * 0.3)); A('Spine01', -0.12, 0, 0); A('Spine', -0.05, 0, 0);
-      A('LeftArm', 0.55, 0, -0.85); A('RightArm', 0.55, 0, 0.85);
-      A('LeftForeArm', 0.3, 0, 0); A('RightForeArm', 0.3, 0, 0);
-      A('LeftUpLeg', 0, 0, 0.06); A('RightUpLeg', 0, 0, -0.06);
-    } else if (name === 'play_bass') {
-      // seated, the neck to his left: fretting hand out along it, plucking hand over the body, head with the beat
-      const beat = Math.sin(t * Math.PI * 2 * 1.6), pluck = Math.sin(t * Math.PI * 2 * 3.2);
-      A('Spine', 0.06, 0.08, 0); A('Head', 0.08 + 0.04 * beat, 0.25, 0);
-      A('LeftArm', -0.9, 0.35, -0.55); A('LeftForeArm', 0, -0.9, 0.2);
-      A('RightArm', -0.55, -0.6, 0.6); A('RightForeArm', 0.05 * pluck, 1.15, 0);
-      A('RightHand', 0.15 * pluck, 0, 0);
-    }
+    for (const [b, r] of Object.entries(P.bones || {})) A(b, r[0], r[1], r[2]);
+    if (name === 'cross_arms') A('Spine', 0.02 * Math.sin(t * 0.5), 0, 0);
+    else if (name === 'lean_counter') A('Hips', 0, 0, 0.02 * Math.sin(t * 0.3));
+    else if (name === 'play_bass') { const beat = Math.sin(t * Math.PI * 2 * 1.6), pluck = Math.sin(t * Math.PI * 2 * 3.2); A('Head', 0.04 * beat, 0, 0); A('RightForeArm', 0.05 * pluck, 0, 0); A('RightHand', 0.15 * pluck, 0, 0); }
   }
 
   // head and eyes toward the target, clamped like a person's, with the neck taking a share
