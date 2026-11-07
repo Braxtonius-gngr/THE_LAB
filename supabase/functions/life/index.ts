@@ -55,6 +55,13 @@ Deno.serve(async (req) => {
   try {
     // GET: the latest off-screen stretches, for the apartment's "While you were away" panel
     if (req.method === "GET") {
+      // ?skill=bass: how clean Marco plays, from how much his life has logged him practising lately
+      if (new URL(req.url).searchParams.get("skill") === "bass") {
+        const since = new Date(Date.now() - 21 * 86400e3).toISOString();
+        const { count } = await db.from("memories").select("id", { count: "exact", head: true }).eq("owner_id", "00000000-0000-4000-8000-000000000101").gte("created_at", since).or("content.ilike.%bass%,content.ilike.%bridge%");
+        // 0 sessions -> 0.3 (fumbling), ~20 in three weeks -> 0.85 (clean, still human)
+        return json({ skill: +Math.min(0.85, 0.3 + 0.0275 * (count || 0)).toFixed(3), sessions: count || 0 });
+      }
       const month = new Date(); month.setUTCDate(1); month.setUTCHours(0, 0, 0, 0);
       const [{ data }, { data: use }] = await Promise.all([
         db.from("life_ticks").select("at,hours,story").order("at", { ascending: false }).limit(6),

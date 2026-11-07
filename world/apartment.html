@@ -65,6 +65,7 @@ import { Reflexes, POSES, setPoses } from './reflexes.mjs';
 import { Nav } from './nav.mjs';
 import { voice, ears, transcribe } from './voice.mjs';
 import { Listener } from './listen.mjs';
+import { Bass } from './bass.mjs';
 import { Mind, CHARACTERS, timeOfDay } from './mind.mjs';
 import { loadProps } from './props.mjs';
 import { PLACES } from './places.mjs';
@@ -154,6 +155,10 @@ const wardrobe = await (await fetch('../assets/garments/garments.json')).json();
 const LOWER = ['jeans', 'boxerbriefs', 'chinos', 'sweatpants', 'apron', 'pajamapants', 'sleepshorts', 'briefs', 'cargopants', 'chefpants', 'basketballshorts'];
 const WARM = { Nude: -2, Underwear: -1, 'Underwear (briefs)': -1, 'Sleep shorts': -1, 'Home: shorts': -1, Lounging: 0, 'Socks + sweats': 0, 'Home: shorts + thermal': 0, Sleepwear: 0.5, 'Tee + jeans': 0.5, 'Off duty': 0.5, 'Behind the bar': 1, 'In the kitchen': 1, 'Flannel over tee': 1.5, 'Off duty + bomber': 2, 'Hoodie + jeans': 2, 'Denim jacket': 2 };
 const bass = PLACE.bass && props.find(o => o.name === PLACE.bass), bassHome = bass && { p: bass.position.clone(), r: bass.rotation.clone() };
+// the sound of it: from wherever the bass is, louder as you walk up. How clean he plays comes
+// from practice - his off-screen life logs it (memories about the bass / the bridge)
+const bassSound = new Bass({ at: () => bass ? bass.position : new THREE.Vector3(), ear: () => player.pos });
+fetch('https://qyphdwcjzhgobsfpeonh.supabase.co/functions/v1/life?skill=bass').then(r => r.json()).then(d => { if (typeof d.skill === 'number') bassSound.skill = d.skill; }).catch(() => {});
 
 // one person living (or visiting) here: body, reflexes, anatomy, clothes, mind
 async function resident({ key, name, model, bodySpec, seed, outfitFor, place, isHost }) {
@@ -178,7 +183,17 @@ async function resident({ key, name, model, bodySpec, seed, outfitFor, place, is
   await R.dress(outfitFor(R.OUTFITS));
   reflex.onChange = nm => R.dress(nm);
   // the bass: off its stand and into his lap while he plays, back after
-  reflex.onHold = (h, on) => { if (h !== 'play_bass' || !bass) return; R.bassOn = on; if (!on) { bass.position.copy(bassHome.p); bass.rotation.copy(bassHome.r); } };
+  reflex.onHold = (h, on) => {
+    if (h !== 'play_bass' || !bass) return; R.bassOn = on;
+    if (on) {
+      let bad = 0, bars = 0;
+      bassSound.play(null, { onBar: b => { bars++; if (b.bridge && b.mistakes >= 2) { bad++; if (Math.random() < 0.5) R.reflex.gesture('shake', 0.9); } } });
+      R.bassReport = () => bars ? `${R.name} played his bass for a bit (${bars} bars; the bridge went wrong ${bad} time${bad === 1 ? '' : 's'})` : null;
+    }
+    else { bassSound.stop(); bass.position.copy(bassHome.p); bass.rotation.copy(bassHome.r);
+      // what was heard goes to everyone's next turn (his own included - he knows how it went)
+      const rep = R.bassReport?.(); if (rep) for (const o of RES) o.mind.hear(o === R ? 'you' : 'in the room', rep.replace(R.name + ' played his', o === R ? 'you played your' : R.name + ' played his')); R.bassReport = null; }
+  };
   return R;
 }
 
@@ -310,7 +325,7 @@ document.getElementById('songplay').onclick = async () => {
   } catch (e) { songState.textContent = 'could not play that file'; }
 };
 document.getElementById('songstop').onclick = () => listener.cut();
-window.__world = { listener, voice, nav, marco, reflex, mind, player, talk, SPOTS, SEATS, props, RES };
+window.__world = { bassSound, listener, voice, nav, marco, reflex, mind, player, talk, SPOTS, SEATS, props, RES };
 const _f = new THREE.Vector3(), _s = new THREE.Vector3();
 // the bass in his lap: forward/side/up from his hips' spot, turned with him, tilted by roll
 function placeBass(o, m, P) { const y = m.rotation.y; _f.set(Math.sin(y), 0, Math.cos(y)); _s.set(Math.cos(y), 0, -Math.sin(y)); o.position.copy(m.position).addScaledVector(_f, P.fwd).addScaledVector(_s, P.side); o.position.y = P.y; o.rotation.set(0, y + P.yaw, P.roll, 'YXZ'); }
@@ -322,7 +337,7 @@ r.setAnimationLoop(now => {
   movePlayer(dt); placeCam();
   const eye = new THREE.Vector3(player.pos.x, EYE - 0.05, player.pos.z);
   // he keeps an eye on you when you're close, otherwise on what he's doing
-  listener.update();
+  listener.update(); bassSound.update();
   for (const R of RES) {
     const rf = R.reflex;
     if (R.lookHold && performance.now() < R.lookHold) { rf.update(dt, { player: eye, spots: SPOTS }); R.anat.update(dt); continue; }
