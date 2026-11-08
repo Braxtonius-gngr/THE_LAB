@@ -28,13 +28,16 @@
   <label><span>look y</span><input type="range" id="looky" min="-1" max="1" step="0.05" value="0"><b id="lyv">0</b></label>
   <label><span>lids (hold)</span><input type="range" id="lids" min="0" max="1" step="0.02" value="0"><b id="ldv">0</b></label>
   <label><span>brows (hold)</span><input type="range" id="brows" min="-1" max="1" step="0.05" value="0"><b id="brv">0</b></label>
+  <label><span>jaw (hold)</span><input type="range" id="jaw" min="0" max="1" step="0.02" value="0"><b id="jwv">0</b></label>
+  <label><span>mouth corners (hold)</span><input type="range" id="corners" min="-1" max="1" step="0.05" value="0"><b id="cnv">0</b></label>
+  <label><span>mouth stopgap</span><input type="checkbox" id="mouthon" checked> <i>off if it reads wrong</i></label>
   <div class="row"><button id="listen">listening</button><button id="blink">blink</button></div>
   <div class="row"><input type="text" id="line" placeholder="a line for him to say" style="flex:1" value="Comfortable quiet. You should try it."><button id="say">say</button></div>
   <div class="note">“say” uses his real voice with timing when the voice function is reachable; otherwise the browser's voice (word boundaries only). Drag to orbit, wheel to zoom.</div>
   <div id="shapes" style="margin-top:10px"></div>
   <details style="margin-top:10px"><summary>Landmarks (skin path)</summary>
     <div class="note">Eyes and brows on a body without shapes come from these anchors (bodies.json <code>face</code>). To move one: pick it, press <b>place</b>, click the spot on his face (his left is screen-right when he faces you). <b>apply</b> reloads with your anchors; <b>JSON</b> gives the block to paste into bodies.json.</div>
-    <div class="row"><select id="anchor"><option>eyeL</option><option>eyeR</option><option>browLin</option><option>browL</option><option>browLout</option><option>browRin</option><option>browR</option><option>browRout</option></select><button id="place">place</button></div>
+    <div class="row"><select id="anchor"><option>eyeL</option><option>eyeR</option><option>browLin</option><option>browL</option><option>browLout</option><option>browRin</option><option>browR</option><option>browRout</option><option>mouth</option><option>mouthL</option><option>mouthR</option></select><button id="place">place</button></div>
     <div class="row"><button id="apply">apply</button><button id="json">JSON</button><button id="clearlm">clear mine</button><button id="markers">markers</button></div>
     <textarea id="lmout" style="width:100%;height:90px;display:none;font:11px monospace;background:#111;color:#ddd;border:1px solid #444"></textarea>
   </details>
@@ -51,7 +54,7 @@ import { Face, ARKIT } from '../world/face.mjs';
 import { voice } from '../world/voice.mjs';
 
 const Q = new URLSearchParams(location.search);
-const KEYS = ['eyeL', 'eyeR', 'browLin', 'browL', 'browLout', 'browRin', 'browR', 'browRout'];
+const KEYS = ['eyeL', 'eyeR', 'browLin', 'browL', 'browLout', 'browRin', 'browR', 'browRout', 'mouth', 'mouthL', 'mouthR'];
 const r = new THREE.WebGLRenderer({ antialias: true }); r.setPixelRatio(Math.min(devicePixelRatio, 2)); r.setSize(innerWidth, innerHeight);
 r.outputColorSpace = THREE.SRGBColorSpace; r.toneMapping = THREE.ACESFilmicToneMapping; document.body.prepend(r.domElement);
 const scene = new THREE.Scene(); scene.background = new THREE.Color(0x1a1714);
@@ -100,11 +103,13 @@ document.getElementById('listen').onclick = e => { if (!R) return; R.face.listen
 document.getElementById('blink').onclick = () => { if (R) { R.face.blinkT = 0; } };
 const look = () => { const x = +document.getElementById('lookx').value, y = +document.getElementById('looky').value; document.getElementById('lxv').textContent = x.toFixed(2); document.getElementById('lyv').textContent = y.toFixed(2); if (R) R.face.lookOverride = x || y ? { x, y } : null; };
 document.getElementById('lookx').oninput = look; document.getElementById('looky').oninput = look;
-const holds = () => { const l = +document.getElementById('lids').value, b = +document.getElementById('brows').value; document.getElementById('ldv').textContent = l.toFixed(2); document.getElementById('brv').textContent = b.toFixed(2); if (!R) return; const h = R.face.hold; delete h.eyeBlinkLeft; delete h.eyeBlinkRight; delete h.browInnerUp; delete h.browDownLeft; delete h.browDownRight; delete h.browOuterUpLeft; delete h.browOuterUpRight; if (l) { h.eyeBlinkLeft = h.eyeBlinkRight = l; } if (b > 0) { h.browInnerUp = b; h.browOuterUpLeft = h.browOuterUpRight = b * 0.6; } else if (b < 0) { h.browDownLeft = h.browDownRight = -b; } };
-document.getElementById('lids').oninput = holds; document.getElementById('brows').oninput = holds;
+const holds = () => { const l = +document.getElementById('lids').value, b = +document.getElementById('brows').value, j = +document.getElementById('jaw').value, c = +document.getElementById('corners').value; document.getElementById('ldv').textContent = l.toFixed(2); document.getElementById('brv').textContent = b.toFixed(2); document.getElementById('jwv').textContent = j.toFixed(2); document.getElementById('cnv').textContent = c.toFixed(2); if (!R) return; const h = R.face.hold; for (const k of Object.keys(h)) delete h[k]; if (l) { h.eyeBlinkLeft = h.eyeBlinkRight = l; } if (b > 0) { h.browInnerUp = b; h.browOuterUpLeft = h.browOuterUpRight = b * 0.6; } else if (b < 0) { h.browDownLeft = h.browDownRight = -b; } if (j) h.jawOpen = j; if (c > 0) { h.mouthSmileLeft = h.mouthSmileRight = c; } else if (c < 0) { h.mouthFrownLeft = h.mouthFrownRight = -c; } };
+for (const id of ['lids', 'brows', 'jaw', 'corners']) document.getElementById(id).oninput = holds;
+const mouthBox = document.getElementById('mouthon'); try { mouthBox.checked = localStorage.getItem('lab.face.mouth') !== '0'; } catch (_) { /* default on */ }
+mouthBox.onchange = () => { try { localStorage.setItem('lab.face.mouth', mouthBox.checked ? '1' : '0'); } catch (_) { /* fine */ } if (R) R.face.mouthOn = mouthBox.checked; };
 // landmarks: click to place an anchor on his face (in the mesh's own vertex space, like bodies.json keeps them)
 function drawMarkers() { if (!R) return; R.markers.clear(); const head = R.reflex.bone('Head'); if (!head || !R.mesh) return; R.mesh.updateMatrixWorld(true); head.updateMatrixWorld(true);
-  for (const k of KEYS) { const a = R.skin[k]; if (!a) continue; const w = R.mesh.localToWorld(new THREE.Vector3().fromArray(a)); const m = new THREE.Mesh(new THREE.SphereGeometry(0.002, 8, 6), new THREE.MeshBasicMaterial({ color: k.startsWith('eye') ? 0x40c0ff : 0xffc040, depthTest: false })); m.renderOrder = 9; m.position.copy(head.worldToLocal(w)); m.scale.setScalar(1 / head.getWorldScale(new THREE.Vector3()).x); R.markers.add(m); } }
+  for (const k of KEYS) { const a = R.skin[k]; if (!a) continue; const w = R.mesh.localToWorld(new THREE.Vector3().fromArray(a)); const m = new THREE.Mesh(new THREE.SphereGeometry(0.002, 8, 6), new THREE.MeshBasicMaterial({ color: k.startsWith('eye') ? 0x40c0ff : k.startsWith('mouth') ? 0xff6080 : 0xffc040, depthTest: false })); m.renderOrder = 9; m.position.copy(head.worldToLocal(w)); m.scale.setScalar(1 / head.getWorldScale(new THREE.Vector3()).x); R.markers.add(m); } }
 let placing = false; const placeBtn = document.getElementById('place');
 placeBtn.onclick = () => { placing = !placing; placeBtn.classList.toggle('on', placing); if (placing && R) R.markers.visible = true; };
 let down = null; r.domElement.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; });
@@ -117,7 +122,7 @@ r.domElement.addEventListener('pointerup', e => { if (!placing || !down || !R ||
 document.getElementById('markers').onclick = () => { if (R) R.markers.visible = !R.markers.visible; };
 document.getElementById('apply').onclick = () => { if (!R) return; localStorage.setItem('lab.face.' + R.spec.id, JSON.stringify(R.skin)); load(sel.value); };
 document.getElementById('clearlm').onclick = () => { if (!R) return; localStorage.removeItem('lab.face.' + R.spec.id); load(sel.value); };
-document.getElementById('json').onclick = () => { const t = document.getElementById('lmout'); t.style.display = 'block'; t.value = JSON.stringify(Object.assign({ note: 'eyes and brows on the fused head (world/face.mjs skin path): anchors in the mesh\'s own vertex space, picked on lab/face.html; eye half-sizes in metres' }, R?.skin || {})); t.select(); };
+document.getElementById('json').onclick = () => { const t = document.getElementById('lmout'); t.style.display = 'block'; t.value = JSON.stringify(Object.assign({ note: 'eyes, brows and mouth on the fused head (world/face.mjs skin path): anchors in the mesh\'s own vertex space, picked on lab/face.html; eye and lip half-sizes in metres' }, R?.skin || {})); t.select(); };
 document.getElementById('say').onclick = async () => { const t = document.getElementById('line').value.trim(); if (!t || !R) return; voice.stop(); voice.speak(R.key, t, {}); };
 window.__face = { get R() { return R; }, voice, THREE, cam, ctl, scene, renderer: r };
 let last = performance.now();

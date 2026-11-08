@@ -42,9 +42,13 @@ gains its shapes; they simply start moving. `lab/face.html` is the tuning page.
 Until a body has shapes, `world/face.mjs` runs its skin path on the body's own material: a lid
 of skin slides down over each painted eye (blinks, heavy lids), the brow vertices lift or lower
 with the mood, and the iris slides a few millimetres for glances (the texture lookup moves,
-following whichever way the texture island lies). The mouth is left alone on purpose. It needs
-only the `face` block in `bodies.json`: the two eye centres and six brow points in the mesh's own
-vertex space, plus the eye's half-sizes in metres. Marco and Dante have theirs. To place or
+following whichever way the texture island lies). The mouth is a stopgap: the jaw drops a few
+millimetres on the vowels with the lip line opening dark between the lips, m/b/p close it, and
+the corners lift or fall with the mood. There is no inner mouth to show, so it stays small; the
+"mouth stopgap" box on the face page (localStorage `lab.face.mouth`) turns it off if it reads
+wrong on your screen. It needs
+only the `face` block in `bodies.json`: the two eye centres, six brow points, the mouth centre and
+corners in the mesh's own vertex space, plus the eye's and lips' half-sizes in metres. Marco and Dante have theirs. To place or
 correct them: `lab/face.html?body=<id>` → Landmarks → pick an anchor, **place**, click the spot
 on his face (his left is screen-right when he faces you), **apply** to see it, **JSON** to copy
 the block into `bodies.json`. The same anchors serve the phone mesh (`?tier=mobile` to check).

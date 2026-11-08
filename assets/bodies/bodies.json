@@ -48,7 +48,7 @@
       }
     },
     "face": {
-      "note": "eyes and brows on the fused head (world/face.mjs skin path): anchors in the mesh's own vertex space, picked on lab/face.html; eye half-sizes in metres",
+      "note": "eyes, brows and mouth on the fused head (world/face.mjs skin path): anchors in the mesh's own vertex space, picked on lab/face.html; eye and lip half-sizes in metres",
       "eye": {
         "w": 0.0155,
         "h": 0.0052
@@ -92,7 +92,26 @@
         -0.0005993,
         -0.0010237,
         0.0157106
-      ]
+      ],
+      "mouth": [
+        -1.6e-05,
+        -0.0012854,
+        0.0148692
+      ],
+      "mouthL": [
+        0.0001687,
+        -0.0011992,
+        0.0148285
+      ],
+      "mouthR": [
+        -0.0001868,
+        -0.0011997,
+        0.0148457
+      ],
+      "lips": {
+        "w": 0.018,
+        "h": 0.0072
+      }
     }
   },
   {
@@ -287,7 +306,7 @@
       }
     },
     "face": {
-      "note": "eyes and brows on the fused head (world/face.mjs skin path): anchors in the mesh's own vertex space, picked on lab/face.html; eye half-sizes in metres",
+      "note": "eyes, brows and mouth on the fused head (world/face.mjs skin path): anchors in the mesh's own vertex space, picked on lab/face.html; eye and lip half-sizes in metres",
       "eye": {
         "w": 0.0152,
         "h": 0.0056
@@ -331,7 +350,26 @@
         -0.0712295,
         1.58225,
         0.0928434
-      ]
+      ],
+      "mouth": [
+        -0.0052807,
+        1.4972227,
+        0.1256529
+      ],
+      "mouthL": [
+        0.0150297,
+        1.4963643,
+        0.1236203
+      ],
+      "mouthR": [
+        -0.0255911,
+        1.4963643,
+        0.1236203
+      ],
+      "lips": {
+        "w": 0.02,
+        "h": 0.0055
+      }
     }
   },
   {
