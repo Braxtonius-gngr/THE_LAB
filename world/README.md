@@ -5,7 +5,7 @@ The agent and world layer: the places, the people in them, and the ways to reach
 | File | What it is |
 |---|---|
 | `apartment.html` | The scene. `?place=marco` (default) or `?place=dante`: first-person, you walk, talk (typed or by mic), play him a song; the host lives there and the other one comes over at his hours (or `?dante=1` / `?marco=1`). |
-| `text.html` | Your phone. `?who=marco` or `?who=dante`: a text thread with him, no 3D. Same mind and memory as the room, so each side remembers the other. He can text first (his off-screen life, below); the page picks it up on open and every minute, and the bell subscribes the phone to push so it buzzes with the page closed (`sw.js`, `manifest.webmanifest`; on an iPhone, from a Home Screen install). |
+| `text.html` | Your phone. `?who=marco` or `?who=dante`: a text thread with him, no 3D. Same mind and memory as the room, so each side remembers the other. He can text first (his off-screen life, below); the page picks it up on open and every minute, merges the thread as he remembers it on open (so phone, tablet and PC show the same conversation), and the bell subscribes the phone to push so it buzzes with the page closed (`sw.js`, `manifest.webmanifest`; on an iPhone, from a Home Screen install). |
 | `places.mjs` | Each place as data: room size, Meshy props by floor point and yaw, standing spots, seats, lights, host, guest hours. |
 | `seats.mjs` | Seats from the furniture: every sofa, chair, beanbag, bed and counter in a place's prop list becomes somewhere to sit, lie or lean, from its placement and catalog size. A place's hand-placed `seats` win where they exist. |
 | `props.mjs` | Loads baked props (`assets/props/<id>/{desktop,mobile}.glb`, see `tools/props`). |

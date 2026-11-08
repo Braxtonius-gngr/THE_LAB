@@ -100,6 +100,13 @@ Deno.serve(async (req) => {
     const now = new Date(), from = new Date(last?.[0]?.at || now.getTime() - 4 * 3.6e6);
     const hours = clamp((now.getTime() - from.getTime()) / 3.6e6, 0.5, 12);
     const since = new Date(now.getTime() - hours * 3.6e6);
+    // 2-8 am with everyone asleep: let them sleep. No model call and no tick, so the morning tick
+    // lives the whole night in one go (a few things, not a drama every two hours), and the bill
+    // drops by a third. A note or force:true still runs it.
+    const hourLocal = Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "numeric", hour12: false }).format(now)) % 24;
+    const asleepWord = /asleep|sleeping|in bed|out cold|crashed|dozed|passed out/i;
+    const allAsleep = chars.every((c) => asleepWord.test(states?.find((s) => s.character_id === c.id)?.current_task || ""));
+    if (!body.note && !body.force && hourLocal >= 2 && hourLocal < 8 && allAsleep) return json({ ok: true, slept: true, hours, hour_local: hourLocal });
 
     // who has the visitor's number: the ones who know his name
     const hasNumber = chars.filter((c) => (rels || []).some((r) => r.owner_id === c.id && r.target_id === PLAYER && r.knows_name)).map((c) => c.name);

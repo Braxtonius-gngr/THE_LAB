@@ -231,7 +231,14 @@ async function arrive(key, { model = null, atDoor = false } = {}) {
   const isHost = key === hostKey, spec = isHost ? hspec : gspec;
   const m = model || (await loader.loadAsync('../assets/bodies/' + spec[tier])).scene;
   const R = await resident({ key, name: NAME[key], model: m, bodySpec: spec, seed: key, outfitFor: isHost ? HOME[key] : GUEST[key], place: isHost ? null : G.place, isHost });
-  if (isHost && !atDoor) { R.model.position.copy(SPOTS[PLACE.spawnHost.at]); R.model.rotation.y = PLACE.spawnHost.yaw; }
+  // where his life left him: asleep in bed, out on the couch, at the stove - he's there when you walk in,
+  // not standing at attention (?doing_marco=asleep%20in%20bed to try it without the live world)
+  const doing = (Q.get('doing_' + key) || WORLD.people.find(p => KEYS[p.name] === key)?.doing || '').toLowerCase();
+  const asleep = /asleep|sleeping|out cold|crashed|dozed|dozing|napping|passed out/.test(doing), onSofa = /couch|sofa/.test(doing), inBed = /\bbed\b/.test(doing), inKitchen = /kitchen|stove|cook|fridge|dishes|coffee|counter/.test(doing);
+  const seatAt = (where, posture) => { const f = R.reflex.seatFor(where); if (!f) return false; const S = f[1]; R.model.position.copy(posture === 'lie' ? S.side : S.pos); R.model.rotation.y = S.yaw || 0; if (posture === 'lie') R.reflex.lie(); else R.reflex.sit(f[0]); return true; };
+  const placed = (asleep && !onSofa && isHost && seatAt('bed', 'lie')) || ((onSofa || (asleep && !isHost)) && seatAt('sofa', 'sit'));
+  if (placed) { R.model.userData.foundDoing = doing; }
+  else if (isHost && !atDoor) { R.model.position.copy(SPOTS[inKitchen && SPOTS.kitchen ? 'kitchen' : PLACE.spawnHost.at]); R.model.rotation.y = PLACE.spawnHost.yaw; }
   else { R.model.position.copy(SPOTS.door); R.model.rotation.y = 0; R.reflex.do({ type: 'walk_to', target: isHost ? PLACE.spawnHost.at : G.first }); }
   RES.push(R); return R;
 }
@@ -246,9 +253,13 @@ function depart(R, why) {
 if (hostHere) await arrive(hostKey, { model: g.scene });
 if (guestHere) await arrive(G.key, { model: gd.scene, atDoor: true });
 const M = RES[0] || null;
+// a sleeping house is dark: when the host's life has him asleep, the lamps are off and what's left is the
+// street through the window (the men still show; you're the one who walked in on him)
+const hostAsleep = RES.find(R => R.key === hostKey)?.model.userData.foundDoing && /asleep|sleeping|out cold|crashed|dozed|dozing|napping|passed out/.test(RES.find(R => R.key === hostKey).model.userData.foundDoing);
+if (hostAsleep) { scene.traverse(o => { if (o.isLight) o.intensity *= (o.isHemisphereLight || o.isAmbientLight) ? 0.3 : 0.08; }); scene.add(new THREE.HemisphereLight(0x5a6a9a, 0x0c0c12, 0.35)); say('sys', `${NAME[hostKey]} is asleep. The lights are off.`); }
 if (!hostHere) { const w = whereOf(hostKey); say('sys', `${NAME[hostKey]} isn't home${w ? ` - he's ${WHERE_WORD[w] || w}` : ''}${RES.length ? '' : '. The place is empty.'}`); }
 const marco = M?.model, reflex = M?.reflex, mind = M?.mind, anat = M?.anat;
-window.__ready = true;
+window.__ready = true; window.__lab = { RES, SPOTS, WORLD };   // (for the headless checks in tools/)
 let bubbleUntil = 0, bubbleOf = M;
 function showBubble(R, text) { bubbleOf = R; bubble.textContent = text; bubble.style.display = text ? 'block' : 'none'; bubbleUntil = performance.now() + 1500 + text.length * 55; }
 const _hp = new THREE.Vector3();

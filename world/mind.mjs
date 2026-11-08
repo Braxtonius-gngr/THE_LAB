@@ -22,6 +22,13 @@ export class Mind {
     if (!r.ok || d.error) throw new Error(d.error || `mind ${r.status}`);
     return d;   // { name, now, since, inbox: [{ id, text, created_at }] }
   }
+  // the text thread as he remembers it: [{ who: 'you' | 'him', text, at }] oldest first (every device shows the same thread)
+  static async thread(characterId, playerId = PLAYER_ID) {
+    const r = await fetch(`${SUPABASE_URL}/functions/v1/mind?character_id=${characterId}&player_id=${playerId}&thread=1`, { headers: { 'Authorization': `Bearer ${SUPABASE_ANON}`, 'apikey': SUPABASE_ANON } });
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || `mind ${r.status}`);
+    return d.thread || [];
+  }
   // text: what the player said; event: 'arrive' | 'leave'; scene: { time, player_distance_m, spots }
   async send({ text = null, event = null, scene = {} } = {}) {
     if (this.busy) return null;

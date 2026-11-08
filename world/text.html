@@ -110,9 +110,22 @@ async function checkInbox(quiet = false) {
     lastNow = d.now || '';
   } catch (e) { if (!lastNow) nowEl.textContent = `can't reach him: ${e.message}`; }
 }
-checkInbox(true);
+// the thread as he remembers it: anything this phone hasn't got (texts from another device, or his
+// that another device picked up) is slotted in by time, so every device shows the same conversation
+async function syncThread() {
+  try {
+    const lines = await Mind.thread(CHARACTERS[KEY]); let added = 0;
+    for (const l of lines) {
+      const at = new Date(l.at).getTime(), who = l.who === 'you' ? 'you' : 'him';
+      if (T.msgs.some(m => m.who === who && m.text === l.text && Math.abs(m.at - at) < 15 * 60e3)) continue;
+      T.msgs.push({ who, text: l.text, at }); added++;
+    }
+    if (added) { T.msgs.sort((a, b) => a.at - b.at); mind.history = T.msgs.filter(m => m.who !== 'sys').slice(-12).map(m => ({ who: m.who === 'you' ? 'player' : 'me', text: m.text })); save(); render(); }
+  } catch (_) { /* offline: this phone's copy will do */ }
+}
+syncThread().then(() => checkInbox(true));
 setInterval(() => checkInbox(), 60e3);
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkInbox(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { syncThread(); checkInbox(); } });
 
 // ---- the bell: this phone buzzes when he texts first, page closed or not. A service worker
 // (sw.js) takes the push and shows the text; the subscription is kept server-side (functions/push).
