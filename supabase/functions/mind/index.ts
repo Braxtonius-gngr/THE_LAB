@@ -5,10 +5,16 @@
 //   event   'arrive' (player enters: the character notices and greets or doesn't),
 //           'leave'  (player leaves: the character reflects on the visit; session closes)
 //   scene   { location, time, hour, comfort, others: [{id,name,wearing,distance_m}], player_distance_m, player_pos: [x,z], spots: ['sofa','kitchen',...], wearing, wardrobe }
-//   history recent turns this session, [{ who: 'player'|'me'|'other', name?, text }], kept by the page
+//   history recent turns this session, [{ who: 'player'|'me'|'other', name?, to?, text }], kept by the page
+//   heard   what others in the room said since his last turn, [{ id, name, to?, text }]: he remembers it
+//   event   also 'chat' (the room has gone quiet: say something to the other one, or don't),
+//           'addressed' (the other one just spoke to him), 'overheard', 'someone_arrives', 'someone_leaves', 'song'
 //   scene.channel = 'text': you're texting him (world/text.html), not in the room. He answers in
 //           his texting voice, with no body actions, from wherever his life has him right now.
-// → { say, actions, mood, session_id, recalled, memory }
+// → { say, to, actions, mood, session_id, recalled, memory }   (to: 'player' or the other one's name)
+//
+// The prompt is two blocks: who he is and how to answer (stable per character, cached with a
+// cache_control marker), then the moment (volatile). Opus 5.5 caches a prefix from 512 tokens.
 // GET ?character_id&player_id → { name, now, inbox: [texts he sent you that you haven't seen] }
 //   (his off-screen life can text you first: supabase/functions/life writes to `outbox`)
 //
@@ -35,9 +41,11 @@ async function embed(text: string): Promise<number[]> {
   return (await embedder.run(text, { mean_pool: true, normalize: true })) as number[];
 }
 
-async function think(system: string, messages: { role: string; content: string }[]) {
+async function think(stable: string, moment: string, messages: { role: string; content: string }[]) {
   const key = Deno.env.get("ANTHROPIC_API_KEY");
   if (!key) throw new Error("ANTHROPIC_API_KEY is not set (Edge Function secrets)");
+  // the stable block (persona + how to answer) is marked for the prompt cache; the moment follows it
+  const system = [{ type: "text", text: stable, cache_control: { type: "ephemeral" } }, { type: "text", text: moment }];
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
@@ -45,8 +53,9 @@ async function think(system: string, messages: { role: string; content: string }
   });
   if (!r.ok) throw new Error(`model ${r.status}: ${(await r.text()).slice(0, 300)}`);
   const d = await r.json();
-  // (what it cost, for the usage counter)
-  supabase.from("api_usage").insert({ fn: "mind", model: MODEL, input_tokens: d.usage?.input_tokens || 0, output_tokens: d.usage?.output_tokens || 0 }).then(() => {});
+  // (what it cost, for the usage counter - cached reads are billed at a fraction)
+  const u = d.usage || {};
+  supabase.from("api_usage").insert({ fn: "mind", model: MODEL, input_tokens: u.input_tokens || 0, output_tokens: u.output_tokens || 0, cache_read_tokens: u.cache_read_input_tokens || 0, cache_write_tokens: u.cache_creation_input_tokens || 0 }).then(() => {});
   const text = (d.content || []).map((c: { text?: string }) => c.text || "").join("");
   const m = text.match(/\{[\s\S]*\}/);
   if (!m) return { say: text.trim(), actions: [], mood: null, memory: null, relationship: null };
@@ -122,7 +131,7 @@ Deno.serve(async (req) => {
       return json({ name: c.name, now: doing(st?.current_task), since: st?.updated_at || null, inbox: inbox || [] });
     }
     const body = await req.json();
-    const { character_id, player_id, text = null, event = null, scene = {}, history = [] } = body;
+    const { character_id, player_id, text = null, event = null, scene = {}, history = [], heard = [] } = body;
     let { session_id } = body;
     if (!character_id || !player_id) return json({ error: "character_id and player_id required" }, 400);
 
@@ -136,6 +145,8 @@ Deno.serve(async (req) => {
     // others in the room (other characters): who they are to him
     const others = Array.isArray(scene.others) ? scene.others.slice(0, 4) : [];
     const otherRels = others.length ? (await supabase.from("relationships").select("target_id,summary,affection,trust").eq("owner_id", character_id).in("target_id", others.map((o: { id: string }) => o.id))).data || [] : [];
+    const otherNames: string[] = others.map((o: { name: string }) => String(o.name));
+    const other = otherNames[0] || null;   // (1-on-2 today: the one other person in the room)
     const othersLine = others.map((o: { id: string; name: string; wearing?: string; distance_m?: number }) => {
       const rr = otherRels.find((x: { target_id: string }) => x.target_id === o.id);
       return `${o.name}${o.wearing ? ` (wearing ${o.wearing === "Nude" ? "nothing" : o.wearing})` : ""}${o.distance_m != null ? `, ${Number(o.distance_m).toFixed(1)} m from you` : ""}${rr?.summary ? ` - your take: ${rr.summary}` : ""}`;
@@ -148,7 +159,7 @@ Deno.serve(async (req) => {
     const texting = scene.channel === "text";
     const here = texting ? (state?.location || me.home_location) : (scene.location || me.home_location);
     // what is on the character's mind right now: the cue is what was said, or the event
-    const cue = text || (event === "arrive" ? `${who} has just arrived` : event === "leave" ? `${who} is leaving` : event === "song" && scene.song ? songCue(scene.song, who) : event === "someone_arrives" ? `${scene.who_moved || "someone"} just walked in` : event === "someone_leaves" ? `${scene.who_moved || "someone"} just left` : event === "overheard" ? "you just heard what was said in the room (see the conversation); add something only if a person would - otherwise say nothing (empty say)" : "nothing in particular");
+    const cue = text || (event === "arrive" ? `${who} has just arrived` : event === "leave" ? `${who} is leaving` : event === "song" && scene.song ? songCue(scene.song, who) : event === "someone_arrives" ? `${scene.who_moved || "someone"} just walked in` : event === "someone_leaves" ? `${scene.who_moved || "someone"} just left` : event === "overheard" ? "you just heard what was said in the room (see the conversation); add something only if a person would - otherwise say nothing (empty say)" : event === "addressed" && other ? `${other} just said that to you (the last line) - answer him, or don't, as you would` : event === "chat" && other ? `the room has gone quiet for a bit. If there is something you'd naturally say to ${other} right now - something on your mind, a jab, a question, picking up a thread from earlier, even something about ${who} while he's standing right there - say it to ${other} (to: "${other}"), not to ${who}. If you'd just let the quiet sit, say nothing (empty say). Most quiet moments are fine as they are.` : "nothing in particular");
     const qv = await embed(cue);
     const { data: recalled } = await supabase.rpc("recall", { p_owner: character_id, p_query: JSON.stringify(qv), p_limit: 10 });
     const memLines = (recalled || []).map((m: { content: string; created_at: string; kind: string }) => `- (${ago(m.created_at)}, ${m.kind}) ${m.content}`).join("\n");
@@ -164,37 +175,53 @@ Deno.serve(async (req) => {
 ${visits ? `${who} has been over ${visits} time${visits === 1 ? "" : "s"}.` : `You've never met ${who} in person.`}`
       : `You are ${scene.place || `in your ${scene.location || me.home_location || "apartment"}`}. Time: ${scene.time || "evening"}.${scene.wearing ? ` You're wearing: ${scene.wearing === "Nude" ? "nothing" : scene.wearing}. Clothes you could change into: ${(scene.wardrobe || []).join(", ")}.` : ""} ${who} is ${scene.player_distance_m != null ? `${Number(scene.player_distance_m).toFixed(1)} m away` : "here"}. Places you can go to there: ${(scene.spots || ["sofa", "kitchen", "window", "door"]).join(", ")}.
 This is visit number ${visits || 1} from ${who}.`;
-    const system = `${me.persona}
+    // --- stable: who he is and how he answers (the same bytes every turn, so it caches) ---
+    const stable = texting
+      ? `${me.persona}
 
-${situation}${rel ? ` How you feel about ${who}: affection ${rel.affection.toFixed(2)}, trust ${rel.trust.toFixed(2)}, familiarity ${rel.familiarity.toFixed(2)}. Your take on them so far: ${rel.summary || "no take yet"}.` : ` You have never met this person before${knowsName ? "" : " and don't know their name"}.`}
-Your mood: ${JSON.stringify(state?.mood || { valence: 0, energy: 0.5 })}.
-${othersLine ? `Also here with you: ${othersLine}. They hear what's said; you can talk to them as well as to ${who}.\n` : ""}How you feel in yourself right now: ${needLine}. These drive you like they drive anyone - let them show in what you say and do, not as a report.
-${memLines ? `Things you remember (most relevant first):\n${memLines}` : "You have no memories of this person yet."}
+You are texting on your phone. You're not with the person you're texting.
 
 Respond ONLY with JSON, no prose around it:
-${texting
-  ? `{"say": "the text you send back - how you actually text: short, your own voice, lowercase and fragments are fine, no stage directions, no emoji unless you're that kind of person - or \\"\\" if you'd leave it on read for now",
- "actions": [],`
-  : `{"say": "what you say out loud, 1-3 short sentences, or \\"\\" if you stay quiet",
- "actions": [{"type":"look_at","target":"player"} | {"type":"walk_to","target":"<spot>"} | {"type":"turn_to","target":"player"} | {"type":"gesture","name":"nod"|"shrug"|"wave"} | {"type":"change","outfit":"<one of your clothes>"} | {"type":"eat"} | {"type":"sit"} | {"type":"lie_down"} | {"type":"stand"} | {"type":"drink"} | {"type":"phone"} | {"type":"stretch"} | {"type":"cross_arms"} | {"type":"lean_counter"} | {"type":"play_bass"} (${me.name === "Marco" ? "your bass is here; you play it for real - a few of your own lines, the bridge you're still learning - and people hear it" : "only if there is a bass here and you'd pick it up"}) | {"type":"go","where":"marco-apartment"|"dante-apartment"|"the-bar"|"out","why":"a few words"} (you actually leave: for work, to go home, to run out - only when a person would, e.g. your shift is coming up; say your goodbye in "say") | {"type":"idle"}],`}
+{"say": "the text you send back - how you actually text: short, your own voice, lowercase and fragments are fine, no stage directions, no emoji unless you're that kind of person - or \\"\\" if you'd leave it on read for now",
+ "actions": [],
  "mood": {"valence": -1..1, "energy": 0..1},
  "memory": {"content": "one thing worth remembering from this moment, in first person, or null", "importance": 1-10},
  "needs": {"energy": -0.3..0.3, "hunger": -1..0.2, "social": -0.3..0.3, "intimacy": -0.3..0.2} - how this moment changed them (eating drops hunger; good company drops social, wears it thin when you're peopled out; real warmth or affection eases intimacy),
- "relationship": {"affection": -0.2..0.2, "trust": -0.2..0.2, "familiarity": 0..0.1, "summary": "your one-line take on ${who} now"}}
-Be a person, not a helper. Don't ask how you can help. Reference memories naturally when they matter, not as a list. If this person wronged you, it shows. If it's the first meeting, you don't know their name unless they tell you.
-Don't end every line with a question; often just react, or say something of your own, or let a silence sit. You already know what time it is, so don't keep saying it.${texting
-  ? ` You're wherever your day has you - if you're working or asleep, that shows in whether and how you answer. Mention what you're doing only when it comes up, like anyone texting. One text at a time; a reply, not a paragraph.`
-  : ` Wherever you are: every few exchanges do something physical (walk_to a spot, turn away and back) instead of standing at attention. Keep "say" to spoken words only.
-What you wear is yours to decide, like anyone at home: what suits the hour, the heat, your mood and who's here. Change only when a person in your place would (getting comfortable, someone arriving, heading to bed, a guest you'd rather not be seen in your underwear by) - not every turn.`}`;
+ "relationship": {"affection": -0.2..0.2, "trust": -0.2..0.2, "familiarity": 0..0.1, "summary": "your one-line take on the person you're texting, now"}}
+Be a person, not a helper. Don't ask how you can help. Reference memories naturally when they matter, not as a list. If this person wronged you, it shows. If you've never met, you don't know their name unless they tell you.
+Don't end every line with a question; often just react, or say something of your own, or let a silence sit. You already know what time it is, so don't keep saying it. You're wherever your day has you - if you're working or asleep, that shows in whether and how you answer. Mention what you're doing only when it comes up, like anyone texting. One text at a time; a reply, not a paragraph.`
+      : `${me.persona}
 
-    const msgs = history.slice(-14).map((h: { who: string; text: string; name?: string }) => h.who === "other" ? { role: "user", content: `[${h.name} says: "${h.text}"]` } : ({ role: h.who === "player" ? "user" : "assistant", content: h.text }));
+You are at home or at a friend's, with a visitor and sometimes a friend in the room. The moment - where you are, who's there, what you remember - follows this.
+
+Respond ONLY with JSON, no prose around it:
+{"say": "what you say out loud, 1-3 short sentences, or \\"\\" if you stay quiet",
+ "to": "player" | "<the name of the other person in the room>" - who you're saying it to (the visitor is "player"),
+ "actions": [{"type":"look_at","target":"player"|"other"} | {"type":"walk_to","target":"<spot>"} | {"type":"turn_to","target":"player"|"other"} | {"type":"gesture","name":"nod"|"shrug"|"wave"} | {"type":"change","outfit":"<one of your clothes>"} | {"type":"eat"} | {"type":"sit"} | {"type":"lie_down"} | {"type":"stand"} | {"type":"drink"} | {"type":"phone"} | {"type":"stretch"} | {"type":"cross_arms"} | {"type":"lean_counter"} | {"type":"play_bass"} (${me.name === "Marco" ? "your bass is here; you play it for real - a few of your own lines, the bridge you're still learning - and people hear it" : "only if there is a bass here and you'd pick it up"}) | {"type":"go","where":"marco-apartment"|"dante-apartment"|"the-bar"|"out","why":"a few words"} (you actually leave: for work, to go home, to run out - only when a person would, e.g. your shift is coming up; say your goodbye in "say") | {"type":"idle"}],
+ "mood": {"valence": -1..1, "energy": 0..1},
+ "memory": {"content": "one thing worth remembering from this moment, in first person, or null", "importance": 1-10},
+ "needs": {"energy": -0.3..0.3, "hunger": -1..0.2, "social": -0.3..0.3, "intimacy": -0.3..0.2} - how this moment changed them (eating drops hunger; good company drops social, wears it thin when you're peopled out; real warmth or affection eases intimacy),
+ "relationship": {"affection": -0.2..0.2, "trust": -0.2..0.2, "familiarity": 0..0.1, "summary": "your one-line take on the visitor, now"}}
+Be a person, not a helper. Don't ask how you can help. Reference memories naturally when they matter, not as a list. If this person wronged you, it shows. If it's the first meeting, you don't know their name unless they tell you.
+Don't end every line with a question; often just react, or say something of your own, or let a silence sit. You already know what time it is, so don't keep saying it. Wherever you are: every few exchanges do something physical (walk_to a spot, turn away and back) instead of standing at attention. Keep "say" to spoken words only.
+When a friend is in the room, you two have your own history; talk to him when you would (an aside, a jab, backing him up, disagreeing), not only to the visitor, and not every turn. "to" says who the line is for; look at or turn to the one you're talking to when it matters.
+What you wear is yours to decide, like anyone at home: what suits the hour, the heat, your mood and who's here. Change only when a person in your place would (getting comfortable, someone arriving, heading to bed, a guest you'd rather not be seen in your underwear by) - not every turn.`;
+
+    // --- the moment: everything that changes turn to turn ---
+    const moment = `${situation}${rel ? ` How you feel about ${who}: affection ${rel.affection.toFixed(2)}, trust ${rel.trust.toFixed(2)}, familiarity ${rel.familiarity.toFixed(2)}. Your take on them so far: ${rel.summary || "no take yet"}.` : ` You have never met this person before${knowsName ? "" : " and don't know their name"}.`}
+Your mood: ${JSON.stringify(state?.mood || { valence: 0, energy: 0.5 })}.
+${othersLine ? `Also here with you: ${othersLine}. They hear what's said; you can talk to them as well as to ${who}.\n` : ""}How you feel in yourself right now: ${needLine}. These drive you like they drive anyone - let them show in what you say and do, not as a report.
+${memLines ? `Things you remember (most relevant first):\n${memLines}` : "You have no memories of this person yet."}`;
+
+    const toWord = (t?: string) => !t ? "" : t === "player" ? ` to ${who}` : t === "me" ? " to you" : ` to ${t}`;
+    const msgs = history.slice(-14).map((h: { who: string; text: string; name?: string; to?: string }) => h.who === "other" ? { role: "user", content: `[${h.name} says${toWord(h.to)}: "${h.text}"]` } : ({ role: h.who === "player" ? "user" : "assistant", content: h.text }));
     msgs.push({ role: "user", content: text ? `${who} ${texting ? "texts" : "says"}: "${text}"` : `[${cue}]` });
     // the API needs alternating roles starting with user; collapse any doubles
     const alt: { role: string; content: string }[] = [];
     for (const m of msgs) { if (alt.length && alt[alt.length - 1].role === m.role) alt[alt.length - 1].content += "\n" + m.content; else alt.push({ ...m }); }
     if (alt[0].role !== "user") alt.unshift({ role: "user", content: `[${who} is here]` });
 
-    const out = await think(system, alt);
+    const out = await think(stable, moment, alt);
     // the visit only counts once he has actually answered (a failed model call leaves no trace)
     if (!session_id) {
       const { data: s } = await supabase.from("sessions")
@@ -204,15 +231,24 @@ What you wear is yours to decide, like anyone at home: what suits the hour, the 
     }
     const say = typeof out.say === "string" ? out.say.trim() : "";
     const actions = texting ? [] : Array.isArray(out.actions) ? out.actions.slice(0, 4) : [];
+    // who the line is for: the visitor unless he named someone who is actually here
+    const toRaw = typeof out.to === "string" ? out.to.trim() : "";
+    const to = otherNames.find((n) => n.toLowerCase() === toRaw.toLowerCase()) || "player";
 
     // write what happened
     const writes: Promise<unknown>[] = [];
-    const mem = async (content: string, kind: string, importance: number, speaker_id: string | null) => {
+    const otherId = others.find((o: { name: string }) => o.name === to)?.id || null;
+    const mem = async (content: string, kind: string, importance: number, speaker_id: string | null, about: string[] = [player_id]) => {
       const embedding = await embed(content);
-      return supabase.from("memories").insert({ owner_id: character_id, kind, speaker_id, content, importance: clamp(Math.round(importance), 1, 10), embedding: JSON.stringify(embedding), about_ids: [player_id], session_id, location: here });
+      return supabase.from("memories").insert({ owner_id: character_id, kind, speaker_id, content, importance: clamp(Math.round(importance), 1, 10), embedding: JSON.stringify(embedding), about_ids: about, session_id, location: here });
     };
     if (text) writes.push(mem(texting ? `${who} texted me: "${text}"` : `${who} said to me: "${text}"`, "dialogue", 3, player_id));
-    if (say) writes.push(mem(texting ? `I texted ${who}: "${say}"` : `I said to ${who}: "${say}"`, "dialogue", 2, character_id));
+    if (say) writes.push(mem(texting ? `I texted ${who}: "${say}"` : `I said to ${to === "player" ? who : to}${to !== "player" ? ` (${who} was there)` : ""}: "${say}"`, "dialogue", 2, character_id, otherId ? [player_id, otherId] : [player_id]));
+    // what the others said since his last turn: he was there, he remembers it
+    for (const h of (Array.isArray(heard) ? heard : []).slice(0, 6) as { id?: string; name?: string; to?: string; text?: string }[]) {
+      if (!h?.text || !h.name) continue;
+      writes.push(mem(`${h.name} said${h.to === "me" ? " to me" : h.to === "player" ? ` to ${who}` : ""}: "${String(h.text).slice(0, 300)}"`, "dialogue", 2, h.id || null, h.id ? [player_id, h.id] : [player_id]));
+    }
     if (event === "arrive") writes.push(mem(`${who} came over (visit ${visits || 1}).`, "observation", 3, null));
     if (out.memory && out.memory.content) writes.push(mem(String(out.memory.content), event === "leave" ? "reflection" : "observation", Number(out.memory.importance) || 4, null));
     if ((recalled || []).length) writes.push(supabase.from("memories").update({ last_used_at: new Date().toISOString() }).in("id", recalled!.map((m: { id: string }) => m.id)));
@@ -240,7 +276,7 @@ What you wear is yours to decide, like anyone at home: what suits the hour, the 
     if (event === "leave") writes.push(supabase.from("sessions").update({ ended_at: new Date().toISOString() }).eq("id", session_id));
     await Promise.all(writes);
 
-    return json({ say, actions, mood, needs, session_id, model: MODEL, salvaged: !!out.salvaged, recalled: (recalled || []).map((m: { content: string; created_at: string }) => ({ content: m.content, when: ago(m.created_at) })), memory: out.memory || null });
+    return json({ say, to, actions, mood, needs, session_id, model: MODEL, salvaged: !!out.salvaged, recalled: (recalled || []).map((m: { content: string; created_at: string }) => ({ content: m.content, when: ago(m.created_at) })), memory: out.memory || null });
   } catch (e) {
     return json({ error: String((e as Error).message || e) }, 500);
   }

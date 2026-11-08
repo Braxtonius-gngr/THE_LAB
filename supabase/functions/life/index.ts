@@ -75,10 +75,11 @@ Deno.serve(async (req) => {
       const month = new Date(); month.setUTCDate(1); month.setUTCHours(0, 0, 0, 0);
       const [{ data }, { data: use }] = await Promise.all([
         db.from("life_ticks").select("at,hours,story").order("at", { ascending: false }).limit(6),
-        db.from("api_usage").select("model,input_tokens,output_tokens").gte("at", month.toISOString()),
+        db.from("api_usage").select("model,input_tokens,output_tokens,cache_read_tokens,cache_write_tokens").gte("at", month.toISOString()),
       ]);
-      // this month's Claude spend, estimated from tokens (Opus 5.5 $4 / $20 per million in / out; Sonnet $3 / $15)
-      let usd = 0; for (const u of use || []) { const [i, o] = /opus/.test(u.model) ? [4, 20] : [3, 15]; usd += (u.input_tokens * i + u.output_tokens * o) / 1e6; }
+      // this month's Claude spend, estimated from tokens (Opus 5.5 $4 / $20 per million in / out, cache reads 0.05x,
+      // cache writes 1.25x; Sonnet $3 / $15, reads 0.1x)
+      let usd = 0; for (const u of use || []) { const opus = /opus/.test(u.model), [i, o] = opus ? [4, 20] : [3, 15]; usd += (u.input_tokens * i + u.output_tokens * o + (u.cache_read_tokens || 0) * i * (opus ? 0.05 : 0.1) + (u.cache_write_tokens || 0) * i * 1.25) / 1e6; }
       return json({ ticks: data || [], usage: { month_usd: +usd.toFixed(2), calls: (use || []).length } });
     }
     const key = req.headers.get("x-life-key");

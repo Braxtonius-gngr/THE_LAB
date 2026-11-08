@@ -13,7 +13,7 @@ export class Mind {
   // function then takes his whereabouts from his own life rather than from the page
   constructor(characterId, { playerId = PLAYER_ID, location = 'marco-apartment', channel = null } = {}) {
     this.characterId = characterId; this.playerId = playerId; this.location = channel === 'text' ? null : location; this.channel = channel;
-    this.sessionId = null; this.history = []; this.busy = false;
+    this.sessionId = null; this.history = []; this.heard = []; this.busy = false;
   }
   // texts he sent you that you haven't seen (his off-screen life can reach out first), and what he's up to
   static async inbox(characterId, playerId = PLAYER_ID) {
@@ -31,18 +31,19 @@ export class Mind {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}`, 'apikey': SUPABASE_ANON },
         body: JSON.stringify({ character_id: this.characterId, player_id: this.playerId, session_id: this.sessionId, text, event,
-          scene: { location: this.location, ...(this.channel ? { channel: this.channel } : {}), ...scene }, history: this.history.slice(-12) }),
+          scene: { location: this.location, ...(this.channel ? { channel: this.channel } : {}), ...scene }, history: this.history.slice(-12), heard: this.heard.splice(0) }),
       });
       const d = await r.json();
       if (!r.ok || d.error) throw new Error(d.error || `mind ${r.status}`);
       this.sessionId = d.session_id;
       if (text) this.history.push({ who: 'player', text });
-      if (d.say) this.history.push({ who: 'me', text: d.say });
-      return d;
+      if (d.say) this.history.push({ who: 'me', text: d.say, to: d.to });
+      return d;   // { say, to: 'player' | '<name>', actions, ... }
     } finally { this.busy = false; }
   }
-  // what someone else in the room said, so this mind hears it next turn
-  hear(name, text) { if (text) this.history.push({ who: 'other', name, text }); }
+  // what someone else in the room said, so this mind hears it next turn and remembers it.
+  // `to` is who it was said to: 'me' (this mind), 'player', or a name. id: the speaker's character id.
+  hear(name, text, { to = null, id = null } = {}) { if (!text) return; this.history.push({ who: 'other', name, text, to }); if (id) this.heard.push({ id, name, text, to }); }
 }
 
 export const timeOfDay = (d = new Date()) => {

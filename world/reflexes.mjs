@@ -110,8 +110,8 @@ export class Reflexes {
     const a = this.queue.shift(); const cur = this.current = { type: a.type, done: false }; const fin = () => { cur.done = true; };
     const walk = (at, then) => this._standThen(() => this.walkTo(at, () => { then?.(); fin(); }));
     if (a.type === 'walk_to' && spots[a.target]) { this.hold = null; walk(spots[a.target]); }
-    else if (a.type === 'turn_to' && a.target === 'player' && this.player) { if (this.posture === 'stand') this.turnTo(this.player); fin(); }
-    else if (a.type === 'look_at') { this.lookAt(a.target === 'player' ? this.player : null); fin(); }
+    else if (a.type === 'turn_to') { const at = a.target === 'other' ? this.other : this.player; if (at && this.posture === 'stand') this.turnTo(at); fin(); }
+    else if (a.type === 'look_at') { this.lookAt(a.target === 'other' ? this.other : a.target === 'player' ? this.player : null); fin(); }
     else if (a.type === 'gesture') { this.gesture(a.name || 'nod'); setTimeout(fin, 1200); }
     else if (a.type === 'sit' || a.type === 'rest') this.sit(a.target || 'sofa', fin);
     else if (a.type === 'lie_down') this.lie(fin);
@@ -129,8 +129,9 @@ export class Reflexes {
     else fin();
   }
 
-  update(dt, { player = null, spots = {} } = {}) {
-    this.t += dt; this.player = player;
+  // player: where the visitor's eyes are; other: the other person's head, when someone else is here
+  update(dt, { player = null, other = null, spots = {} } = {}) {
+    this.t += dt; this.player = player; this.other = other;
     this._step(dt, spots);
     const m = this.model;
     if (this.hold !== 'play_bass' && this._bassOn) this.onHold?.('play_bass', false);
