@@ -55,6 +55,31 @@ the block into `bodies.json`. The same anchors serve the phone mesh (`?tier=mobi
 The lid colour is read off the texture near the eye at load, so a re-textured body needs no
 change. When ARKit shapes land on a body the skin path steps aside by itself.
 
+## Shape transfer (`tools/face/transfer.mjs`): shapes from any ARKit head, no Blender
+A free route to the 52 shapes, and the way to give Dante (and every body after) Marco's shapes
+once Faceit has made them, without a second Faceit pass:
+
+    node tools/face/transfer.mjs --from <head.glb> --to dante            # desktop mesh
+    node tools/face/transfer.mjs --from <head.glb> --to dante --tier mobile
+    node tools/face/transfer.mjs --selftest --to dante                   # a made-up source, to see it run
+
+The source is any GLB whose head mesh has ARKit-named morph targets: a Ready Player Me avatar
+(`https://models.readyplayer.me/<avatar-id>.glb?morphTargets=ARKit`, free account), or a Faceit
+export of one of our own heads. Its landmarks come from its own shapes (where eyeBlinkLeft moves
+vertices is the left eye, mouthSmileLeft the corner, jawOpen the chin); the target's from the
+`face` anchors in `bodies.json`. The source is fitted on by a translation and a per-axis scale,
+every head vertex takes the nearest source deltas, the head is split into its own primitive and
+the shapes go on it (sparse, a few MB). Output lands in `tools/face/out/` (git-ignored):
+
+    node tools/face/check.mjs tools/face/out/dante-desktop.glb
+    lab/face.html?body=dante&glb=tools/face/out/dante-desktop.glb
+
+If it reads right, copy it over `assets/bodies/dante/desktop.glb` (and the mobile one). The
+printed landmark residuals should be around 10 mm; 30+ means an anchor is off (re-pick it on
+the face page) or the source faces the wrong way. Painted eyes have no eyeball for a blink
+shape to close over, so with shapes present the face module still draws the lid of skin itself
+(eyes stay on the skin path; the shapes do brows and mouth).
+
 ## Route 3: the Unreal era
 Rebuild the men on a face-first character base when the move to Unreal happens: Mesh to
 MetaHuman can take the current heads for the likeness; MetaHumans may now be used outside

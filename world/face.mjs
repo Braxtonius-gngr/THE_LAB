@@ -41,7 +41,7 @@ const SKIN_PARS = `
 uniform float uFaceA; uniform vec3 uFaceUp, uFaceRight, uFaceFwd;
 uniform vec3 uEyeP[2]; uniform vec2 uEyeHalf, uBlink, uLook; uniform vec3 uLidCol[2];
 uniform vec3 uBrowP[6]; uniform float uBrowD[6]; uniform float uBrowR;
-uniform vec3 uMouthP; uniform vec3 uMouthC[2]; uniform vec2 uMouthHalf; uniform float uJaw, uMouthOn; uniform vec4 uCorner;
+uniform vec3 uMouthP; uniform vec3 uMouthC[2]; uniform vec2 uMouthHalf; uniform float uJaw, uMouthOn, uPinch; uniform vec4 uCorner;
 `;
 // brows lift or lower round their anchors; on a blink the lids pinch toward each other a little (the silhouette)
 const SKIN_VERTEX = `
@@ -49,7 +49,7 @@ vFaceP = transformed;
 { float fa = uFaceA; vec3 fd = vec3(0.0);
   for (int i = 0; i < 6; i++) { float r = distance(transformed, uBrowP[i]) / (uBrowR * fa); float f = max(0.0, 1.0 - r * r); fd += uFaceUp * (uBrowD[i] * fa * f * f); }
   for (int i = 0; i < 2; i++) { vec3 q = transformed - uEyeP[i]; float x = dot(q, uFaceRight) / (uEyeHalf.x * fa * 1.3), y = dot(q, uFaceUp) / (uEyeHalf.y * fa * 2.2);
-    float f = max(0.0, 1.0 - x * x - y * y); fd += uFaceUp * (-sign(y) * 0.0012 * fa * f * uBlink[i]); }
+    float f = max(0.0, 1.0 - x * x - y * y); fd += uFaceUp * (-sign(y) * 0.0012 * fa * f * uBlink[i] * uPinch); }
   if (uMouthOn > 0.5) {
     // the jaw: what lies below the lip line drops, more toward the chin (it swings from the ears), fading at the
     // jaw's angle and, close to the lips, toward the corners (the cheeks hold them)
@@ -113,7 +113,11 @@ export class Face {
     model.traverse(o => { if (o.isMesh && o.morphTargetDictionary) for (const [n, i] of Object.entries(o.morphTargetDictionary)) (this.targets[n] = this.targets[n] || []).push({ mesh: o, index: i }); });
     this.has = ARKIT.some(n => this.targets[n]);
     this.skin = null; this.lookOverride = null; this.hold = {};   // hold: shape weights a tuning page pins (lab/face.html)
-    if (!this.has && skin && skin.eyeL && skin.eyeR) { try { this._skin(model, skin, THREE); } catch (e) { console.warn('face: skin path off', e); } }
+    // the skin path runs whenever a body has face anchors: on its own for a body without shapes; eyes
+    // only (lids, iris) beside the shapes otherwise, because a painted eye has no eyeball for a blink
+    // shape to close over - the lid of skin coming down is what reads as a blink
+    if (skin && skin.eyeL && skin.eyeR) { try { this._skin(model, skin, THREE); } catch (e) { console.warn('face: skin path off', e); } }
+    this.skinEyesOnly = this.has;
     this.w = {}; this.goal = {};          // current and target weights, by shape
     this.mood = { valence: 0, energy: 0.5 }; this.listening = false;
     this.headAdd = { pitch: 0, yaw: 0, roll: 0 };
@@ -202,7 +206,7 @@ export class Face {
       uMouthP: { value: spec.mouth ? v3(spec.mouth) : v3(spec.eyeL).lerp(v3(spec.eyeR), 0.5).addScaledVector(up, -0.07 * A) },
       uMouthC: { value: [spec.mouthL ? v3(spec.mouthL) : null, spec.mouthR ? v3(spec.mouthR) : null] },
       uMouthHalf: { value: new THREE.Vector2((spec.lips || {}).w || 0.019, (spec.lips || {}).h || 0.006) },
-      uJaw: { value: 0 }, uCorner: { value: new THREE.Vector4(0, 0, 0, 0) }, uMouthOn: { value: 0 },
+      uJaw: { value: 0 }, uCorner: { value: new THREE.Vector4(0, 0, 0, 0) }, uMouthOn: { value: 0 }, uPinch: { value: 1 },
     };
     const mp = u.uMouthP.value, mw = u.uMouthHalf.value.x * A;
     if (!u.uMouthC.value[0]) u.uMouthC.value[0] = mp.clone().addScaledVector(right, mw); if (!u.uMouthC.value[1]) u.uMouthC.value[1] = mp.clone().addScaledVector(right, -mw);
@@ -262,14 +266,15 @@ export class Face {
     const ly = this.lookOverride ? this.lookOverride.y : (W('eyeLookUpLeft') + W('eyeLookUpRight') - W('eyeLookDownLeft') - W('eyeLookDownRight')) / 2;
     u.uLook.value.set(lx * 0.0035, ly * 0.002);
     // the mouth stopgap: jaw drop in metres from the vowels (m/b/p close it), corners from the mood
-    const on = this.mouthOn && this.hasMouth; u.uMouthOn.value = on ? 1 : 0;
+    const on = this.mouthOn && this.hasMouth && !this.skinEyesOnly; u.uMouthOn.value = on ? 1 : 0; u.uPinch.value = this.skinEyesOnly ? 0 : 1;
     const jaw = Math.max(0, W('jawOpen') * (1 - 0.7 * W('mouthClose')) + 0.25 * W('mouthFunnel') + 0.15 * W('mouthPucker'));
     u.uJaw.value = on ? Math.min(0.011, jaw * 0.011) : 0;
     const st = (W('mouthStretchLeft') + W('mouthStretchRight')) / 2, pk = Math.min(1, W('mouthPucker') + W('mouthFunnel'));
     const cornerUp = L => 0.004 * W('mouthSmile' + L) - 0.003 * W('mouthFrown' + L), cornerOut = L => 0.003 * W('mouthSmile' + L) + 0.0015 * st - 0.003 * pk;
     if (on) u.uCorner.value.set(cornerUp('Left'), cornerOut('Left'), cornerUp('Right'), cornerOut('Right')); else u.uCorner.value.set(0, 0, 0, 0);
     // brows, in metres of lift: inner, middle, outer, his left then his right
-    const inner = 0.005 * W('browInnerUp'), d = u.uBrowD.value;
+    const inner = this.skinEyesOnly ? 0 : 0.005 * W('browInnerUp'), d = u.uBrowD.value;
+    if (this.skinEyesOnly) { d.fill(0); return; }
     for (const [s, L] of [[0, 'Left'], [3, 'Right']]) {
       const down = W('browDown' + L), outer = W('browOuterUp' + L);
       d[s] = inner - 0.004 * down; d[s + 1] = 0.35 * inner + 0.002 * outer - 0.0042 * down; d[s + 2] = 0.004 * outer - 0.0025 * down;
