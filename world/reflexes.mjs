@@ -89,9 +89,8 @@ export class Reflexes {
   // lie on the bed: walk to its side, then onto it and settle
   lie(then = null) {
     const S = this.seats.bed; if (!S || !S.side) { then?.(); return; }
-    this.seat = 'bed';
     this._standThen(() => this.walkTo(S.side, () => {
-      this.posture = 'lie'; this.hold = null; this.gazeTarget = null;
+      this.posture = 'lie'; this.hold = null; this.gazeTarget = null; this.seat = 'bed';
       this.play('lie_idle', { loop: true, fade: 0.8 });
       this.glide = { from: this.model.position.clone(), fromYaw: this.model.rotation.y, to: S.pos.clone(), toYaw: S.yaw, t: 0, dur: 1.4, then };
     }));

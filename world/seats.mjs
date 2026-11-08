@@ -42,7 +42,7 @@ export function deriveSeats(placements, sizes) {
       // nearer the room's middle, standing right at the edge
       const left = place(p, -w / 2, 0), right = place(p, w / 2, 0);
       const side = left.lengthSq() < right.lengthSq() ? left : right;
-      out[key(R.group)] = { pos: place(p, 0, -0.05, h - R.top), yaw, y: h - R.top, side, group: R.group, kind: 'lie', prop: p.id };
+      out[key(R.group)] = { pos: place(p, 0, -0.12, h - R.top), yaw, y: h - R.top, side, group: R.group, kind: 'lie', prop: p.id };   // hips a little toward the head end: a 1.8 m man on a 1.8 m bed
     } else if (R.kind === 'lean') {
       // standing just in front of it with his back to it, facing out
       out[key(R.group)] = { pos: place(p, 0, d / 2 + R.out), yaw, group: R.group, kind: 'lean', prop: p.id };
