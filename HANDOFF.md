@@ -24,11 +24,14 @@ Written for the next Claude session (Claude Code). Read `CLAUDE.md` first for th
 
 **Usage counter.** `api_usage` table; Memories panel shows "Claude this month: ~$X of $95".
 
+**Texts** (`world/text.html?who=marco|dante`; PR #1, branch `claude/trusting-bell-6v138o`). A phone text thread with either of them, no 3D, same mind and memory as the room. `scene.channel = 'text'` in the `mind` function: he answers in his texting voice from wherever his life has him, no body actions, his location/task untouched; the thread is a session of kind `text` (not a visit). `GET mind?character_id&player_id` → what he's up to + texts he sent first (`outbox`, migration `0009`): the `life` tick may have one who knows Brax's name text him (`texts_to_brax`). The page polls every minute while open and can buzz the phone (Notification API, page open only; real push is a later item). Live: `mind` v15, `life` v8 carry both this and the `go`/presence work.
+
 ## Credentials / infra
 - Supabase project `qyphdwcjzhgobsfpeonh`. Secrets set in dashboard: `ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY`. Never take keys through chat.
 - Deploy edge functions by pasting full file content (MCP) or `supabase functions deploy`. `verify_jwt`: mind/voice true, life false (own key in `private.life_key`).
 - Git: author `Claude <noreply@anthropic.com>`; commit trailer `Co-Authored-By` + `Claude-Session` lines; push to `main`; bump `VERSION`. Repo moved to `Braxtonius-gngr/THE_LAB` (push still redirects).
 - Destructive DB deletes: give the owner SQL to run; the MCP client auto-cancels them.
+- **Two sessions deploying the same functions clobber each other** (happened 2026-11-08: a deploy from one branch dropped the text channel for 20 min). Before deploying `mind` or `life`, fetch the live version (`get_edge_function`) and make sure what you deploy is a superset of it; deploy from a branch that has `main` merged in.
 
 ## Owner's standing constraints (hold these)
 - Anatomy only on characters who unmistakably read as adults. No sexual interaction systems, no arousal simulation, no "debauchery" need (declined twice). Intimacy = closeness/affection only.
@@ -42,6 +45,7 @@ Written for the next Claude session (Claude Code). Read `CLAUDE.md` first for th
 - **Three heavy props** resist simplification (shard meshes): `d-turntablecrate` (80k tris), `d-herbpots` (55k), `d-boxfan` (60k). Regen prompts given (low-poly).
 - **Missing Dante props:** gym bag, mail stack, burn-scarred towel. Prompts given.
 - **The bar** (third place) needs a Meshy props batch; no prompt list written yet.
+- **Workers Builds for pull requests** run `wrangler preview`, which needs the `previews: {}` block in `wrangler.jsonc` (added in PR #1). Production deploys from `main` never needed it.
 - Headless renders: use `tools/lab-fit/render.cjs` + `tools/props/view.html`; run at most ~4 browsers in parallel (12 crashed the box). Playwright is at `/home/claude/.npm-global/lib/node_modules/playwright` in this container; locally just `require('playwright')`.
 - Both men are at `the-bar` Saturday evenings; apartments are empty then until the bar exists. Use `?marco=1` etc. to force.
 
