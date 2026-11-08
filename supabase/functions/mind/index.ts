@@ -144,7 +144,7 @@ Deno.serve(async (req) => {
     if (!me || !player) return json({ error: "unknown character or player" }, 404);
     // others in the room (other characters): who they are to him
     const others = Array.isArray(scene.others) ? scene.others.slice(0, 4) : [];
-    const otherRels = others.length ? (await supabase.from("relationships").select("target_id,summary,affection,trust").eq("owner_id", character_id).in("target_id", others.map((o: { id: string }) => o.id))).data || [] : [];
+    const otherRels = others.length ? (await supabase.from("relationships").select("*").eq("owner_id", character_id).in("target_id", others.map((o: { id: string }) => o.id))).data || [] : [];
     const otherNames: string[] = others.map((o: { name: string }) => String(o.name));
     const other = otherNames[0] || null;   // (1-on-2 today: the one other person in the room)
     const othersLine = others.map((o: { id: string; name: string; wearing?: string; distance_m?: number }) => {
@@ -173,7 +173,7 @@ Deno.serve(async (req) => {
     const situation = texting
       ? `You're texting on your phone with ${who}${knowsName ? "" : " - a number you don't have saved"}. You're not together. Right now you're ${doing(state?.current_task) || `at home (${me.home_location || "your apartment"})`}. Time: ${scene.time || "evening"}.
 ${visits ? `${who} has been over ${visits} time${visits === 1 ? "" : "s"}.` : `You've never met ${who} in person.`}`
-      : `You are ${scene.place || `in your ${scene.location || me.home_location || "apartment"}`}. Time: ${scene.time || "evening"}.${scene.wearing ? ` You're wearing: ${scene.wearing === "Nude" ? "nothing" : scene.wearing}. Clothes you could change into: ${(scene.wardrobe || []).join(", ")}.` : ""} ${who} is ${scene.player_distance_m != null ? `${Number(scene.player_distance_m).toFixed(1)} m away` : "here"}. Places you can go to there: ${(scene.spots || ["sofa", "kitchen", "window", "door"]).join(", ")}.
+      : `You are ${scene.place || `in your ${scene.location || me.home_location || "apartment"}`}. Time: ${scene.time || "evening"}.${scene.wearing ? ` You're wearing: ${scene.wearing === "Nude" ? "nothing" : scene.wearing}. Clothes you could change into: ${(scene.wardrobe || []).join(", ")}.` : ""} ${who} is ${scene.player_distance_m != null ? `${Number(scene.player_distance_m).toFixed(1)} m away` : "here"}. Places you can go to there: ${(scene.spots || ["sofa", "kitchen", "window", "door"]).join(", ")}.${scene.seats?.sit?.length ? ` Seats here: ${scene.seats.sit.join(", ")}.` : ""}${scene.seats?.lie?.length ? ` You can lie down on the ${scene.seats.lie.join(", ")}.` : ""}${scene.seats?.lean?.length ? ` You can lean on the ${scene.seats.lean.join(", ")}.` : ""}
 This is visit number ${visits || 1} from ${who}.`;
     // --- stable: who he is and how he answers (the same bytes every turn, so it caches) ---
     const stable = texting
@@ -197,11 +197,12 @@ You are at home or at a friend's, with a visitor and sometimes a friend in the r
 Respond ONLY with JSON, no prose around it:
 {"say": "what you say out loud, 1-3 short sentences, or \\"\\" if you stay quiet",
  "to": "player" | "<the name of the other person in the room>" - who you're saying it to (the visitor is "player"),
- "actions": [{"type":"look_at","target":"player"|"other"} | {"type":"walk_to","target":"<spot>"} | {"type":"turn_to","target":"player"|"other"} | {"type":"gesture","name":"nod"|"shrug"|"wave"} | {"type":"change","outfit":"<one of your clothes>"} | {"type":"eat"} | {"type":"sit"} | {"type":"lie_down"} | {"type":"stand"} | {"type":"drink"} | {"type":"phone"} | {"type":"stretch"} | {"type":"cross_arms"} | {"type":"lean_counter"} | {"type":"play_bass"} (${me.name === "Marco" ? "your bass is here; you play it for real - a few of your own lines, the bridge you're still learning - and people hear it" : "only if there is a bass here and you'd pick it up"}) | {"type":"go","where":"marco-apartment"|"dante-apartment"|"the-bar"|"out","why":"a few words"} (you actually leave: for work, to go home, to run out - only when a person would, e.g. your shift is coming up; say your goodbye in "say") | {"type":"idle"}],
+ "actions": [{"type":"look_at","target":"player"|"other"} | {"type":"walk_to","target":"<spot>"} | {"type":"turn_to","target":"player"|"other"} | {"type":"gesture","name":"nod"|"shrug"|"wave"} | {"type":"change","outfit":"<one of your clothes>"} | {"type":"eat"} | {"type":"sit","on":"<one of the seats here>"} | {"type":"lie_down"} | {"type":"stand"} | {"type":"drink"} | {"type":"phone"} | {"type":"stretch"} | {"type":"cross_arms"} | {"type":"lean_counter"} | {"type":"play_bass"} (${me.name === "Marco" ? "your bass is here; you play it for real - a few of your own lines, the bridge you're still learning - and people hear it" : "only if there is a bass here and you'd pick it up"}) | {"type":"go","where":"marco-apartment"|"dante-apartment"|"the-bar"|"out","why":"a few words"} (you actually leave: for work, to go home, to run out - only when a person would, e.g. your shift is coming up; say your goodbye in "say") | {"type":"idle"}],
  "mood": {"valence": -1..1, "energy": 0..1},
  "memory": {"content": "one thing worth remembering from this moment, in first person, or null", "importance": 1-10},
  "needs": {"energy": -0.3..0.3, "hunger": -1..0.2, "social": -0.3..0.3, "intimacy": -0.3..0.2} - how this moment changed them (eating drops hunger; good company drops social, wears it thin when you're peopled out; real warmth or affection eases intimacy),
- "relationship": {"affection": -0.2..0.2, "trust": -0.2..0.2, "familiarity": 0..0.1, "summary": "your one-line take on the visitor, now"}}
+ "relationship": {"affection": -0.2..0.2, "trust": -0.2..0.2, "familiarity": 0..0.1, "summary": "your one-line take on the visitor, now"},
+ "friend": null | {"affection": -0.1..0.1, "trust": -0.1..0.1, "summary": "your one-line take on the friend in the room, now"} - only when someone besides the visitor is here and this moment moved anything between you two; otherwise null}
 Be a person, not a helper. Don't ask how you can help. Reference memories naturally when they matter, not as a list. If this person wronged you, it shows. If it's the first meeting, you don't know their name unless they tell you.
 Don't end every line with a question; often just react, or say something of your own, or let a silence sit. You already know what time it is, so don't keep saying it. Wherever you are: every few exchanges do something physical (walk_to a spot, turn away and back) instead of standing at attention. Keep "say" to spoken words only.
 When a friend is in the room, you two have your own history; talk to him when you would (an aside, a jab, backing him up, disagreeing), not only to the visitor, and not every turn. "to" says who the line is for; look at or turn to the one you're talking to when it matters.
@@ -263,6 +264,20 @@ ${memLines ? `Things you remember (most relevant first):\n${memLines}` : "You ha
       knows_name: knowsName,
       updated_at: new Date().toISOString(),
     }));
+    // how this moment moved what he thinks of the friend in the room (small nudges; his life ticks do the rest)
+    const f = out.friend, friendId = others[0]?.id;
+    if (f && typeof f === "object" && friendId && !texting) {
+      const fr = otherRels.find((x: { target_id: string }) => x.target_id === friendId);
+      writes.push(supabase.from("relationships").upsert({
+        owner_id: character_id, target_id: friendId,
+        affection: clamp((fr?.affection || 0) + clamp(Number(f.affection) || 0, -0.1, 0.1), -1, 1),
+        trust: clamp((fr?.trust || 0) + clamp(Number(f.trust) || 0, -0.1, 0.1), -1, 1),
+        attraction: fr?.attraction || 0,
+        familiarity: clamp((fr?.familiarity || 0) + 0.01, 0, 1),
+        summary: f.summary ? String(f.summary).slice(0, 200) : fr?.summary || null,
+        knows_name: true, updated_at: new Date().toISOString(),
+      }));
+    }
     const mood = out.mood && typeof out.mood === "object" ? { valence: clamp(Number(out.mood.valence) || 0, -1, 1), energy: clamp(Number(out.mood.energy) || 0.5, 0, 1) } : state?.mood;
     const dn = out.needs && typeof out.needs === "object" ? out.needs : {};
     for (const k of Object.keys(NEED0) as (keyof Needs)[]) if (k !== "comfort") needs[k] = clamp(needs[k] + (Number(dn[k]) || 0), 0, 1);

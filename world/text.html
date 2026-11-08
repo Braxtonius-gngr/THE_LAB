@@ -1,6 +1,9 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#15130f">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="../assets/icons/texts-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Texts">
 <title>THE_LAB · Texts</title>
 <style>
   :root{--bg:#15130f;--panel:#1b1a18;--ink:#eee;--dim:#a49c8c;--gold:#d8b25a;--him:#2a2622}
@@ -42,7 +45,7 @@
   <div class="row" style="margin-top:8px">
     <div class="av" id="av">M</div>
     <div class="who"><b id="name">…</b><span id="now">reaching him…</span></div>
-    <button id="bell" title="Buzz this phone when he texts first (while this page is open)">🔔</button>
+    <button id="bell" title="Buzz this phone when he texts first">🔔</button>
   </div>
 </header>
 <main id="thread"></main>
@@ -53,7 +56,7 @@
 // memory (supabase/functions/mind, scene.channel = 'text'), so what you say here he remembers
 // when you walk in, and what happened in the room comes up here. His off-screen life can text
 // you first (supabase/functions/life → outbox); this page picks those up on open and every minute.
-import { Mind, CHARACTERS, timeOfDay } from './mind.mjs';
+import { Mind, CHARACTERS, PLAYER_ID, SUPABASE_URL, SUPABASE_ANON, timeOfDay } from './mind.mjs';
 
 const Q = new URLSearchParams(location.search);
 const KEY = CHARACTERS[Q.get('who')] ? Q.get('who') : 'marco';
@@ -111,10 +114,38 @@ checkInbox(true);
 setInterval(() => checkInbox(), 60e3);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkInbox(); });
 
-// ---- the bell: let this phone buzz when he texts first (only while the page is open, for now) ----
-const bellState = () => { if (!('Notification' in window)) { bell.style.display = 'none'; return; } bell.classList.toggle('on', Notification.permission === 'granted'); bell.title = Notification.permission === 'granted' ? 'Buzzing when he texts first (while this page is open)' : 'Buzz this phone when he texts first (while this page is open)'; };
+// ---- the bell: this phone buzzes when he texts first, page closed or not. A service worker
+// (sw.js) takes the push and shows the text; the subscription is kept server-side (functions/push).
+// On an iPhone this only works once the page is added to the Home Screen.
+const PUSH = `${SUPABASE_URL}/functions/v1/push`, AUTH = { Authorization: `Bearer ${SUPABASE_ANON}`, apikey: SUPABASE_ANON };
+const swReady = 'serviceWorker' in navigator ? navigator.serviceWorker.register('./sw.js').catch(() => null) : Promise.resolve(null);
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent), standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+async function subscription() { const reg = await swReady; return reg ? reg.pushManager.getSubscription() : null; }
+async function bellState() {
+  if (!('Notification' in window) || !('PushManager' in window)) { bell.style.display = 'none'; return; }
+  const sub = await subscription(); const on = Notification.permission === 'granted' && !!sub;
+  bell.classList.toggle('on', on); bell.textContent = on ? '🔔' : '🔕';
+  bell.title = on ? 'Buzzing when he texts first. Tap to stop.' : isIOS && !standalone ? 'To get buzzed: Share → Add to Home Screen, then open it from there and tap this' : 'Buzz this phone when he texts first';
+}
 bellState();
-bell.onclick = async () => { if (!('Notification' in window)) return; if (Notification.permission === 'default') await Notification.requestPermission(); bellState(); };
+bell.onclick = async () => {
+  if (!('PushManager' in window)) return;
+  if (isIOS && !standalone) { push('sys', 'On an iPhone, texts can only buzz the phone from the Home Screen: Share → Add to Home Screen, then open Texts from there and tap the bell.'); return; }
+  try {
+    const reg = await swReady; if (!reg) throw new Error('no service worker');
+    const have = await reg.pushManager.getSubscription();
+    if (have) { await fetch(PUSH, { method: 'POST', headers: { ...AUTH, 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'unsubscribe', endpoint: have.endpoint }) }); await have.unsubscribe(); push('sys', 'Buzzing off on this phone.'); bellState(); return; }
+    if (Notification.permission !== 'granted' && await Notification.requestPermission() !== 'granted') { push('sys', 'Notifications are blocked for this site.'); return; }
+    const { publicKey } = await (await fetch(PUSH + '?pub=1', { headers: AUTH })).json();
+    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: publicKey });
+    const r = await fetch(PUSH, { method: 'POST', headers: { ...AUTH, 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'subscribe', player_id: PLAYER_ID, subscription: sub.toJSON(), ua: navigator.userAgent }) });
+    if (!r.ok) throw new Error('could not save the subscription');
+    push('sys', 'This phone buzzes when he texts first. Sending a test buzz…');
+    const t = await (await fetch(PUSH, { method: 'POST', headers: { ...AUTH, 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'test', player_id: PLAYER_ID }) })).json();
+    if (!t.sent) push('sys', `test buzz did not go through${t.failed?.length ? `: ${t.failed[0]}` : ''}`);
+  } catch (e) { push('sys', `buzz: ${e.message}`); }
+  bellState();
+};
 
 // ---- you text; he answers when he answers ----
 document.getElementById('form').addEventListener('submit', async e => {
