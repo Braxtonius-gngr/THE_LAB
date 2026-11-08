@@ -126,7 +126,7 @@ Deno.serve(async (req) => {
     const knowsName = !!rel?.knows_name || history.some((h: { who: string; text: string }) => h.who === "player" && told(h.text)) || told(text);
     const who = knowsName ? player.name : "the visitor";
     // what is on the character's mind right now: the cue is what was said, or the event
-    const cue = text || (event === "arrive" ? `${who} has just arrived` : event === "leave" ? `${who} is leaving` : event === "song" && scene.song ? songCue(scene.song, who) : event === "overheard" ? "you just heard what was said in the room (see the conversation); add something only if a person would - otherwise say nothing (empty say)" : "nothing in particular");
+    const cue = text || (event === "arrive" ? `${who} has just arrived` : event === "leave" ? `${who} is leaving` : event === "song" && scene.song ? songCue(scene.song, who) : event === "someone_arrives" ? `${scene.who_moved || "someone"} just walked in` : event === "someone_leaves" ? `${scene.who_moved || "someone"} just left` : event === "overheard" ? "you just heard what was said in the room (see the conversation); add something only if a person would - otherwise say nothing (empty say)" : "nothing in particular");
     const qv = await embed(cue);
     const { data: recalled } = await supabase.rpc("recall", { p_owner: character_id, p_query: JSON.stringify(qv), p_limit: 10 });
     const memLines = (recalled || []).map((m: { content: string; created_at: string; kind: string }) => `- (${ago(m.created_at)}, ${m.kind}) ${m.content}`).join("\n");
@@ -147,7 +147,7 @@ ${memLines ? `Things you remember (most relevant first):\n${memLines}` : "You ha
 
 Respond ONLY with JSON, no prose around it:
 {"say": "what you say out loud, 1-3 short sentences, or \\"\\" if you stay quiet",
- "actions": [{"type":"look_at","target":"player"} | {"type":"walk_to","target":"<spot>"} | {"type":"turn_to","target":"player"} | {"type":"gesture","name":"nod"|"shrug"|"wave"} | {"type":"change","outfit":"<one of your clothes>"} | {"type":"eat"} | {"type":"sit"} | {"type":"lie_down"} | {"type":"stand"} | {"type":"drink"} | {"type":"phone"} | {"type":"stretch"} | {"type":"cross_arms"} | {"type":"lean_counter"} | {"type":"play_bass"} (${me.name === "Marco" ? "your bass is here; you play it for real - a few of your own lines, the bridge you're still learning - and people hear it" : "only if there is a bass here and you'd pick it up"}) | {"type":"idle"}],
+ "actions": [{"type":"look_at","target":"player"} | {"type":"walk_to","target":"<spot>"} | {"type":"turn_to","target":"player"} | {"type":"gesture","name":"nod"|"shrug"|"wave"} | {"type":"change","outfit":"<one of your clothes>"} | {"type":"eat"} | {"type":"sit"} | {"type":"lie_down"} | {"type":"stand"} | {"type":"drink"} | {"type":"phone"} | {"type":"stretch"} | {"type":"cross_arms"} | {"type":"lean_counter"} | {"type":"play_bass"} (${me.name === "Marco" ? "your bass is here; you play it for real - a few of your own lines, the bridge you're still learning - and people hear it" : "only if there is a bass here and you'd pick it up"}) | {"type":"go","where":"marco-apartment"|"dante-apartment"|"the-bar"|"out","why":"a few words"} (you actually leave: for work, to go home, to run out - only when a person would, e.g. your shift is coming up; say your goodbye in "say") | {"type":"idle"}],
  "mood": {"valence": -1..1, "energy": 0..1},
  "memory": {"content": "one thing worth remembering from this moment, in first person, or null", "importance": 1-10},
  "needs": {"energy": -0.3..0.3, "hunger": -1..0.2, "social": -0.3..0.3, "intimacy": -0.3..0.2} - how this moment changed them (eating drops hunger; good company drops social, wears it thin when you're peopled out; real warmth or affection eases intimacy),
@@ -201,7 +201,9 @@ What you wear is yours to decide, like anyone at home: what suits the hour, the 
     for (const k of Object.keys(NEED0) as (keyof Needs)[]) if (k !== "comfort") needs[k] = clamp(needs[k] + (Number(dn[k]) || 0), 0, 1);
     if (actions.some((a: { type: string }) => a.type === "eat")) needs.hunger = Math.min(needs.hunger, 0.1);
     if (text) needs.social = clamp(needs.social - 0.015, 0, 1);
-    writes.push(supabase.from("character_state").upsert({ character_id, mood, needs, needs_at: new Date().toISOString(), location: scene.location || me.home_location, current_task: actions[0]?.type || "idle", updated_at: new Date().toISOString() }));
+    const go = actions.find((a: { type: string; where?: string }) => a.type === "go" && ["marco-apartment", "dante-apartment", "the-bar", "out"].includes(a.where || ""));
+    if (go) writes.push(mem(`I left ${scene.place ? "" : "my place"} ${go.why ? `- ${go.why}` : ""} (heading ${go.where.replace("-", " ")}).`.replace(/\s+/g, " "), "action", 3, null));
+    writes.push(supabase.from("character_state").upsert({ character_id, mood, needs, needs_at: new Date().toISOString(), location: go ? go.where : scene.location || me.home_location, current_task: actions[0]?.type || "idle", updated_at: new Date().toISOString() }));
     if (event === "leave") writes.push(supabase.from("sessions").update({ ended_at: new Date().toISOString() }).eq("id", session_id));
     await Promise.all(writes);
 
