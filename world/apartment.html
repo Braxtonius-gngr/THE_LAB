@@ -261,19 +261,34 @@ function showMemories(R, d) {
   const needsHtml = d.needs ? `<b>${R.name}'s needs</b> <i>(bar = how pressing)</i><br>` + bar('tired', d.needs.energy, true) + '<br>' + bar('hunger', d.needs.hunger) + '<br>' + bar('company', d.needs.social) + '<br>' + bar('closeness', d.needs.intimacy) + '<br>' + bar('discomfort', d.needs.comfort) + '<br>' : '';
   memLive.innerHTML = needsHtml + `<b>model</b> ${d.model || ''}${d.salvaged ? ' <i>(reply was cut short; line salvaged)</i>' : ''}<br><b>mood</b> ${JSON.stringify(d.mood)}<br><b>remembered now</b> ${d.memory && d.memory.content ? `(${d.memory.importance}) ${d.memory.content}` : '–'}<br><b>recalled</b><br>` + (d.recalled || []).map(m => `· ${m.content} <i>(${m.when})</i>`).join('<br>');
 }
-// one mind's turn; what it says, everyone else in the room hears
+// one mind's turn; what it says, everyone else in the room hears (and remembers). `d.to` is who
+// the line is for: the visitor, or the other one by name - he looks at whoever that is.
+let lastLine = performance.now();
 async function talk(opts, R = RES[0]) {
   if (!R) return null;
   status.textContent = `${R.name} is thinking…`;
   try {
     const { song, who_moved, ...rest } = opts; const d = await R.mind.send({ ...rest, scene: { ...sceneState(R), ...(song ? { song } : {}), ...(who_moved ? { who_moved } : {}) } });
     if (!d) return null;
-    R.reflex.clear(); if (R.reflex.posture === 'stand') R.reflex.lookAt(new THREE.Vector3(player.pos.x, EYE - 0.05, player.pos.z));
+    const target = d.to && d.to !== 'player' ? RES.find(o => o.name === d.to) || null : null;
+    R.reflex.clear();
+    if (R.reflex.posture !== 'lie') { R.reflex.lookAt(target ? target.head.getWorldPosition(new THREE.Vector3()) : new THREE.Vector3(player.pos.x, EYE - 0.05, player.pos.z)); if (d.say) R.lookHold = performance.now() + 1500 + d.say.length * 55; }
     for (const a of d.actions || []) { if (a.type === 'go') { setTimeout(() => depart(R, a.why), 2500 + (d.say ? d.say.length * 55 : 0)); continue; } R.reflex.do(a); }
-    if (d.say) { say('him', `${R.name}: ${d.say}`); showBubble(R, d.say); bubbleUntil += 1e6; voice.speak(R.key, d.say, { onEnd: () => { bubbleUntil = performance.now() + 1200; } }); for (const o of RES) if (o !== R) o.mind.hear(R.name, d.say); }
+    if (d.say) {
+      lastLine = performance.now();
+      say('him', `${R.name}${target ? ` (to ${target.name})` : ''}: ${d.say}`); showBubble(R, d.say); bubbleUntil += 1e6; voice.speak(R.key, d.say, { onEnd: () => { bubbleUntil = performance.now() + 1200; } });
+      for (const o of RES) if (o !== R) o.mind.hear(R.name, d.say, { to: o === target ? 'me' : target ? target.name : 'player', id: CHARACTERS[R.key] });
+    }
     showMemories(R, d); status.textContent = `visit · ${R.mind.history.length} turns`;
     return d;
   } catch (e) { say('sys', `${R.name} is out of reach: ${e.message}`); status.textContent = 'offline'; return null; }
+}
+// a line said to the other one gets an answer, and so on - a few turns at most, then it's yours again
+async function converse(R, d, budget) {
+  const O = d?.to && d.to !== 'player' ? RES.find(o => o.name === d.to && o !== R) : null;
+  if (!O || budget <= 0 || O.mind.busy || O.leaving) return;
+  const r = await talk({ event: 'addressed' }, O);
+  if (r?.say) await converse(O, r, budget - 1);
 }
 // you talk to whoever you're facing (or nearest): the other one hears you and may chime in
 function addressee() {
@@ -287,11 +302,26 @@ if (isPhone) document.getElementById('say').addEventListener('keydown', e => { i
 document.getElementById('form').addEventListener('submit', async e => {
   e.preventDefault(); const inp = document.getElementById('say'); const t = inp.value.trim(); if (!t || RES.some(R => R.mind.busy)) return;
   inp.value = ''; say('me', t);
-  const R = addressee(); if (!R) { say('sys', 'nobody here to hear you'); return; } for (const o of RES) if (o !== R) o.mind.hear('the visitor', t);
-  await talk({ text: t }, R);
-  // the other one sometimes answers too (a third of the time, or if named)
-  const O = RES.find(o => o !== R); if (O && (new RegExp(O.name, 'i').test(t) || Math.random() < 0.33)) await talk({ event: 'overheard' }, O);
+  const R = addressee(); if (!R) { say('sys', 'nobody here to hear you'); return; } for (const o of RES) if (o !== R) o.mind.hear('the visitor', t, { to: R.name });
+  lastLine = performance.now(); idleRounds = 0;
+  const d = await talk({ text: t }, R);
+  // if he said it to the other one, the other one answers (two turns between them at most)
+  if (d?.to && d.to !== 'player') { await converse(R, d, 2); return; }
+  // otherwise the other one sometimes chimes in (a third of the time, or if named), and may be answered once
+  const O = RES.find(o => o !== R); if (O && (new RegExp(O.name, 'i').test(t) || Math.random() < 0.33)) { const r = await talk({ event: 'overheard' }, O); if (r?.say) await converse(O, r, 1); }
 });
+// when you've gone quiet with the two of them here, they may talk to each other: one gets the
+// chance after ~35 s of quiet, again after a longer gap, then they wait on you (keeps the model bill sane)
+let idleRounds = 0;
+setInterval(async () => {
+  if (RES.length < 2 || idleRounds >= 2 || document.visibilityState !== 'visible' || listener.playing) return;
+  if (RES.some(R => R.mind.busy || R.leaving)) return;
+  if (performance.now() - lastLine < 35e3 * (idleRounds + 1)) return;
+  idleRounds++; lastLine = performance.now();
+  const R = RES[Math.floor(Math.random() * RES.length)];
+  const d = await talk({ event: 'chat' }, R);
+  if (d?.say) await converse(R, d, 1);
+}, 5000);
 document.getElementById('leave').onclick = async () => { if (RES.some(R => R.mind.busy)) return; say('sys', 'you leave'); for (const R of RES) { await talk({ event: 'leave' }, R); R.mind.sessionId = null; R.mind.history = []; } document.getElementById('leave').textContent = 'Left · reload to come back'; document.getElementById('form').style.display = 'none'; };
 document.getElementById('memtoggle').onclick = e => { memEl.style.display = memEl.style.display === 'block' ? 'none' : 'block'; e.target.classList.toggle('on'); };
 // voice: on by default (remembered per device); the mic fills the box and sends when you stop talking
@@ -364,9 +394,10 @@ r.setAnimationLoop(now => {
   listener.update(); bassSound.update();
   for (const R of RES) {
     const rf = R.reflex;
-    if (R.lookHold && performance.now() < R.lookHold) { rf.update(dt, { player: eye, spots: SPOTS }); R.anat.update(dt); continue; }
-    if (!rf.busy && rf.posture !== 'lie') { const other = RES.find(o => o !== R); rf.lookAt(player.pos.distanceTo(R.model.position) < 3.2 ? eye : other ? other.head.getWorldPosition(new THREE.Vector3()) : null); }
-    rf.update(dt, { player: eye, spots: SPOTS });
+    const other = RES.find(o => o !== R), otherHead = other ? other.head.getWorldPosition(R._oh || (R._oh = new THREE.Vector3())) : null;
+    if (R.lookHold && performance.now() < R.lookHold) { rf.update(dt, { player: eye, other: otherHead, spots: SPOTS }); R.anat.update(dt); continue; }
+    if (!rf.busy && rf.posture !== 'lie') rf.lookAt(player.pos.distanceTo(R.model.position) < 3.2 ? eye : otherHead);
+    rf.update(dt, { player: eye, other: otherHead, spots: SPOTS });
     R.anat.update(dt);
     if (R.bassOn && bass) placeBass(bass, R.model, POSES.play_bass.prop);
   }
