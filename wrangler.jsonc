@@ -2,5 +2,7 @@
   // Static site: serve the repo root as-is (no build step).
   "name": "the-lab",
   "compatibility_date": "2026-10-01",
-  "assets": { "directory": "." }
+  "assets": { "directory": "." },
+  // Branch builds (pull requests) run `wrangler preview`, which needs this block; it can stay empty.
+  "previews": {}
 }

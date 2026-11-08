@@ -5,7 +5,9 @@
 // day (sleep, the shift, food, errands, moods), and - when it fits their lives - time
 // between them: texts, a smoke break on the line, coming over after close. What happened is
 // written as their memories (recalled later like any other), their needs and moods move,
-// and their takes on each other shift. The tick is logged in life_ticks.
+// and their takes on each other shift. The tick is logged in life_ticks. One who has the
+// visitor's number may text him during the stretch; that waits in `outbox` for the thread
+// (world/text.html, GET mind) to pick up.
 //
 // { reflect: true } (nightly, 4:30 am): each one looks back on his day instead.
 // Auth: the scheduler sends x-life-key, checked against private.life_key (never leaves the DB).
@@ -97,6 +99,8 @@ Deno.serve(async (req) => {
     const hours = clamp((now.getTime() - from.getTime()) / 3.6e6, 0.5, 12);
     const since = new Date(now.getTime() - hours * 3.6e6);
 
+    // who has the visitor's number: the ones who know his name
+    const hasNumber = chars.filter((c) => (rels || []).some((r) => r.owner_id === c.id && r.target_id === PLAYER && r.knows_name)).map((c) => c.name);
     // each one's recent past (their latest memories) and where they stand with everyone
     const lines: string[] = [];
     for (const c of chars) {
@@ -113,11 +117,12 @@ ${(mem || []).map((m) => `- ${local(new Date(m.created_at))}: ${m.content}`).joi
 
     const system = `You are the off-screen life of a small, realistic world: a few people in San Antonio, Texas, whose lives go on when no one is visiting them. Live the stretch of time given, for each of them, truthfully to who they are, their jobs and hours, their moods and needs, and what has been happening to them. Ordinary days are mostly ordinary; now and then something small happens (a rough shift, a good meal, a bill, a call from family, a song stuck in his head). Don't invent big drama or new people with names unless it follows from their memories. Keep it grounded and specific.
 
-When their lives cross in this stretch (they work at the same bar; they're friends), write what passes between them: texts, a few words on a break, one coming over after close. Not every stretch - only if it fits the hours and how they feel about each other. If they talk, their history, banter and any tension carry on from their memories. They may mention the visitor (Brax) if he's on their mind, but he isn't there.
+When their lives cross in this stretch (they work at the same bar; they're friends), write what passes between them: texts, a few words on a break, one coming over after close. Not every stretch - only if it fits the hours and how they feel about each other. If they talk, their history, banter and any tension carry on from their memories. They may mention the visitor (Brax) if he's on their mind, but he isn't there.${hasNumber.length ? ` ${hasNumber.join(" and ")} ${hasNumber.length > 1 ? "have" : "has"} Brax's number: one of them may text him during this stretch, in his own texting voice, if something in these hours would make him reach out or Brax has been on his mind (how they feel about him matters). Most stretches nobody does.` : ""}
 
 Respond ONLY with JSON:
 {"people": {"<name>": {"happened": [{"content": "first person, past tense, one thing that happened or that he did/felt, with when", "importance": 1-10}], "now": "what he's doing at the end of this stretch (asleep, at work, home on the sofa...)", "where": one of ${JSON.stringify(WHERE)} - where he physically is at the end of it (home means his own apartment; at the other's place only if he's actually there; the-bar during a shift), "mood": {"valence": -1..1, "energy": 0..1}, "needs": {"energy": 0..1, "hunger": 0..1, "social": 0..1, "intimacy": 0..1}}},
- "together": null | {"how": "texts" | "in person", "where": "...", "when": "...", "exchange": [{"who": "<name>", "text": "..."}], "takes": {"<name>": {"affection": -0.15..0.15, "trust": -0.15..0.15, "summary": "his one-line take on the other now"}}}}
+ "together": null | {"how": "texts" | "in person", "where": "...", "when": "...", "exchange": [{"who": "<name>", "text": "..."}], "takes": {"<name>": {"affection": -0.15..0.15, "trust": -0.15..0.15, "summary": "his one-line take on the other now"}}},
+ "texts_to_brax": {"<name>": "the one text he sends Brax, short, or null"} - usually all null}
 2-4 "happened" items per person. An exchange of 2-10 lines. Needs: where they end up after these hours, given sleep, food and company.`;
     const user = `Time now: ${local(now)}. Live the ${hours.toFixed(1)} hours since ${local(since)}.${body.note ? `\nAlso: ${body.note}` : ""}\n\n${lines.join("\n\n")}`;
 
@@ -152,6 +157,13 @@ Respond ONLY with JSON:
           writes.push(db.from("relationships").upsert({ owner_id: c.id, target_id: o.id, affection: clamp((+rel?.affection || 0) + (+tk?.affection || 0), -1, 1), trust: clamp((+rel?.trust || 0) + (+tk?.trust || 0), -1, 1), attraction: rel?.attraction || 0, familiarity: clamp((+rel?.familiarity || 0) + 0.01, 0, 1), summary: tk?.summary ? String(tk.summary).slice(0, 200) : rel?.summary || null, knows_name: true, updated_at: now.toISOString() }));
         }
       }
+    }
+    // a text to the visitor: it waits in his inbox, and he remembers sending it
+    for (const [name, t] of Object.entries(out.texts_to_brax || {}) as [string, unknown][]) {
+      const c = byName(name); if (!c || !hasNumber.includes(c.name) || typeof t !== "string" || !t.trim()) continue;
+      const msg = t.trim().slice(0, 400);
+      writes.push(db.from("outbox").insert({ from_id: c.id, to_id: PLAYER, text: msg }));
+      writes.push(mem(c.id, `I texted Brax: "${msg}"`, "dialogue", 3, [PLAYER], c.id));
     }
     writes.push(db.from("life_ticks").insert({ at: now.toISOString(), hours, story: out }));
     await Promise.all(writes);

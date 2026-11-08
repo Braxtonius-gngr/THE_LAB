@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#15130f">
+<title>THE_LAB · Texts</title>
+<style>
+  :root{--bg:#15130f;--panel:#1b1a18;--ink:#eee;--dim:#a49c8c;--gold:#d8b25a;--him:#2a2622}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:16px system-ui,-apple-system,sans-serif;-webkit-text-size-adjust:100%}
+  body{display:flex;flex-direction:column;height:100dvh}
+  header{position:sticky;top:0;background:rgba(21,19,15,.92);backdrop-filter:blur(8px);border-bottom:1px solid #2c2823;padding:max(8px,env(safe-area-inset-top)) 12px 8px}
+  .row{display:flex;align-items:center;gap:10px}
+  .tabs{display:flex;gap:6px;margin-left:auto}
+  .tab{color:var(--dim);text-decoration:none;padding:6px 11px;border-radius:999px;border:1px solid #2c2823;font-size:13px}
+  .tab.on{color:var(--bg);background:var(--gold);border-color:var(--gold)}
+  .back{color:var(--dim);text-decoration:none;font-size:13px}
+  .av{flex:0 0 40px;width:40px;height:40px;border-radius:50%;background:var(--gold);color:var(--bg);display:grid;place-items:center;font-weight:700;font-size:18px}
+  .who b{display:block;font-size:17px}
+  .who span{color:var(--dim);font-size:13px}
+  #bell{margin-left:6px;background:none;border:1px solid #2c2823;color:var(--dim);border-radius:999px;padding:5px 9px;font:inherit;font-size:13px;cursor:pointer}
+  #bell.on{color:var(--gold);border-color:var(--gold)}
+  main{flex:1;overflow:auto;padding:12px 12px 6px;display:flex;flex-direction:column;gap:3px}
+  .stamp{align-self:center;color:var(--dim);font-size:12px;margin:12px 0 6px}
+  .msg{max-width:78%;padding:9px 13px;border-radius:18px;line-height:1.35;word-wrap:break-word;white-space:pre-wrap}
+  .him{align-self:flex-start;background:var(--him);border-bottom-left-radius:5px}
+  .you{align-self:flex-end;background:var(--gold);color:#1b1a18;border-bottom-right-radius:5px}
+  .sys{align-self:center;color:var(--dim);font-size:13px;font-style:italic;text-align:center;margin:4px 0}
+  .read{align-self:flex-end;color:var(--dim);font-size:11px;margin:-1px 6px 4px 0}
+  .typing{align-self:flex-start;background:var(--him);border-radius:18px;border-bottom-left-radius:5px;padding:12px 14px;display:none;gap:4px}
+  .typing i{width:7px;height:7px;border-radius:50%;background:var(--dim);display:inline-block;animation:b 1.2s infinite}
+  .typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
+  @keyframes b{0%,60%,100%{opacity:.3;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
+  form{display:flex;gap:8px;padding:8px 12px max(10px,env(safe-area-inset-bottom));border-top:1px solid #2c2823;background:var(--bg)}
+  input{flex:1;min-width:0;font:inherit;padding:11px 14px;border-radius:999px;border:1px solid #3a352f;background:var(--panel);color:var(--ink)}
+  input:focus{outline:none;border-color:var(--gold)}
+  button.send{font:inherit;padding:0 16px;border-radius:999px;border:0;background:var(--gold);color:var(--bg);font-weight:600;cursor:pointer}
+  button.send:disabled{opacity:.5}
+</style></head><body>
+<header>
+  <div class="row">
+    <a class="back" href="../index.html">‹ lab</a>
+    <div class="tabs"><a class="tab" data-who="marco" href="?who=marco">Marco</a><a class="tab" data-who="dante" href="?who=dante">Dante</a></div>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <div class="av" id="av">M</div>
+    <div class="who"><b id="name">…</b><span id="now">reaching him…</span></div>
+    <button id="bell" title="Buzz this phone when he texts first (while this page is open)">🔔</button>
+  </div>
+</header>
+<main id="thread"></main>
+<div style="padding:0 12px"><div class="typing" id="typing"><i></i><i></i><i></i></div></div>
+<form id="form" autocomplete="off"><input id="say" placeholder="Text…" maxlength="400" enterkeyhint="send"><button class="send" id="send">Send</button></form>
+<script type="module">
+// Texts: a thread with one of them on your phone. No scene, no body - the same mind, the same
+// memory (supabase/functions/mind, scene.channel = 'text'), so what you say here he remembers
+// when you walk in, and what happened in the room comes up here. His off-screen life can text
+// you first (supabase/functions/life → outbox); this page picks those up on open and every minute.
+import { Mind, CHARACTERS, timeOfDay } from './mind.mjs';
+
+const Q = new URLSearchParams(location.search);
+const KEY = CHARACTERS[Q.get('who')] ? Q.get('who') : 'marco';
+const NAME = KEY[0].toUpperCase() + KEY.slice(1);
+document.title = `THE_LAB · ${NAME}`;
+document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.who === KEY));
+document.getElementById('av').textContent = NAME[0]; document.getElementById('name').textContent = NAME;
+const thread = document.getElementById('thread'), typing = document.getElementById('typing'), nowEl = document.getElementById('now');
+const input = document.getElementById('say'), sendBtn = document.getElementById('send'), bell = document.getElementById('bell');
+
+// ---- the thread lives on this phone (localStorage); his memory of it lives in the DB ----
+const STORE = `lab.text.${KEY}`;
+let T = { session_id: null, session_at: 0, msgs: [] };
+try { const s = localStorage.getItem(STORE); if (s) T = { ...T, ...JSON.parse(s) }; } catch (_) { /* fresh */ }
+const save = () => { try { localStorage.setItem(STORE, JSON.stringify({ ...T, msgs: T.msgs.slice(-200) })); } catch (_) { /* full or private */ } };
+
+const mind = new Mind(CHARACTERS[KEY], { channel: 'text' });
+// a text thread stays one "session" for a few hours of quiet, then starts a new one
+if (T.session_id && Date.now() - T.session_at < 6 * 3.6e6) mind.sessionId = T.session_id;
+mind.history = T.msgs.slice(-12).map(m => ({ who: m.who === 'you' ? 'player' : 'me', text: m.text }));
+
+const fmt = ms => { const d = new Date(ms), now = new Date(), day = d.toDateString() === now.toDateString() ? '' : d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) + ' '; return day + d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); };
+function render() {
+  thread.innerHTML = '';
+  let last = 0;
+  for (const m of T.msgs) {
+    if (m.at - last > 20 * 60e3) { const s = document.createElement('div'); s.className = 'stamp'; s.textContent = fmt(m.at); thread.appendChild(s); }
+    last = m.at;
+    const el = document.createElement('div'); el.className = m.who === 'sys' ? 'sys' : `msg ${m.who}`; el.textContent = m.text; thread.appendChild(el);
+    if (m.read) { const r = document.createElement('div'); r.className = 'read'; r.textContent = 'read'; thread.appendChild(r); }
+  }
+  if (!T.msgs.length) { const s = document.createElement('div'); s.className = 'sys'; s.textContent = `Nothing yet. Say something to ${NAME}.`; thread.appendChild(s); }
+  thread.scrollTop = thread.scrollHeight;
+}
+const push = (who, text, extra = {}) => { T.msgs.push({ who, text, at: Date.now(), ...extra }); save(); render(); };
+render();
+
+// ---- what he's up to, and anything he sent while you weren't looking ----
+let lastNow = '';
+async function checkInbox(quiet = false) {
+  try {
+    const d = await Mind.inbox(CHARACTERS[KEY]);
+    const since = d.since ? ` · as of ${fmt(new Date(d.since).getTime())}` : '';
+    nowEl.textContent = d.now ? d.now + since : 'at home';
+    for (const m of d.inbox || []) {
+      const at = new Date(m.created_at).getTime();
+      T.msgs.push({ who: 'him', text: m.text, at }); mind.history.push({ who: 'me', text: m.text });
+      if (!quiet && Notification?.permission === 'granted' && document.visibilityState !== 'visible') new Notification(NAME, { body: m.text });
+    }
+    if (d.inbox?.length) { T.msgs.sort((a, b) => a.at - b.at); save(); render(); }
+    lastNow = d.now || '';
+  } catch (e) { if (!lastNow) nowEl.textContent = `can't reach him: ${e.message}`; }
+}
+checkInbox(true);
+setInterval(() => checkInbox(), 60e3);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkInbox(); });
+
+// ---- the bell: let this phone buzz when he texts first (only while the page is open, for now) ----
+const bellState = () => { if (!('Notification' in window)) { bell.style.display = 'none'; return; } bell.classList.toggle('on', Notification.permission === 'granted'); bell.title = Notification.permission === 'granted' ? 'Buzzing when he texts first (while this page is open)' : 'Buzz this phone when he texts first (while this page is open)'; };
+bellState();
+bell.onclick = async () => { if (!('Notification' in window)) return; if (Notification.permission === 'default') await Notification.requestPermission(); bellState(); };
+
+// ---- you text; he answers when he answers ----
+document.getElementById('form').addEventListener('submit', async e => {
+  e.preventDefault(); const t = input.value.trim(); if (!t || mind.busy) return;
+  input.value = ''; push('you', t);
+  typing.style.display = 'flex'; sendBtn.disabled = true; thread.scrollTop = thread.scrollHeight;
+  try {
+    const d = await mind.send({ text: t, scene: { time: timeOfDay() } });
+    T.session_id = mind.sessionId; T.session_at = Date.now();
+    if (d?.say) push('him', d.say);
+    else { const mine = [...T.msgs].reverse().find(m => m.who === 'you'); if (mine) mine.read = true; save(); render(); }
+  } catch (err) { push('sys', `not delivered: ${err.message}`); }
+  finally { typing.style.display = 'none'; sendBtn.disabled = false; input.focus(); }
+});
+</script>
+</body></html>
