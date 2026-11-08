@@ -17,9 +17,9 @@ THE_LAB is now the **source of truth** for the body engine; DRO keeps a pinned s
 | `assets/intro3d/` | Body engine: `figure` (bodies/rig), `flesh` (soft tissue), `cloth` + `universal-cloth-material` (garments), `dev-overlay` (tuning panel), `rodin-body` (Rodin mesh skinning). Also `valley`, `table`, `intro`, `burin`, `finish`, `physics`, which the lab pages still use as their stage. |
 | `assets/vendor/three/` | Vendored Three.js (no bundler). |
 | `lab/` | Tuning pages: `anatomy.html`, `cloth.html`, `rodin.html`, `wish.html`. |
-| `world/` | Agent/world layer: `apartment.html` (first scene: Marco's studio, first-person, chat), `mind.mjs` (client for the mind function), `reflexes.mjs` (idle, gaze, walk_to, turn_to, gestures), `attach-anatomy.mjs`, `retarget.mjs`. |
-| `db/migrations/` | Supabase SQL (project `the-lab`, qyphdwcjzhgobsfpeonh). `0001` = characters, memories (pgvector 384, gte-small), relationships, character_state, sessions, `recall()`; `0002` seeds Brax + Marco. |
-| `supabase/functions/mind/` | The mind edge function: recall → Claude → say/actions/mood → memories + relationship written. Needs the `ANTHROPIC_API_KEY` secret; `MIND_MODEL` optional. |
+| `world/` | Agent/world layer: `apartment.html` (any place by `?place=`, first-person, chat/voice), `places.mjs` (each place as data), `mind.mjs` (client for the mind function), `reflexes.mjs` (idle, gaze, walk, sit/lie, clips, holds), `nav.mjs` (floor grid + A*), `voice.mjs`, `listen.mjs` (songs played to them), `bass.mjs` (Marco's bass, synthesised), `poses.json`, `attach-anatomy.mjs`, `retarget.mjs`. |
+| `db/migrations/` | Supabase SQL (project `the-lab`, qyphdwcjzhgobsfpeonh). `0001` schema + `recall()`; `0002` seeds Brax + Marco; `0003` knows_name; `0004` needs; `0005` seeds Dante; `0006` life (pg_cron, life_ticks, private key); `0007` voice ids; `0008` life every 2 h, reflect, api_usage. |
+| `supabase/functions/` | `mind` (recall → Claude → say/actions/mood → memories + relationship), `life` (off-screen life every 2 h, nightly reflection, presence, usage), `voice` (ElevenLabs speak/hear/lyrics). Secrets: `ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY`; `MIND_MODEL` optional (default claude-opus-5-5). |
 
 Paths were kept identical to DRO on purpose so nothing broke in the split. Moving the engine to `/engine` is a later, separate change that must update every import.
 
@@ -36,6 +36,9 @@ Party mode: full minds only for the 2-3 "spotlight" characters; everyone else on
 - Male characters in realistic settings get realistic anatomy under clothing, true to size and responding to gravity and pose. Realistic, not suggestive.
 - No installs, restructuring, or destructive changes without the owner's explicit approval. Audit and recommend first.
 - Dev PC: MSI GE72 (GTX 970M 3 GB, 16 GB RAM) - keep the lab runnable there and on a phone.
+
+## Where things stand
+Read `HANDOFF.md` first: current state (lab-v51), credentials/infra notes, the owner's standing constraints, open rough edges, and the agreed next steps. Keep it updated at the end of a session.
 
 ## Running
 Serve the repo root with any static server (`npx serve .` or `python -m http.server`) and open `/lab/anatomy.html`.
