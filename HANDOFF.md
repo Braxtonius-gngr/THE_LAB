@@ -52,7 +52,7 @@ Written for the next Claude session (Claude Code). Read `CLAUDE.md` first for th
 - Both men are at `the-bar` Saturday evenings; apartments are empty then until the bar exists. Use `?marco=1` etc. to force.
 
 ## Agreed next steps (owner's order)
-1. **Furniture-aware reactions** — any chair/counter/bed in a place sittable/leanable from the prop list (derive seats from prop bounds instead of hand-placed `seats`).
+1. ~~Furniture-aware reactions~~ done in PR #3: `world/seats.mjs` derives seats from the prop list + catalog sizes (sofa ends, armchair, chairs, beanbag, bed with a side, counter lean spot); a place's hand `seats` still override; `?derived=1` to compare. Checked by eye in headless renders of both places. The `RULES` table in that file is where a new prop kind gets its seat.
 2. **The bar on the river** — third place; needs props brief + build; then presence works for evenings.
 3. **Faces** — expressions from mood; bodies have no face rig yet (bigger lift).
 4. When props arrive: bake Dante's missing three + regen heavy three; regen tee; place them (`world/places.mjs` dante entry).
