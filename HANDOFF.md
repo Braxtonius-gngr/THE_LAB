@@ -48,7 +48,7 @@ Written for the next Claude session (Claude Code). Read `CLAUDE.md` first for th
 - **Dante's olive graphic tee** has dark texture patches (Meshy). Regen prompt was given.
 - **Three heavy props** resist simplification (shard meshes): `d-turntablecrate` (80k tris), `d-herbpots` (55k), `d-boxfan` (60k). Regen prompts given (low-poly).
 - **Missing Dante props:** gym bag, mail stack, burn-scarred towel. Prompts given.
-- **The bar** (third place) needs a Meshy props batch; no prompt list written yet.
+- **The bar** (third place) needs a Meshy props batch: the list with prompts and sizes is `tools/props/bar-brief.md` (12 must-have, 8 nice-to-have, plus what to reuse). Owner is checking whether the Meshy plan has API access; if it does, the Wish Room's empty generator slot (`window.WISH_GENERATOR` in `lab/wish.mjs`) can be wired to Meshy's text-to-3D through a Supabase function, so props are wished for instead of exported by hand.
 - **Workers Builds for pull requests** run `wrangler preview`, which needs the `previews: {}` block in `wrangler.jsonc` (added in PR #1). Production deploys from `main` never needed it.
 - Headless renders: use `tools/lab-fit/render.cjs` + `tools/props/view.html`; run at most ~4 browsers in parallel (12 crashed the box). Playwright is at `/home/claude/.npm-global/lib/node_modules/playwright` in this container; locally just `require('playwright')`.
 - Both men are at `the-bar` Saturday evenings; apartments are empty then until the bar exists. Use `?marco=1` etc. to force.
