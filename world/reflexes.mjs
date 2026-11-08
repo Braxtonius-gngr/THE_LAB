@@ -69,18 +69,27 @@ export class Reflexes {
   }
   _release() { if (this.clipAct) { this.clipAct.fadeOut(0.3); const a = this.clipAct; this.clipAct = null; setTimeout(() => { if (this.clipAct !== a) a.stop(); }, 320); } }
 
+  // a seat by key ('sofa2'), or the first free one of a group ('sofa' -> sofa, sofa2, ...); the page
+  // tells us which are taken (isTaken) so two people don't share a cushion
+  seatFor(where) {
+    const S = this.seats; if (!S) return null;
+    const keys = Object.keys(S).filter(k => k === where || S[k].group === where || k.replace(/\d+$/, '') === where);
+    return keys.map(k => [k, S[k]]).find(([k, v]) => !this.isTaken?.(k) || this.seat === k) || (keys.length ? [keys[0], S[keys[0]]] : null);
+  }
   // sit on a seat: walk to it, turn his back to it, sit down, stay sitting
   sit(where = 'sofa', then = null) {
-    const S = this.seats[where]; if (!S) { then?.(); return; }
+    const found = this.seatFor(where); if (!found || found[1].kind === 'lie' || found[1].kind === 'lean') { then?.(); return; }
+    const [k, S] = found;
     this._standThen(() => this.walkTo(S.pos, () => {
       this.model.rotation.y = S.yaw; if (S.y != null) this.model.position.y = S.y;
-      this.posture = 'sit'; this.hold = null;
+      this.posture = 'sit'; this.hold = null; this.seat = k;
       this.play('sit_down', { then: () => { this.play('sit_idle', { loop: true }); then?.(); } }) || (this.play('sit_idle', { loop: true }), then?.());
     }));
   }
   // lie on the bed: walk to its side, then onto it and settle
   lie(then = null) {
-    const S = this.seats.bed; if (!S) { then?.(); return; }
+    const S = this.seats.bed; if (!S || !S.side) { then?.(); return; }
+    this.seat = 'bed';
     this._standThen(() => this.walkTo(S.side, () => {
       this.posture = 'lie'; this.hold = null; this.gazeTarget = null;
       this.play('lie_idle', { loop: true, fade: 0.8 });
@@ -90,7 +99,7 @@ export class Reflexes {
   // on his feet again, from whatever he was doing
   stand(then = null) {
     if (this.posture === 'stand') { this._release(); then?.(); return; }
-    const was = this.posture; this.hold = null;
+    const was = this.posture; this.hold = null; this.seat = null;
     if (was === 'lie') {
       const S = this.seats.bed;
       this.glide = { from: this.model.position.clone(), fromYaw: this.model.rotation.y, to: S.side.clone(), toYaw: S.yaw + Math.PI / 2, t: 0, dur: 1.2, then: () => { this.posture = 'stand'; this._release(); then?.(); } };
@@ -113,14 +122,14 @@ export class Reflexes {
     else if (a.type === 'turn_to') { const at = a.target === 'other' ? this.other : this.player; if (at && this.posture === 'stand') this.turnTo(at); fin(); }
     else if (a.type === 'look_at') { this.lookAt(a.target === 'other' ? this.other : a.target === 'player' ? this.player : null); fin(); }
     else if (a.type === 'gesture') { this.gesture(a.name || 'nod'); setTimeout(fin, 1200); }
-    else if (a.type === 'sit' || a.type === 'rest') this.sit(a.target || 'sofa', fin);
+    else if (a.type === 'sit' || a.type === 'rest') this.sit(a.on || a.target || 'sofa', fin);
     else if (a.type === 'lie_down') this.lie(fin);
     else if (a.type === 'stand') this.stand(fin);
     else if (a.type === 'drink') this.once('drink', fin);
     else if (a.type === 'phone') this.once('phone_check', fin);
     else if (a.type === 'stretch') this.once('stretch_yawn', fin);
     else if (a.type === 'cross_arms') { this._standThen(() => { this.hold = 'cross_arms'; fin(); }); }
-    else if (a.type === 'lean_counter') { const at = this.seats.counter; this.hold = null; if (at) walk(at.pos, () => { this.model.rotation.y = at.yaw; this.hold = 'lean_counter'; }); else fin(); }
+    else if (a.type === 'lean_counter') { const at = this.seatFor('counter')?.[1]; this.hold = null; if (at) walk(at.pos, () => { this.model.rotation.y = at.yaw; this.hold = 'lean_counter'; }); else fin(); }
     else if (a.type === 'play_bass') this.sit('sofa', () => { this.hold = 'play_bass'; this.onHold?.('play_bass', true); fin(); });
     // eat: off to the kitchen and a moment there
     else if (a.type === 'eat') { this.hold = null; walk(spots.kitchen || this.model.position, () => this.gesture('nod', 2.5)); }

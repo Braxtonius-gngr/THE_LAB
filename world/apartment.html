@@ -70,6 +70,7 @@ import { Mind, CHARACTERS, timeOfDay } from './mind.mjs';
 import { loadProps } from './props.mjs';
 import { PLACES } from './places.mjs';
 import { wear } from './garments.mjs';
+import { deriveSeats, seatWords } from './seats.mjs';
 
 const isPhone = matchMedia('(pointer:coarse)').matches;
 const r = new THREE.WebGLRenderer({ antialias: true });
@@ -156,8 +157,12 @@ try { const mine = localStorage.getItem('lab.poses'); if (mine) setPoses(JSON.pa
 // the floor map: every resident walks around the furniture
 const nav = new Nav(W, D, props);
 const PACKS = [{ rest: captureRest(pack.scene, { allNodes: true }), clips: pack.animations }, { rest: captureRest(pack2.scene, { allNodes: true }), clips: pack2.animations }];
-// where the hips go: the sofa seat (the host's end, the guest's), the bed, a back to the counter
-const SEATS = PLACE.seats;
+// where the hips go: every sofa, chair, bed and counter in the prop list (world/seats.mjs), with
+// the place's hand-placed seats winning where they exist
+const CATALOG = await (await fetch('../assets/props/props.json')).json();
+const SIZES = Object.fromEntries((CATALOG.props || []).filter(p => p.size).map(p => [p.id, p.size]));
+const SEATS = Q.has('derived') ? deriveSeats(PROPS, SIZES) : { ...deriveSeats(PROPS, SIZES), ...PLACE.seats };   // ?derived=1: the furniture alone, to compare
+const SEAT_WORDS = seatWords(SEATS);
 const wardrobe = await (await fetch('../assets/garments/garments.json')).json();
 const LOWER = ['jeans', 'boxerbriefs', 'chinos', 'sweatpants', 'apron', 'pajamapants', 'sleepshorts', 'briefs', 'cargopants', 'chefpants', 'basketballshorts'];
 const WARM = { Nude: -2, Underwear: -1, 'Underwear (briefs)': -1, 'Sleep shorts': -1, 'Home: shorts': -1, Lounging: 0, 'Socks + sweats': 0, 'Home: shorts + thermal': 0, Sleepwear: 0.5, 'Tee + jeans': 0.5, 'Off duty': 0.5, 'Behind the bar': 1, 'In the kitchen': 1, 'Flannel over tee': 1.5, 'Off duty + bomber': 2, 'Hoodie + jeans': 2, 'Denim jacket': 2 };
@@ -172,7 +177,8 @@ async function resident({ key, name, model, bodySpec, seed, outfitFor, place, is
   model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
   scene.add(model);
   // (rest capture and the anatomy attach read the model at the origin; place him after)
-  const reflex = new Reflexes(model, PACKS, { seats: isHost ? SEATS : { ...SEATS, sofa: SEATS.sofa2 } });
+  const reflex = new Reflexes(model, PACKS, { seats: SEATS });
+  reflex.isTaken = k => RES.some(o => o.reflex !== reflex && o.reflex.seat === k);
   const anat = attachAnatomy(model, bodySpec.anatomy, {}, { seed });
   reflex.nav = nav;
   const R = { key, name, model, reflex, anat, mind: new Mind(CHARACTERS[key], { location: PLACE.location }), place, outfit: null, worn: [], dressing: 0, needs: null, head: reflex.bone('Head') };
@@ -250,7 +256,7 @@ function placeBubble() {
   const behind = _hp.z > 1; bubble.style.left = ((_hp.x + 1) / 2 * innerWidth) + 'px'; bubble.style.top = ((1 - _hp.y) / 2 * innerHeight) + 'px'; bubble.style.opacity = behind ? 0 : 1;
 }
 function sceneState(R) {
-  return { time: timeOfDay(), hour: HR, comfort: +R.comfort().toFixed(2), player_distance_m: +player.pos.distanceTo(R.model.position).toFixed(2), spots: Object.keys(SPOTS), wearing: R.outfit, wardrobe: Object.keys(R.OUTFITS),
+  return { time: timeOfDay(), hour: HR, comfort: +R.comfort().toFixed(2), player_distance_m: +player.pos.distanceTo(R.model.position).toFixed(2), spots: Object.keys(SPOTS), seats: SEAT_WORDS, wearing: R.outfit, wardrobe: Object.keys(R.OUTFITS),
     ...(R.place ? { place: R.place } : {}),
     others: RES.filter(o => o !== R).map(o => ({ id: CHARACTERS[o.key], name: o.name, wearing: o.outfit, distance_m: +o.model.position.distanceTo(R.model.position).toFixed(1) })) };
 }
