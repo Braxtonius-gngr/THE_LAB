@@ -14,7 +14,7 @@ Written for the next Claude session (Claude Code). Read `CLAUDE.md` first for th
 
 **Off-screen life** (edge function `life`, v7; `db/migrations/0006`, `0008`): pg_cron every 2 h lives the hours since the last tick for everyone in one call (own day + texts/time together), writes memories, needs, moods, relationship takes, **and where each man is** (`marco-apartment` / `dante-apartment` / `the-bar` / `out`). Nightly 4:30 am reflection. `GET life` → ticks + this month's Claude spend; `GET life?who=1` → everyone's location; `GET life?skill=bass` → Marco's bass skill from logged practice.
 
-**Two minds in a room** (PR #2). Every `mind` reply says who it's for (`to`: `player` or the other one's name); the page makes him look at that person, and a line said to the other one gets answered (two turns between them at most, then it's yours again). After ~35 s of quiet with both present one of them may start something (`event: 'chat'`), twice, then they wait on you. What the others said since his last turn goes up as `heard` and becomes his memories. The prompt is two system blocks: stable (persona + how to answer, `cache_control`) then the moment; `api_usage` logs cache reads/writes (migration `0010`), priced in the counter. Mind v16, life v9.
+**Two minds in a room** (PR #2). Every `mind` reply says who it's for (`to`: `player` or the other one's name); the page makes him look at that person, and a line said to the other one gets answered (two turns between them at most, then it's yours again). After ~35 s of quiet with both present one of them may start something (`event: 'chat'`), twice, then they wait on you. What the others said since his last turn goes up as `heard` and becomes his memories. The prompt is two system blocks: stable (persona + how to answer, `cache_control`) then the moment; `api_usage` logs cache reads/writes (migration `0010`), priced in the counter. Mind v16, life v9. PR #3: a reply may carry `friend` (how the moment moved his take on the friend in the room, ±0.1, applied to their relationship row), and a standing character gives a half-step back when someone is closer than ~0.55 m (`reflexes._crowded`, `nav.freeAt`). Mind v17.
 
 **Presence.** The page spawns only who is actually there (`?who=1`). Empty place says where the host is. Polls every 2 min for comings/goings. `?marco=1` / `?dante=1` force presence, `?alone=1` forces host alone.
 
@@ -52,7 +52,6 @@ Written for the next Claude session (Claude Code). Read `CLAUDE.md` first for th
 - Both men are at `the-bar` Saturday evenings; apartments are empty then until the bar exists. Use `?marco=1` etc. to force.
 
 ## Agreed next steps (owner's order)
-0. **Two minds, rough edges** - personal space between the two of them (nobody steps back yet); relationship nudges between them from in-room exchanges (only life ticks move those today).
 1. **Furniture-aware reactions** — any chair/counter/bed in a place sittable/leanable from the prop list (derive seats from prop bounds instead of hand-placed `seats`).
 2. **The bar on the river** — third place; needs props brief + build; then presence works for evenings.
 3. **Faces** — expressions from mood; bodies have no face rig yet (bigger lift).
