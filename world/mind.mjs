@@ -9,9 +9,18 @@ export const PLAYER_ID = '00000000-0000-4000-8000-000000000001';   // Brax
 export const CHARACTERS = { marco: '00000000-0000-4000-8000-000000000101', dante: '00000000-0000-4000-8000-000000000102' };
 
 export class Mind {
-  constructor(characterId, { playerId = PLAYER_ID, location = 'marco-apartment' } = {}) {
-    this.characterId = characterId; this.playerId = playerId; this.location = location;
+  // channel 'text': you're texting him from your phone (world/text.html), not in the room; the
+  // function then takes his whereabouts from his own life rather than from the page
+  constructor(characterId, { playerId = PLAYER_ID, location = 'marco-apartment', channel = null } = {}) {
+    this.characterId = characterId; this.playerId = playerId; this.location = channel === 'text' ? null : location; this.channel = channel;
     this.sessionId = null; this.history = []; this.busy = false;
+  }
+  // texts he sent you that you haven't seen (his off-screen life can reach out first), and what he's up to
+  static async inbox(characterId, playerId = PLAYER_ID) {
+    const r = await fetch(`${SUPABASE_URL}/functions/v1/mind?character_id=${characterId}&player_id=${playerId}`, { headers: { 'Authorization': `Bearer ${SUPABASE_ANON}`, 'apikey': SUPABASE_ANON } });
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || `mind ${r.status}`);
+    return d;   // { name, now, since, inbox: [{ id, text, created_at }] }
   }
   // text: what the player said; event: 'arrive' | 'leave'; scene: { time, player_distance_m, spots }
   async send({ text = null, event = null, scene = {} } = {}) {
@@ -22,7 +31,7 @@ export class Mind {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}`, 'apikey': SUPABASE_ANON },
         body: JSON.stringify({ character_id: this.characterId, player_id: this.playerId, session_id: this.sessionId, text, event,
-          scene: { location: this.location, ...scene }, history: this.history.slice(-12) }),
+          scene: { location: this.location, ...(this.channel ? { channel: this.channel } : {}), ...scene }, history: this.history.slice(-12) }),
       });
       const d = await r.json();
       if (!r.ok || d.error) throw new Error(d.error || `mind ${r.status}`);
