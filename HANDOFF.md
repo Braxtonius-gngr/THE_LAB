@@ -56,7 +56,7 @@ Written for the next Claude session (Claude Code). Read `CLAUDE.md` first for th
 ## Agreed next steps (owner's order)
 1. ~~Furniture-aware reactions~~ done in PR #3: `world/seats.mjs` derives seats from the prop list + catalog sizes (sofa ends, armchair, chairs, beanbag, bed with a side, counter lean spot); a place's hand `seats` still override; `?derived=1` to compare. Checked by eye in headless renders of both places. The `RULES` table in that file is where a new prop kind gets its seat.
 2. **The bar on the river** — third place; needs props brief + build; then presence works for evenings.
-3. **Faces** — expressions from mood; bodies have no face rig yet (bigger lift).
+3. **Faces** — in progress (branch `claude/facekit-prep`, 2026-11-08): the ICT FaceKit expression set is the contract (`assets/face/expressions.json`, 53 ids + visemes + mood anchors), `tools/face/fit-facekit.py` fits FaceKit onto a body and writes the 53 shape keys as morph targets automatically (~10 s/body in Blender; tested on Dante mobile, 2.4 mm rms), `world/face.mjs` drives them from mood/gaze/blink/speech, `lab/face.html` is the tuning page. Not wired into `apartment.html` yet. Blender weekend: fetch the OBJs (`tools/face/fetch-facekit.sh`), run `tools/face/fit-all.sh`, open a `.face.glb`, judge, then cut the sealed Meshy mouth / separate the eyeballs so jawOpen and blink stop tearing (see `tools/face/README.md`).
 4. When props arrive: bake Dante's missing three + regen heavy three; regen tee; place them (`world/places.mjs` dante entry).
 
 ## Quick test recipes

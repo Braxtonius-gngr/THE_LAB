@@ -1,0 +1,4 @@
+# FaceKit expression + identity OBJs are fetched, not committed (tools/face/fetch-facekit.sh)
+*.obj
+!generic_neutral_mesh.obj
+*.mtl

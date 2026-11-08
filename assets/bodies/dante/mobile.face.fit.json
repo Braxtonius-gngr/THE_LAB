@@ -1,0 +1,285 @@
+{
+ "body": "assets/bodies/dante/mobile.glb",
+ "out": "/home/claude/fit-out/dante.mobile.face.glb",
+ "ids": [
+  "browDown_L",
+  "browDown_R",
+  "browInnerUp_L",
+  "browInnerUp_R",
+  "browOuterUp_L",
+  "browOuterUp_R",
+  "cheekPuff_L",
+  "cheekPuff_R",
+  "cheekSquint_L",
+  "cheekSquint_R",
+  "eyeBlink_L",
+  "eyeBlink_R",
+  "eyeLookDown_L",
+  "eyeLookDown_R",
+  "eyeLookIn_L",
+  "eyeLookIn_R",
+  "eyeLookOut_L",
+  "eyeLookOut_R",
+  "eyeLookUp_L",
+  "eyeLookUp_R",
+  "eyeSquint_L",
+  "eyeSquint_R",
+  "eyeWide_L",
+  "eyeWide_R",
+  "jawForward",
+  "jawLeft",
+  "jawOpen",
+  "jawRight",
+  "mouthClose",
+  "mouthDimple_L",
+  "mouthDimple_R",
+  "mouthFrown_L",
+  "mouthFrown_R",
+  "mouthFunnel",
+  "mouthLeft",
+  "mouthLowerDown_L",
+  "mouthLowerDown_R",
+  "mouthPress_L",
+  "mouthPress_R",
+  "mouthPucker",
+  "mouthRight",
+  "mouthRollLower",
+  "mouthRollUpper",
+  "mouthShrugLower",
+  "mouthShrugUpper",
+  "mouthSmile_L",
+  "mouthSmile_R",
+  "mouthStretch_L",
+  "mouthStretch_R",
+  "mouthUpperUp_L",
+  "mouthUpperUp_R",
+  "noseSneer_L",
+  "noseSneer_R"
+ ],
+ "steps": {
+  "rigid": {
+   "scale": 0.010411517508830277,
+   "yaw": 0.0,
+   "rms_mm": 2.3567316497158384
+  },
+  "wrap": {
+   "rms_mm": 8.653891014606204
+  }
+ },
+ "shape_keys": {
+  "browDown_L": {
+   "max_mm": 6.599712634616862,
+   "verts_moved": 1533
+  },
+  "browDown_R": {
+   "max_mm": 6.309317833667951,
+   "verts_moved": 1253
+  },
+  "browInnerUp_L": {
+   "max_mm": 6.147654597582568,
+   "verts_moved": 2105
+  },
+  "browInnerUp_R": {
+   "max_mm": 6.0864576509993915,
+   "verts_moved": 1849
+  },
+  "browOuterUp_L": {
+   "max_mm": 8.946902450954342,
+   "verts_moved": 2300
+  },
+  "browOuterUp_R": {
+   "max_mm": 8.699271582912429,
+   "verts_moved": 2085
+  },
+  "cheekPuff_L": {
+   "max_mm": 14.295821025310643,
+   "verts_moved": 1347
+  },
+  "cheekPuff_R": {
+   "max_mm": 14.37384001805544,
+   "verts_moved": 1426
+  },
+  "cheekSquint_L": {
+   "max_mm": 6.485514665570296,
+   "verts_moved": 3177
+  },
+  "cheekSquint_R": {
+   "max_mm": 6.503200012592906,
+   "verts_moved": 3077
+  },
+  "eyeBlink_L": {
+   "max_mm": 9.46057690514059,
+   "verts_moved": 296
+  },
+  "eyeBlink_R": {
+   "max_mm": 9.411366093912864,
+   "verts_moved": 299
+  },
+  "eyeLookDown_L": {
+   "max_mm": 8.0135735948456,
+   "verts_moved": 296
+  },
+  "eyeLookDown_R": {
+   "max_mm": 8.038527791850843,
+   "verts_moved": 281
+  },
+  "eyeLookIn_L": {
+   "max_mm": 2.5752448637825793,
+   "verts_moved": 243
+  },
+  "eyeLookIn_R": {
+   "max_mm": 2.572837301521629,
+   "verts_moved": 224
+  },
+  "eyeLookOut_L": {
+   "max_mm": 2.6272662358349326,
+   "verts_moved": 247
+  },
+  "eyeLookOut_R": {
+   "max_mm": 2.6148904763510985,
+   "verts_moved": 219
+  },
+  "eyeLookUp_L": {
+   "max_mm": 3.801011012690743,
+   "verts_moved": 258
+  },
+  "eyeLookUp_R": {
+   "max_mm": 3.7998657300936016,
+   "verts_moved": 239
+  },
+  "eyeSquint_L": {
+   "max_mm": 3.8082962159267537,
+   "verts_moved": 435
+  },
+  "eyeSquint_R": {
+   "max_mm": 3.836123957934728,
+   "verts_moved": 452
+  },
+  "eyeWide_L": {
+   "max_mm": 3.635420750706225,
+   "verts_moved": 198
+  },
+  "eyeWide_R": {
+   "max_mm": 3.6573723373836593,
+   "verts_moved": 182
+  },
+  "jawForward": {
+   "max_mm": 11.613110139473333,
+   "verts_moved": 2746
+  },
+  "jawLeft": {
+   "max_mm": 9.286351400337711,
+   "verts_moved": 2606
+  },
+  "jawOpen": {
+   "max_mm": 43.67489339143925,
+   "verts_moved": 3313
+  },
+  "jawRight": {
+   "max_mm": 9.275136168304746,
+   "verts_moved": 2580
+  },
+  "mouthClose": {
+   "max_mm": 43.39101570200391,
+   "verts_moved": 639
+  },
+  "mouthDimple_L": {
+   "max_mm": 8.589824652940809,
+   "verts_moved": 817
+  },
+  "mouthDimple_R": {
+   "max_mm": 9.003521844793688,
+   "verts_moved": 910
+  },
+  "mouthFrown_L": {
+   "max_mm": 6.323356283026175,
+   "verts_moved": 1058
+  },
+  "mouthFrown_R": {
+   "max_mm": 5.913420592422003,
+   "verts_moved": 1101
+  },
+  "mouthFunnel": {
+   "max_mm": 12.209816285592696,
+   "verts_moved": 1871
+  },
+  "mouthLeft": {
+   "max_mm": 19.101381140410933,
+   "verts_moved": 1755
+  },
+  "mouthLowerDown_L": {
+   "max_mm": 4.752450101382777,
+   "verts_moved": 445
+  },
+  "mouthLowerDown_R": {
+   "max_mm": 4.724722394548651,
+   "verts_moved": 480
+  },
+  "mouthPress_L": {
+   "max_mm": 4.4874789403282875,
+   "verts_moved": 1144
+  },
+  "mouthPress_R": {
+   "max_mm": 4.491366595674356,
+   "verts_moved": 1214
+  },
+  "mouthPucker": {
+   "max_mm": 12.426490842227608,
+   "verts_moved": 1862
+  },
+  "mouthRight": {
+   "max_mm": 19.28691833204941,
+   "verts_moved": 1741
+  },
+  "mouthRollLower": {
+   "max_mm": 13.278241582184037,
+   "verts_moved": 612
+  },
+  "mouthRollUpper": {
+   "max_mm": 12.049785019487281,
+   "verts_moved": 733
+  },
+  "mouthShrugLower": {
+   "max_mm": 11.741186233888762,
+   "verts_moved": 989
+  },
+  "mouthShrugUpper": {
+   "max_mm": 6.449414832165978,
+   "verts_moved": 438
+  },
+  "mouthSmile_L": {
+   "max_mm": 15.93423216449668,
+   "verts_moved": 1967
+  },
+  "mouthSmile_R": {
+   "max_mm": 16.019406349878324,
+   "verts_moved": 2136
+  },
+  "mouthStretch_L": {
+   "max_mm": 10.156531860910524,
+   "verts_moved": 1084
+  },
+  "mouthStretch_R": {
+   "max_mm": 10.254441698335944,
+   "verts_moved": 1175
+  },
+  "mouthUpperUp_L": {
+   "max_mm": 8.937423197698894,
+   "verts_moved": 1087
+  },
+  "mouthUpperUp_R": {
+   "max_mm": 9.07263683347262,
+   "verts_moved": 1170
+  },
+  "noseSneer_L": {
+   "max_mm": 10.581757248482631,
+   "verts_moved": 2215
+  },
+  "noseSneer_R": {
+   "max_mm": 10.57974331579992,
+   "verts_moved": 2020
+  }
+ },
+ "asymmetric_pairs": [],
+ "seconds": 11.825014352798462
+}
