@@ -13,6 +13,7 @@
 // Auth: the scheduler sends x-life-key, checked against private.life_key (never leaves the DB).
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { pushPlayer } from "./webpush.ts";
 
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const embedder = new Supabase.ai.Session("gte-small");
@@ -159,15 +160,17 @@ Respond ONLY with JSON:
         }
       }
     }
-    // a text to the visitor: it waits in his inbox, and he remembers sending it
+    // a text to the visitor: it waits in his inbox, he remembers sending it, and the phone buzzes
+    let texted = 0;
     for (const [name, t] of Object.entries(out.texts_to_brax || {}) as [string, unknown][]) {
       const c = byName(name); if (!c || !hasNumber.includes(c.name) || typeof t !== "string" || !t.trim()) continue;
-      const msg = t.trim().slice(0, 400);
+      const msg = t.trim().slice(0, 400); texted++;
       writes.push(db.from("outbox").insert({ from_id: c.id, to_id: PLAYER, text: msg }));
       writes.push(mem(c.id, `I texted Brax: "${msg}"`, "dialogue", 3, [PLAYER], c.id));
     }
     writes.push(db.from("life_ticks").insert({ at: now.toISOString(), hours, story: out }));
     await Promise.all(writes);
+    if (texted) await pushPlayer(db, PLAYER, { subject: Deno.env.get("VAPID_SUBJECT") || "mailto:the-lab@localhost" }).catch(() => {});
     return json({ ok: true, hours, story: out });
   } catch (e) {
     return json({ error: String((e as Error).message || e) }, 500);
