@@ -71,6 +71,7 @@ import { loadProps } from './props.mjs';
 import { PLACES } from './places.mjs';
 import { wear } from './garments.mjs';
 import { deriveSeats, seatWords } from './seats.mjs';
+import { Face } from './face.mjs';
 
 const isPhone = matchMedia('(pointer:coarse)').matches;
 const r = new THREE.WebGLRenderer({ antialias: true });
@@ -179,9 +180,11 @@ async function resident({ key, name, model, bodySpec, seed, outfitFor, place, is
   // (rest capture and the anatomy attach read the model at the origin; place him after)
   const reflex = new Reflexes(model, PACKS, { seats: SEATS });
   reflex.isTaken = k => RES.some(o => o.reflex !== reflex && o.reflex.seat === k);
+  // his face: mood, blinks, glances, his mouth when he talks (shapes when the body has them, head motion always)
+  const face = new Face(model); reflex.headAdd = face.headAdd;
   const anat = attachAnatomy(model, bodySpec.anatomy, {}, { seed });
   reflex.nav = nav;
-  const R = { key, name, model, reflex, anat, mind: new Mind(CHARACTERS[key], { location: PLACE.location }), place, outfit: null, worn: [], dressing: 0, needs: null, head: reflex.bone('Head') };
+  const R = { key, name, model, reflex, anat, face, mind: new Mind(CHARACTERS[key], { location: PLACE.location }), place, outfit: null, worn: [], dressing: 0, needs: null, head: reflex.bone('Head') };
   R.OUTFITS = { Nude: [] };
   for (const o of wardrobe.outfits) if (o.items.every(id => (wardrobe.garments.find(g => g.id === id)?.bodies || []).includes(bodySpec.id))) R.OUTFITS[o.name] = o.items;
   R.comfort = () => Math.max(0, Math.min(1, Math.abs(WARM[R.outfit] ?? 0) / 3));
@@ -262,7 +265,7 @@ function sceneState(R) {
 }
 function showMemories(R, d) {
   if (!d) return;
-  R.needs = d.needs || R.needs; R.anat.setWarmth?.(R.warmth());
+  R.needs = d.needs || R.needs; R.anat.setWarmth?.(R.warmth()); R.face.setMood(d.mood);
   const bar = (k, v, inv) => { const x = inv ? 1 - v : v; return `<span style="display:inline-block;width:70px">${k}</span><span style="display:inline-block;width:90px;height:7px;background:#333;border-radius:4px;vertical-align:middle"><span style="display:block;height:7px;width:${Math.round(x * 90)}px;border-radius:4px;background:${x > 0.66 ? '#d9534f' : x > 0.4 ? '#d8b25a' : '#6c6'}"></span></span>`; };
   const needsHtml = d.needs ? `<b>${R.name}'s needs</b> <i>(bar = how pressing)</i><br>` + bar('tired', d.needs.energy, true) + '<br>' + bar('hunger', d.needs.hunger) + '<br>' + bar('company', d.needs.social) + '<br>' + bar('closeness', d.needs.intimacy) + '<br>' + bar('discomfort', d.needs.comfort) + '<br>' : '';
   memLive.innerHTML = needsHtml + `<b>model</b> ${d.model || ''}${d.salvaged ? ' <i>(reply was cut short; line salvaged)</i>' : ''}<br><b>mood</b> ${JSON.stringify(d.mood)}<br><b>remembered now</b> ${d.memory && d.memory.content ? `(${d.memory.importance}) ${d.memory.content}` : '–'}<br><b>recalled</b><br>` + (d.recalled || []).map(m => `· ${m.content} <i>(${m.when})</i>`).join('<br>');
@@ -401,9 +404,10 @@ r.setAnimationLoop(now => {
   for (const R of RES) {
     const rf = R.reflex;
     const other = RES.find(o => o !== R), otherHead = other ? other.head.getWorldPosition(R._oh || (R._oh = new THREE.Vector3())) : null;
-    if (R.lookHold && performance.now() < R.lookHold) { rf.update(dt, { player: eye, other: otherHead, spots: SPOTS }); R.anat.update(dt); continue; }
+    if (R.lookHold && performance.now() < R.lookHold) { rf.update(dt, { player: eye, other: otherHead, spots: SPOTS }); const sp0 = voice.spoken(); R.face.update(dt, { spoken: sp0 && sp0.key === R.key ? sp0 : null }); R.anat.update(dt); continue; }
     if (!rf.busy && rf.posture !== 'lie') rf.lookAt(player.pos.distanceTo(R.model.position) < 3.2 ? eye : otherHead);
     rf.update(dt, { player: eye, other: otherHead, spots: SPOTS });
+    const sp = voice.spoken(); R.face.listening = ears.listening; R.face.update(dt, { spoken: sp && sp.key === R.key ? sp : null });
     R.anat.update(dt);
     if (R.bassOn && bass) placeBass(bass, R.model, POSES.play_bass.prop);
   }

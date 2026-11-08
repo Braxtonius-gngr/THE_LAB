@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>THE_LAB · Face</title>
+<style>
+  :root{--bg:#15130f;--panel:rgba(27,26,24,.92);--ink:#eee;--dim:#a49c8c;--gold:#d8b25a}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px system-ui,sans-serif;overflow:hidden}
+  canvas{display:block}
+  #panel{position:fixed;top:10px;right:10px;width:300px;max-height:calc(100% - 20px);overflow:auto;background:var(--panel);border-radius:12px;padding:12px 14px;backdrop-filter:blur(6px)}
+  #panel h2{margin:0 0 8px;font-size:15px}
+  #panel label{display:flex;align-items:center;gap:8px;margin:5px 0;font-size:12px;color:var(--dim)}
+  #panel label span{width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #panel input[type=range]{flex:1}
+  .row{display:flex;gap:6px;margin:8px 0}
+  button,select,input[type=text]{font:inherit;padding:6px 10px;border-radius:8px;border:1px solid #444;background:#1b1a18;color:var(--ink)}
+  button{cursor:pointer}button.on{background:var(--gold);color:#1b1a18;border-color:var(--gold)}
+  .note{color:var(--dim);font-size:12px;line-height:1.4}
+  #top{position:fixed;top:10px;left:10px;display:flex;gap:8px}
+  .chip{background:var(--panel);color:var(--ink);padding:8px 13px;border-radius:999px;text-decoration:none}
+</style></head><body>
+<div id="top"><a class="chip" href="../index.html">← Lab</a><span class="chip" id="status">loading…</span></div>
+<div id="panel">
+  <h2>Face</h2>
+  <div class="row"><select id="body"></select><button id="reload">Load</button></div>
+  <div class="note" id="have"></div>
+  <label><span>valence</span><input type="range" id="valence" min="-1" max="1" step="0.05" value="0"><b id="vv">0</b></label>
+  <label><span>energy</span><input type="range" id="energy" min="0" max="1" step="0.05" value="0.5"><b id="ev">0.5</b></label>
+  <div class="row"><button id="listen">listening</button><button id="blink">blink</button></div>
+  <div class="row"><input type="text" id="line" placeholder="a line for him to say" style="flex:1" value="Comfortable quiet. You should try it."><button id="say">say</button></div>
+  <div class="note">“say” uses his real voice with timing when the voice function is reachable; otherwise the browser's voice (word boundaries only). Drag to orbit, wheel to zoom.</div>
+  <div id="shapes" style="margin-top:10px"></div>
+</div>
+<script type="module">
+// Face lab: one body, the camera on his face, the face module (world/face.mjs) driven by hand -
+// mood sliders, a blink, a line said with timing - and a slider per blendshape the body has. A
+// body with no face shapes shows what the module does anyway (the head's small motion).
+import * as THREE from '../assets/vendor/three/three.module.js';
+import { GLTFLoader } from '../assets/vendor/three/three.addons.js';
+import { captureRest } from '../world/retarget.mjs';
+import { Reflexes, setPoses } from '../world/reflexes.mjs';
+import { Face, ARKIT } from '../world/face.mjs';
+import { voice } from '../world/voice.mjs';
+
+const Q = new URLSearchParams(location.search);
+const r = new THREE.WebGLRenderer({ antialias: true }); r.setPixelRatio(Math.min(devicePixelRatio, 2)); r.setSize(innerWidth, innerHeight);
+r.outputColorSpace = THREE.SRGBColorSpace; r.toneMapping = THREE.ACESFilmicToneMapping; document.body.prepend(r.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x1a1714);
+const cam = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, 0.05, 50);
+// a small orbit of our own (the vendored addons carry no OrbitControls): drag turns, wheel zooms
+const ctl = { target: new THREE.Vector3(0, 1.55, 0), yaw: 0.3, pitch: 0.05, dist: 0.95, update() { cam.position.set(Math.sin(this.yaw) * Math.cos(this.pitch) * this.dist, Math.sin(this.pitch) * this.dist, Math.cos(this.yaw) * Math.cos(this.pitch) * this.dist).add(this.target); cam.lookAt(this.target); } };
+let drag = null; r.domElement.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY }; });
+addEventListener('pointerup', () => { drag = null; }); addEventListener('pointermove', e => { if (!drag) return; ctl.yaw -= (e.clientX - drag.x) * 0.006; ctl.pitch = Math.max(-1.2, Math.min(1.2, ctl.pitch + (e.clientY - drag.y) * 0.006)); drag = { x: e.clientX, y: e.clientY }; });
+r.domElement.addEventListener('wheel', e => { ctl.dist = Math.max(0.3, Math.min(3, ctl.dist * (1 + e.deltaY * 0.001))); }, { passive: true }); ctl.update();
+scene.add(new THREE.HemisphereLight(0xe9dcc6, 0x2a221a, 0.7));
+const key = new THREE.DirectionalLight(0xfff1dc, 2.2); key.position.set(1.2, 2.2, 1.6); scene.add(key);
+const fill = new THREE.DirectionalLight(0xa9c4e6, 0.6); fill.position.set(-1.5, 1.6, 1); scene.add(fill);
+addEventListener('resize', () => { cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); r.setSize(innerWidth, innerHeight); });
+
+const bodies = await (await fetch('../assets/bodies/bodies.json')).json();
+const sel = document.getElementById('body'); for (const b of bodies) sel.add(new Option(`${b.name} (${b.id})`, b.id));
+sel.value = Q.get('body') && bodies.some(b => b.id === Q.get('body')) ? Q.get('body') : 'adult-base-01';
+const loader = new GLTFLoader(); const [pack] = await Promise.all([loader.loadAsync('../assets/anims/meshy-pack-01.glb')]);
+const PACKS = [{ rest: captureRest(pack.scene, { allNodes: true }), clips: pack.animations }];
+try { setPoses(await (await fetch('../world/poses.json')).json()); } catch (_) { /* defaults */ }
+
+let R = null;
+async function load(id) {
+  const spec = bodies.find(b => b.id === id); document.getElementById('status').textContent = `loading ${spec.name}…`;
+  if (R) { scene.remove(R.model); }
+  const g = await loader.loadAsync('../assets/bodies/' + spec.desktop); const model = g.scene;
+  model.traverse(o => { if (o.isMesh) { o.frustumCulled = false; } }); scene.add(model);
+  const reflex = new Reflexes(model, PACKS), face = new Face(model); reflex.headAdd = face.headAdd;
+  const head = reflex.bone('Head'); const hp = new THREE.Vector3(); if (head) { head.getWorldPosition(hp); ctl.target.copy(hp).add(new THREE.Vector3(0, 0.08, 0)); ctl.update(); }
+  R = { spec, model, reflex, face, key: id === 'dante' ? 'dante' : 'marco' };
+  const have = document.getElementById('have'), list = face.shapes();
+  have.textContent = face.has ? `${list.filter(s => s.arkit).length} of the 52 ARKit shapes on this body (${list.length} shapes in all).` : `No face shapes on this body yet - only the head moves. Make them with Blender + Faceit (tools/face/README.md); the checklist there says what this page expects.`;
+  const box = document.getElementById('shapes'); box.innerHTML = '';
+  for (const s of list) { const l = document.createElement('label'); l.innerHTML = `<span title="${s.name}">${s.name}</span><input type="range" min="0" max="1" step="0.01" value="0"><b>0</b>`; const inp = l.querySelector('input'), b = l.querySelector('b'); inp.oninput = () => { face.goal[s.name] = +inp.value; face.w[s.name] = +inp.value; for (const t of face.targets[s.name]) t.mesh.morphTargetInfluences[t.index] = +inp.value; b.textContent = inp.value; }; box.appendChild(l); }
+  document.getElementById('status').textContent = spec.name;
+}
+await load(sel.value);
+document.getElementById('reload').onclick = () => load(sel.value);
+const mood = () => { const v = +document.getElementById('valence').value, e = +document.getElementById('energy').value; document.getElementById('vv').textContent = v.toFixed(2); document.getElementById('ev').textContent = e.toFixed(2); R?.face.setMood({ valence: v, energy: e }); };
+document.getElementById('valence').oninput = mood; document.getElementById('energy').oninput = mood;
+document.getElementById('listen').onclick = e => { if (!R) return; R.face.listening = !R.face.listening; e.target.classList.toggle('on', R.face.listening); };
+document.getElementById('blink').onclick = () => { if (R) { R.face.blinkT = 0; } };
+document.getElementById('say').onclick = async () => { const t = document.getElementById('line').value.trim(); if (!t || !R) return; voice.stop(); voice.speak(R.key, t, {}); };
+window.__face = { get R() { return R; }, voice, THREE };
+let last = performance.now();
+r.setAnimationLoop(now => {
+  const dt = Math.min((now - last) / 1000, 0.05); last = now;
+  if (R) { R.reflex.update(dt, { player: cam.position, spots: {} }); const sp = voice.spoken(); R.face.update(dt, { spoken: sp && sp.key === R.key ? sp : null }); }
+  ctl.update(); r.render(scene, cam);
+});
+window.__ready = true;
+</script>
+</body></html>
