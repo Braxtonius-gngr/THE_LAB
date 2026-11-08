@@ -80,6 +80,15 @@ the face page) or the source faces the wrong way. Painted eyes have no eyeball f
 shape to close over, so with shapes present the face module still draws the lid of skin itself
 (eyes stay on the skin path; the shapes do brows and mouth).
 
+### What's in the repo now
+Marco and Dante have shaped heads made this way from the MPFB avatar of the TalkingHead project
+(CC0, public domain; github.com/met4citizen/TalkingHead, `avatars/mpfb.glb`): 52 ARKit shapes plus
+15 speech visemes, landmark residuals 1-4 mm. They sit beside the plain bodies as
+`assets/bodies/<id>/{desktop,mobile}-face.glb` and load only with `?faces=1` (apartment and face
+page). Dante reads well; Marco's mouth tears into angular dark when it opens wide (his lips are one
+thin fold in the Meshy mesh), so talking is kept small. Faceit on Marco's own head is still the
+better mouth; the transfer then carries it to Dante.
+
 ## Route 3: the Unreal era
 Rebuild the men on a face-first character base when the move to Unreal happens: Mesh to
 MetaHuman can take the current heads for the likeness; MetaHumans may now be used outside

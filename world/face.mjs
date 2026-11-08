@@ -34,6 +34,8 @@ const VIS = {
   t: { jawOpen: 0.15, mouthClose: 0.1 }, d: { jawOpen: 0.18 }, n: { jawOpen: 0.15, mouthClose: 0.15 }, l: { jawOpen: 0.25 }, j: { jawOpen: 0.2, mouthFunnel: 0.4 }, x: { jawOpen: 0.15, mouthSmile: 0.1 },
 };
 const SH = { jawOpen: 0.2, mouthFunnel: 0.55 }, TH = { jawOpen: 0.18, mouthStretch: 0.1 };
+// the Oculus 15 speech visemes, for a head that has them (viseme_aa, viseme_PP, ...): one per sound
+const OVIS = { a: 'aa', e: 'E', i: 'I', y: 'I', o: 'O', u: 'U', w: 'U', p: 'PP', b: 'PP', m: 'PP', f: 'FF', v: 'FF', t: 'DD', d: 'DD', k: 'kk', g: 'kk', c: 'kk', q: 'kk', x: 'kk', j: 'CH', s: 'SS', z: 'SS', n: 'nn', l: 'nn', r: 'RR', h: 'aa' };
 const lerp = (a, b, t) => a + (b - a) * t, clamp01 = v => Math.max(0, Math.min(1, v));
 
 // --- the skin path's shader pieces (spliced into the body's MeshStandardMaterial) ---
@@ -41,11 +43,11 @@ const SKIN_PARS = `
 uniform float uFaceA; uniform vec3 uFaceUp, uFaceRight, uFaceFwd;
 uniform vec3 uEyeP[2]; uniform vec2 uEyeHalf, uBlink, uLook; uniform vec3 uLidCol[2];
 uniform vec3 uBrowP[6]; uniform float uBrowD[6]; uniform float uBrowR;
-uniform vec3 uMouthP; uniform vec3 uMouthC[2]; uniform vec2 uMouthHalf; uniform float uJaw, uMouthOn, uPinch; uniform vec4 uCorner;
+uniform vec3 uMouthP; uniform vec3 uMouthC[2]; uniform vec2 uMouthHalf; uniform float uJaw, uMouthOn, uPinch, uDark, uMouthZone; uniform vec4 uCorner;
 `;
 // brows lift or lower round their anchors; on a blink the lids pinch toward each other a little (the silhouette)
 const SKIN_VERTEX = `
-vFaceP = transformed;
+vFaceP = transformed; vFaceM = transformed;
 { float fa = uFaceA; vec3 fd = vec3(0.0);
   for (int i = 0; i < 6; i++) { float r = distance(transformed, uBrowP[i]) / (uBrowR * fa); float f = max(0.0, 1.0 - r * r); fd += uFaceUp * (uBrowD[i] * fa * f * f); }
   for (int i = 0; i < 2; i++) { vec3 q = transformed - uEyeP[i]; float x = dot(q, uFaceRight) / (uEyeHalf.x * fa * 1.3), y = dot(q, uFaceUp) / (uEyeHalf.y * fa * 2.2);
@@ -95,11 +97,23 @@ const SKIN_MAP = `
   #ifdef DECODE_VIDEO_TEXTURE
     sampledDiffuseColor = sRGBTransferEOTF(sampledDiffuseColor);
   #endif
-  if (uMouthOn > 0.5 && uJaw > 0.0002) {
-    // the band of texture on the lip line is what the jaw stretches apart: it darkens into the opening
+  if (uMouthZone > 0.5) {
+    // what opens between the lips is stretched lip (these heads have no inside to their mouths): the band on the
+    // lip line darkens with the jaw, and wherever the shapes have stretched the skin past twice its size near
+    // the mouth, it reads as the dark of an open mouth instead of pink lip pulled thin
     vec3 q = vFaceP - uMouthP; float fa = uFaceA; float mx = dot(q, uFaceRight) / fa, my = dot(q, uFaceUp) / fa, mz = dot(q, uFaceFwd) / fa;
-    if (abs(mz) < 0.03) { float band = exp(-pow((my + 0.0004) / 0.0014, 2.0)) * (1.0 - smoothstep(uMouthHalf.x * 0.7, uMouthHalf.x * 1.05, abs(mx)));
-      sampledDiffuseColor.rgb *= 1.0 - 0.85 * band * smoothstep(0.0002, 0.003, uJaw); }
+    if (abs(mz) < 0.03 && abs(mx) < uMouthHalf.x * 1.3 && abs(my) < 0.02) {
+      float edge = 1.0 - smoothstep(uMouthHalf.x * 0.75, uMouthHalf.x * 1.15, abs(mx));
+      float dark = exp(-pow((my + 0.0004) / 0.0014, 2.0)) * edge * smoothstep(0.0002, 0.003, uDark);
+      // (stretch in the worst direction: a lip pulled to three times its height but not its width)
+      float sx = length(dFdx(vFaceM)) / max(length(dFdx(vFaceP)), 1e-12), sy = length(dFdy(vFaceM)) / max(length(dFdy(vFaceP)), 1e-12);
+      dark = max(dark, smoothstep(1.6, 2.6, max(sx, sy)) * edge);
+      // and the inside of the lips: skin near the lip line that faces up, down or in at rest is tucked away while
+      // the mouth is shut; once it opens that is what shows, and it should read as the shadow inside a mouth
+      float fwd = dot(normalize(vFaceN), uFaceFwd);
+      dark = max(dark, (1.0 - smoothstep(0.2, 0.6, fwd)) * exp(-pow((my + 0.0005) / 0.006, 2.0)) * edge * smoothstep(0.0002, 0.0025, uDark));
+      sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, vec3(0.06, 0.022, 0.018), 0.93 * dark);
+    }
   }
   sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, lidCol, lidMix);
   sampledDiffuseColor.rgb *= 1.0 - 0.4 * lash;
@@ -112,6 +126,7 @@ export class Face {
     this.targets = {};   // shape name -> [{ mesh, index }]
     model.traverse(o => { if (o.isMesh && o.morphTargetDictionary) for (const [n, i] of Object.entries(o.morphTargetDictionary)) (this.targets[n] = this.targets[n] || []).push({ mesh: o, index: i }); });
     this.has = ARKIT.some(n => this.targets[n]);
+    this.hasVisemes = !!this.targets.viseme_aa;
     this.skin = null; this.lookOverride = null; this.hold = {};   // hold: shape weights a tuning page pins (lab/face.html)
     // the skin path runs whenever a body has face anchors: on its own for a body without shapes; eyes
     // only (lids, iris) beside the shapes otherwise, because a painted eye has no eyeball for a blink
@@ -141,6 +156,12 @@ export class Face {
     let V = null;
     if (ch === 's' && nx === 'h' || ch === 'c' && nx === 'h') V = SH; else if (ch === 't' && nx === 'h') V = TH; else if (/[a-z]/.test(ch)) V = VIS[ch] || { jawOpen: 0.15 };
     if (spoken.index !== this.lastIndex) { if (spoken.index >= 0 && (spoken.index === 0 || /\s/.test(spoken.text[spoken.index - 1] || ''))) this.wordStart = this.t; this.lastIndex = spoken.index; }
+    if (this.hasVisemes && /[a-z]/.test(ch)) {
+      const v = (ch === 's' || ch === 'c') && nx === 'h' ? 'CH' : ch === 't' && nx === 'h' ? 'TH' : OVIS[ch];
+      if (v) g['viseme_' + v] = Math.max(g['viseme_' + v] || 0, /[aeiouy]/.test(ch) ? 0.4 : 0.5);   // (moderate: no teeth or tongue behind the lips)
+      if (/[aeiou]/.test(ch)) g.jawOpen = Math.max(g.jawOpen || 0, 0.08);   // (a little jaw under the vowel)
+      this.wasTalking = true; return;
+    }
     if (V) for (const [k, v] of Object.entries(V)) {
       if (k === 'mouthSmile' || k === 'mouthStretch' || k === 'mouthPress' || k === 'mouthLowerDown') { g[k + 'Left'] = Math.max(g[k + 'Left'] || 0, v); g[k + 'Right'] = Math.max(g[k + 'Right'] || 0, v); }
       else g[k] = Math.max(g[k] || 0, v);
@@ -168,8 +189,9 @@ export class Face {
     // ease toward the goal (mouth fast, the rest slower) and write the shapes
     for (const n of Object.keys(this.w)) if (!(n in g)) g[n] = 0;
     for (const [n, v] of Object.entries(g)) {
-      const fast = n === 'eyeBlinkLeft' || n === 'eyeBlinkRight' || n.startsWith('jaw') || n.startsWith('mouth') || n.startsWith('eyeLook');
+      const fast = n === 'eyeBlinkLeft' || n === 'eyeBlinkRight' || n.startsWith('jaw') || n.startsWith('mouth') || n.startsWith('eyeLook') || n.startsWith('viseme_');
       this.w[n] = lerp(this.w[n] || 0, clamp01(v), Math.min(1, dt * (fast ? 22 : 6)));
+      if (this.skinEyesOnly && /^eye(Blink|Look|Squint|Wide)/.test(n)) continue;   // painted eyes: the skin lids do these
       for (const t of this.targets[n] || []) t.mesh.morphTargetInfluences[t.index] = this.w[n];
     }
     // the head: small life while talking (a nod on a word now and then, a slow sway), a tilt when listening
@@ -206,7 +228,7 @@ export class Face {
       uMouthP: { value: spec.mouth ? v3(spec.mouth) : v3(spec.eyeL).lerp(v3(spec.eyeR), 0.5).addScaledVector(up, -0.07 * A) },
       uMouthC: { value: [spec.mouthL ? v3(spec.mouthL) : null, spec.mouthR ? v3(spec.mouthR) : null] },
       uMouthHalf: { value: new THREE.Vector2((spec.lips || {}).w || 0.019, (spec.lips || {}).h || 0.006) },
-      uJaw: { value: 0 }, uCorner: { value: new THREE.Vector4(0, 0, 0, 0) }, uMouthOn: { value: 0 }, uPinch: { value: 1 },
+      uJaw: { value: 0 }, uCorner: { value: new THREE.Vector4(0, 0, 0, 0) }, uMouthOn: { value: 0 }, uPinch: { value: 1 }, uDark: { value: 0 }, uMouthZone: { value: 0 },
     };
     const mp = u.uMouthP.value, mw = u.uMouthHalf.value.x * A;
     if (!u.uMouthC.value[0]) u.uMouthC.value[0] = mp.clone().addScaledVector(right, mw); if (!u.uMouthC.value[1]) u.uMouthC.value[1] = mp.clone().addScaledVector(right, -mw);
@@ -221,10 +243,12 @@ export class Face {
       if (prev) prev.call(m, sh, r);
       Object.assign(sh.uniforms, u);
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\n' + SKIN_PARS + 'varying vec3 vFaceP;\n')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + SKIN_VERTEX);
+        .replace('#include <common>', '#include <common>\n' + SKIN_PARS + 'varying vec3 vFaceP; varying vec3 vFaceM; varying vec3 vFaceN;\n')
+        .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvFaceN = objectNormal;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + SKIN_VERTEX)
+        .replace('#include <morphtarget_vertex>', '#include <morphtarget_vertex>\nvFaceM = transformed;');
       sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', '#include <common>\n' + SKIN_PARS + 'varying vec3 vFaceP;\n')
+        .replace('#include <common>', '#include <common>\n' + SKIN_PARS + 'varying vec3 vFaceP; varying vec3 vFaceM; varying vec3 vFaceN;\n')
         .replace('#include <map_fragment>', SKIN_MAP);
     };
     m.customProgramCacheKey = () => (prevKey ? prevKey.call(m) : '') + '|face';
@@ -269,6 +293,11 @@ export class Face {
     const on = this.mouthOn && this.hasMouth && !this.skinEyesOnly; u.uMouthOn.value = on ? 1 : 0; u.uPinch.value = this.skinEyesOnly ? 0 : 1;
     const jaw = Math.max(0, W('jawOpen') * (1 - 0.7 * W('mouthClose')) + 0.25 * W('mouthFunnel') + 0.15 * W('mouthPucker'));
     u.uJaw.value = on ? Math.min(0.011, jaw * 0.011) : 0;
+    // the lip line darkens as the mouth opens - by the stopgap's jaw, or by the real shapes' (the lips are
+    // one surface on these heads, so what opens between them is stretched lip, which reads as dark)
+    const open = this.skinEyesOnly ? W('jawOpen') * (1 - 0.8 * W('mouthClose')) + 0.6 * Math.max(W('viseme_aa'), W('viseme_O'), W('viseme_E') * 0.6, W('viseme_I') * 0.4, W('viseme_U') * 0.5) : jaw;
+    u.uDark.value = this.hasMouth && this.mouthOn ? Math.min(0.011, open * 0.011) : 0;
+    u.uMouthZone.value = this.hasMouth && this.mouthOn ? 1 : 0;
     const st = (W('mouthStretchLeft') + W('mouthStretchRight')) / 2, pk = Math.min(1, W('mouthPucker') + W('mouthFunnel'));
     const cornerUp = L => 0.004 * W('mouthSmile' + L) - 0.003 * W('mouthFrown' + L), cornerOut = L => 0.003 * W('mouthSmile' + L) + 0.0015 * st - 0.003 * pk;
     if (on) u.uCorner.value.set(cornerUp('Left'), cornerOut('Left'), cornerUp('Right'), cornerOut('Right')); else u.uCorner.value.set(0, 0, 0, 0);

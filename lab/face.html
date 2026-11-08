@@ -81,7 +81,7 @@ async function load(id) {
   const spec = bodies.find(b => b.id === id); document.getElementById('status').textContent = `loading ${spec.name}…`;
   if (R) { scene.remove(R.model); }
   const tier = Q.get('tier') === 'mobile' ? 'mobile' : 'desktop';   // ?tier=mobile: the phone's mesh
-  const g = await loader.loadAsync(Q.get('glb') ? '../' + Q.get('glb') : '../assets/bodies/' + (spec[tier] || spec.desktop)); const model = g.scene;   // ?glb=tools/face/out/x.glb: a transfer output
+  const g = await loader.loadAsync(Q.get('glb') ? '../' + Q.get('glb') : '../assets/bodies/' + ((Q.has('faces') && spec.faceGlb?.[tier]) || spec[tier] || spec.desktop)); const model = g.scene;   // ?glb=tools/face/out/x.glb: a transfer output
   model.traverse(o => { if (o.isMesh) { o.frustumCulled = false; } }); scene.add(model);
   let skin = spec.face || null; try { const mine = localStorage.getItem('lab.face.' + id); if (mine) skin = JSON.parse(mine); } catch (_) { /* none */ }
   const reflex = new Reflexes(model, PACKS), face = new Face(model, { skin, THREE }); reflex.headAdd = face.headAdd;

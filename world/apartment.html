@@ -148,7 +148,9 @@ const hereNow = key => forced(key) || (!Q.has('alone') && (whereOf(key) === PLAC
 const hostHere = hereNow(hostKey), guestHere = !!G && hereNow(G.key);
 const hspec = bodies.find(b => b.id === BODY[hostKey]), gspec = G && bodies.find(b => b.id === BODY[G.key]);
 const tier = isPhone ? 'mobile' : 'desktop';
-const [g, pack, pack2, props, gd] = await Promise.all([hostHere ? loader.loadAsync('../assets/bodies/' + hspec[tier]) : null, loader.loadAsync('../assets/anims/meshy-pack-01.glb'), loader.loadAsync('../assets/anims/meshy-pack-02.glb'), loadProps(loader, PROPS, { tier }), guestHere ? loader.loadAsync('../assets/bodies/' + gspec[tier]) : null]);
+// ?faces=1: the bodies with real face shapes (bodies.json faceGlb, made by tools/face/transfer.mjs) - opt-in until signed off
+const bodyFile = spec => (Q.has('faces') && spec.faceGlb?.[tier]) || spec[tier];
+const [g, pack, pack2, props, gd] = await Promise.all([hostHere ? loader.loadAsync('../assets/bodies/' + bodyFile(hspec)) : null, loader.loadAsync('../assets/anims/meshy-pack-01.glb'), loader.loadAsync('../assets/anims/meshy-pack-02.glb'), loadProps(loader, PROPS, { tier }), guestHere ? loader.loadAsync('../assets/bodies/' + bodyFile(gspec)) : null]);
 for (const o of props) scene.add(o);
 // things that glow (the floor lamp, a candle)
 for (const P of PROPS) if (P.glow) props.filter(o => o.name === P.id).forEach(o => o.traverse(m => { if (m.isMesh) { m.material = m.material.clone(); m.material.emissive.set(P.glow); m.material.emissiveIntensity = 0.35; } }));
@@ -229,7 +231,7 @@ const WHERE_WORD = { 'marco-apartment': "at Marco's", 'dante-apartment': "at Dan
 async function arrive(key, { model = null, atDoor = false } = {}) {
   if (RES.some(R => R.key === key)) return RES.find(R => R.key === key);
   const isHost = key === hostKey, spec = isHost ? hspec : gspec;
-  const m = model || (await loader.loadAsync('../assets/bodies/' + spec[tier])).scene;
+  const m = model || (await loader.loadAsync('../assets/bodies/' + bodyFile(spec))).scene;
   const R = await resident({ key, name: NAME[key], model: m, bodySpec: spec, seed: key, outfitFor: isHost ? HOME[key] : GUEST[key], place: isHost ? null : G.place, isHost });
   // where his life left him: asleep in bed, out on the couch, at the stove - he's there when you walk in,
   // not standing at attention (?doing_marco=asleep%20in%20bed to try it without the live world)

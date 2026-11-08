@@ -117,6 +117,11 @@
         -0.0011715,
         0.0145804
       ]
+    },
+    "faceGlb": {
+      "desktop": "adult-base-01/desktop-face.glb",
+      "mobile": "adult-base-01/mobile-face.glb",
+      "note": "the same body with 52 ARKit + 15 viseme shapes on a split-off head, made by tools/face/transfer.mjs from the CC0 MPFB avatar (TalkingHead project); used with ?faces=1 until the owner signs off"
     }
   },
   {
@@ -380,6 +385,11 @@
         1.4718071,
         0.1177413
       ]
+    },
+    "faceGlb": {
+      "desktop": "dante/desktop-face.glb",
+      "mobile": "dante/mobile-face.glb",
+      "note": "the same body with 52 ARKit + 15 viseme shapes on a split-off head, made by tools/face/transfer.mjs from the CC0 MPFB avatar (TalkingHead project); used with ?faces=1 until the owner signs off"
     }
   },
   {

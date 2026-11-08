@@ -16,7 +16,8 @@
 //      weighted, fading to nothing past a radius and toward the neck seam;
 //   4. the head (vertices weighted to the Head bone) is split into its own primitive, the shapes go on
 //      it as sparse morph targets, and a new GLB is written. Nothing else in the file moves.
-// The face module (world/face.mjs) then drives the shapes; its skin path steps aside by itself.
+// Speech visemes (viseme_aa, viseme_PP, ... the Oculus 15) come along when the source has them.
+// The face module (world/face.mjs) then drives the shapes; its skin path keeps the eyes.
 // Normals are not morphed (lighting on a moved lip is a hair off; it is not worth the bytes).
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -108,7 +109,10 @@ function loadHead(g) {
   for (let i = 0; i < n; i++) { const q = xformP(M, [pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]]); P[i * 3] = q[0]; P[i * 3 + 1] = q[1]; P[i * 3 + 2] = q[2]; }
   const shapes = {}; const names = m.extras?.targetNames || [];
   (p.targets || []).forEach((t, ti) => { if (t.POSITION == null) return; const d = readAccessor(g, t.POSITION), D = new Float32Array(d.length); for (let i = 0; i < n; i++) { const q = xformV(M, [d[i * 3], d[i * 3 + 1], d[i * 3 + 2]]); D[i * 3] = q[0]; D[i * 3 + 1] = q[1]; D[i * 3 + 2] = q[2]; } shapes[names[ti] || `target${ti}`] = D; });
-  return { g, mi: pick.mi, pi: pick.pi, prim: p, nodeIdx, M, pos, P, n, shapes, names };
+  // which way each vertex faces (model space): the transfer only matches front-facing skin, never the
+  // inside of a mouth or the back of a lip
+  let N = null; if (p.attributes.NORMAL != null) { const nr = readAccessor(g, p.attributes.NORMAL); N = new Float32Array(nr.length); for (let i = 0; i < n; i++) { const q = xformV(M, [nr[i * 3], nr[i * 3 + 1], nr[i * 3 + 2]]), l = Math.hypot(q[0], q[1], q[2]) || 1; N[i * 3] = q[0] / l; N[i * 3 + 1] = q[1] / l; N[i * 3 + 2] = q[2] / l; } }
+  return { g, mi: pick.mi, pi: pick.pi, prim: p, nodeIdx, M, pos, P, N, n, shapes, names };
 }
 // where a shape moves things: the magnitude-weighted centroid of its deltas (over a vertex subset)
 function centroid(head, shape, keep = null) {
@@ -130,7 +134,8 @@ const isHead = i => headW[i] >= 0.5;
 const headIdx = []; for (let i = 0; i < tgt.n; i++) if (isHead(i)) headIdx.push(i);
 const tInv = inv3(tgt.M);   // model-space vector -> target vertex space
 const A = spec.face, anchor = k => A[k] ? xformP(tgt.M, A[k]) : null;   // anchors are kept in vertex space; take them to model space
-const tgtLm = { eyeL: anchor('eyeL'), eyeR: anchor('eyeR'), browLin: anchor('browLin'), browRin: anchor('browRin'), mouthL: anchor('mouthL'), mouthR: anchor('mouthR'), mouth: anchor('mouth'), chin: anchor('chin') };
+const mid = (a, b) => a && b ? a.map((v, k) => (v + b[k]) / 2) : a || b;   // (a browInnerUp centroid sits mid-way along the inner half of the brow)
+const tgtLm = { eyeL: anchor('eyeL'), eyeR: anchor('eyeR'), browLin: mid(anchor('browLin'), anchor('browL')), browRin: mid(anchor('browRin'), anchor('browR')), mouthL: anchor('mouthL'), mouthR: anchor('mouthR'), mouth: anchor('mouth'), chin: anchor('chin') };
 
 // ---------- the source head ----------
 let src;
@@ -179,9 +184,13 @@ const fit = [0, 1, 2].map(ax => {
 // scale serves, and the offset comes from the face landmarks alone (the chin's depth is the least sure)
 { const face = pairs.filter(p => p[2] !== 'chin'); const mz = face.reduce((a, p) => a + p[0][2], 0) / face.length, tz = face.reduce((a, p) => a + p[1][2], 0) / face.length; fit[2] = { s: fit[0].s, t: tz - fit[0].s * mz }; }
 const mapP = p => [fit[0].s * p[0] + fit[0].t, fit[1].s * p[1] + fit[1].t, fit[2].s * p[2] + fit[2].t], mapV = v => [fit[0].s * v[0], fit[1].s * v[1], fit[2].s * v[2]];
-const SP = new Float32Array(sN * 3); for (let i = 0; i < sN; i++) { const q = mapP([src.P[i * 3], src.P[i * 3 + 1], src.P[i * 3 + 2]]); SP[i * 3] = q[0]; SP[i * 3 + 1] = q[1]; SP[i * 3 + 2] = q[2]; }
+// faces differ in more than size (wider-set eyes, a narrower mouth): after the stretch, a smooth local
+// warp moves each landmark the rest of the way onto the target's, fading out away from them
+const WARP = pairs.filter(p => p[2] !== 'chin').map(p => { const q = mapP(p[0]); return { at: q, r: [p[1][0] - q[0], p[1][1] - q[1], p[1][2] - q[2]] }; }), SIG = 0.016;
+const warp = q => { let w = 0, x = 0, y = 0, z = 0; for (const L of WARP) { const d2 = (q[0] - L.at[0]) ** 2 + (q[1] - L.at[1]) ** 2 + (q[2] - L.at[2]) ** 2, g = Math.exp(-d2 / (2 * SIG * SIG)); w += g; x += g * L.r[0]; y += g * L.r[1]; z += g * L.r[2]; } const k = 1 / (w + 0.08); return [q[0] + x * k * Math.min(1, w / 0.3 + 0.0), q[1] + y * k * Math.min(1, w / 0.3), q[2] + z * k * Math.min(1, w / 0.3)]; };
+const SP = new Float32Array(sN * 3); for (let i = 0; i < sN; i++) { const q = warp(mapP([src.P[i * 3], src.P[i * 3 + 1], src.P[i * 3 + 2]])); SP[i * 3] = q[0]; SP[i * 3 + 1] = q[1]; SP[i * 3 + 2] = q[2]; }
 if (opt('debug')) { console.log('fit', JSON.stringify(fit)); for (const [a, b, k] of pairs) console.log(`  ${k}: mapped ${mapP(a).map(x => (x * 1000).toFixed(0)).join(',')} vs target ${b.map(x => (x * 1000).toFixed(0)).join(',')}`); }
-const resid = pairs.map(p => { const q = mapP(p[0]); return `${p[2]} ${(Math.hypot(q[0] - p[1][0], q[1] - p[1][1], q[2] - p[1][2]) * 1000).toFixed(1)} mm`; });
+const resid = pairs.map(p => { const q = warp(mapP(p[0])); return `${p[2]} ${(Math.hypot(q[0] - p[1][0], q[1] - p[1][1], q[2] - p[1][2]) * 1000).toFixed(1)} mm`; });
 if (opt('debug')) { const mm = v => v.map(x => (x * 1000).toFixed(0)).join(','); console.log('target node matrix diag', [tgt.M[0], tgt.M[5], tgt.M[10]].map(v => v.toFixed(3)).join(' '), 'source', [src.M[0], src.M[5], src.M[10]].map(v => v.toFixed(3)).join(' ')); for (const [a, b, k] of pairs) console.log(`  ${k}: source ${mm(a)} -> target ${mm(b)} mm`); }
 console.log(`fit: scale x ${fit[0].s.toFixed(3)} y ${fit[1].s.toFixed(3)} z ${fit[2].s.toFixed(3)}; landmark residuals: ${resid.join(', ')}`);
 
@@ -190,17 +199,27 @@ console.log(`fit: scale x ${fit[0].s.toFixed(3)} y ${fit[1].s.toFixed(3)} z ${fi
 const CELL = 0.01; const grid = new Map(); const key = (x, y, z) => `${Math.floor(x / CELL)},${Math.floor(y / CELL)},${Math.floor(z / CELL)}`;
 for (let i = 0; i < sN; i++) { const k = key(SP[i * 3], SP[i * 3 + 1], SP[i * 3 + 2]); let a = grid.get(k); if (!a) grid.set(k, a = []); a.push(i); }
 const RADIUS = 0.012, K = 4;
+// the lip line (in aligned space it is the target's): a curve through the corners and the centre. Near the
+// mouth a vertex only takes deltas from the same lip - upper from upper, lower from lower - so the lips part
+// cleanly instead of averaging into a smear across the line
+const LC = tgtLm.mouthL && tgtLm.mouthR && tgtLm.mouth ? { l: tgtLm.mouthL, r: tgtLm.mouthR, c: tgtLm.mouth, hw: Math.abs(tgtLm.mouthL[0] - tgtLm.mouthR[0]) / 2 } : null;
+const lipSide = (x, y) => { if (!LC) return 0; const cx = (LC.l[0] + LC.r[0]) / 2, u = (x - cx) / (LC.hw || 1); if (Math.abs(u) > 1.4) return 0; const yc = LC.c[1], ye = (LC.l[1] + LC.r[1]) / 2, ly = yc + (ye - yc) * Math.min(1, u * u); const d = y - ly; return Math.abs(d) > 0.018 ? 0 : d >= 0 ? 1 : -1; };
+const srcSide = new Int8Array(sN); for (let i = 0; i < sN; i++) srcSide[i] = lipSide(SP[i * 3], SP[i * 3 + 1]);
+const front = i => !src.N || src.N[i * 3 + 2] > 0.1;
+let side = 0;   // (the side of the lip line the target vertex being matched is on, set per vertex)
 function nearest(x, y, z) {
   const out = []; const cx = Math.floor(x / CELL), cy = Math.floor(y / CELL), cz = Math.floor(z / CELL);
-  for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) for (let dz = -2; dz <= 2; dz++) { const a = grid.get(`${cx + dx},${cy + dy},${cz + dz}`); if (!a) continue; for (const i of a) { const d = Math.hypot(SP[i * 3] - x, SP[i * 3 + 1] - y, SP[i * 3 + 2] - z); if (d < RADIUS) out.push([d, i]); } }
+  for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) for (let dz = -4; dz <= 4; dz++) { const a = grid.get(`${cx + dx},${cy + dy},${cz + dz}`); if (!a) continue; for (const i of a) { const d = Math.hypot(SP[i * 3] - x, SP[i * 3 + 1] - y, (SP[i * 3 + 2] - z) * 0.4); if (d < RADIUS && front(i) && !(side && srcSide[i] && srcSide[i] !== side)) out.push([d, i]); } }
   out.sort((a, b) => a[0] - b[0]); return out.slice(0, K);
 }
-const shapeNames = (selftest ? src.names : ARKIT).filter(n => src.shapes[n]);
+// the 52 ARKit shapes, plus the 15 Oculus speech visemes (viseme_aa, viseme_PP, ...) when the source has them
+const shapeNames = (selftest ? src.names : [...ARKIT, ...Object.keys(src.shapes).filter(n => /^viseme_/.test(n))]).filter(n => src.shapes[n]);
 const H = headIdx.length, deltas = {}; for (const n of shapeNames) deltas[n] = new Float32Array(H * 3);
 let touched = 0;
 for (let h = 0; h < H; h++) {
   const i = headIdx[h], x = tgt.P[i * 3], y = tgt.P[i * 3 + 1], z = tgt.P[i * 3 + 2];
-  const nn = nearest(x, y, z); if (!nn.length) continue; touched++;
+  side = (!tgt.N || tgt.N[i * 3 + 2] > -0.2) ? lipSide(x, y) : 0;
+  const nn = (tgt.N && tgt.N[i * 3 + 2] < -0.3) ? [] : nearest(x, y, z); if (!nn.length) continue; touched++;
   const seam = Math.min(1, Math.max(0, (headW[i] - 0.5) / 0.45));   // fades to nothing at the neck seam
   let wsum = 0; const ws = nn.map(([d]) => { const w = 1 / (d + 0.0015); wsum += w; return w; });
   for (const n of shapeNames) {
