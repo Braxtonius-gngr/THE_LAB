@@ -124,7 +124,7 @@ function movePlayer(dt) {
   player.pos.addScaledVector(fwd, fx * sp).addScaledVector(right, sx * sp);
   player.pos.x = THREE.MathUtils.clamp(player.pos.x, -W / 2 + 0.3, W / 2 - 0.3); player.pos.z = THREE.MathUtils.clamp(player.pos.z, -D / 2 + 0.3, D / 2 - 0.3);
   // keep a little personal space from Marco
-  if (marco) { const d = player.pos.distanceTo(marco.position); if (d < 0.55) player.pos.sub(marco.position).setLength(0.55).add(marco.position); }
+  for (const R of RES) { const d = player.pos.distanceTo(R.model.position); if (d < 0.55) player.pos.sub(R.model.position).setLength(0.55).add(R.model.position); }
 }
 addEventListener('resize', () => { r.setSize(innerWidth, innerHeight); cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); });
 
@@ -135,11 +135,18 @@ const loader = new GLTFLoader();
 const bodies = await (await fetch('../assets/bodies/bodies.json')).json();
 const BODY = { marco: 'adult-base-01', dante: 'dante' };
 const hostKey = PLACE.host, G = PLACE.guest;
-// the guest is here in his hours, or on request (?dante=1 at Marco's, ?marco=1 at Dante's)
-const withGuest = !!G && (Q.has(G.param) || (HR >= G.hours[0] && HR < G.hours[1]));
+const KEYS = { Marco: 'marco', Dante: 'dante' };
+// who is actually here: their lives (supabase/functions/life) say where each man is. ?marco=1 /
+// ?dante=1 force someone here, ?alone=1 forces the host alone (for testing).
+let WORLD = { people: [] };
+try { const w = await (await fetch('https://qyphdwcjzhgobsfpeonh.supabase.co/functions/v1/life?who=1')).json(); if (Array.isArray(w.people)) WORLD = w; } catch (_) { /* offline: the host is home */ }
+const whereOf = key => WORLD.people.find(p => KEYS[p.name] === key)?.where || null;
+const forced = key => Q.has(key);
+const hereNow = key => forced(key) || (!Q.has('alone') && (whereOf(key) === PLACE.location || (whereOf(key) == null && key === hostKey)));
+const hostHere = hereNow(hostKey), guestHere = !!G && hereNow(G.key);
 const hspec = bodies.find(b => b.id === BODY[hostKey]), gspec = G && bodies.find(b => b.id === BODY[G.key]);
 const tier = isPhone ? 'mobile' : 'desktop';
-const [g, pack, pack2, props, gd] = await Promise.all([loader.loadAsync('../assets/bodies/' + hspec[tier]), loader.loadAsync('../assets/anims/meshy-pack-01.glb'), loader.loadAsync('../assets/anims/meshy-pack-02.glb'), loadProps(loader, PROPS, { tier }), withGuest ? loader.loadAsync('../assets/bodies/' + gspec[tier]) : null]);
+const [g, pack, pack2, props, gd] = await Promise.all([hostHere ? loader.loadAsync('../assets/bodies/' + hspec[tier]) : null, loader.loadAsync('../assets/anims/meshy-pack-01.glb'), loader.loadAsync('../assets/anims/meshy-pack-02.glb'), loadProps(loader, PROPS, { tier }), guestHere ? loader.loadAsync('../assets/bodies/' + gspec[tier]) : null]);
 for (const o of props) scene.add(o);
 // things that glow (the floor lamp, a candle)
 for (const P of PROPS) if (P.glow) props.filter(o => o.name === P.id).forEach(o => o.traverse(m => { if (m.isMesh) { m.material = m.material.clone(); m.material.emissive.set(P.glow); m.material.emissiveIntensity = 0.35; } }));
@@ -207,16 +214,32 @@ const HOME = {
 };
 const GUEST = { dante: O => pick(O, 'In the kitchen', 'Off duty'), marco: O => pick(O, 'Tee + jeans', 'Off duty') };
 const NAME = { marco: 'Marco', dante: 'Dante' };
-const M = await resident({ key: hostKey, name: NAME[hostKey], model: g.scene, bodySpec: hspec, seed: hostKey, outfitFor: HOME[hostKey], isHost: true });
-M.model.position.copy(SPOTS[PLACE.spawnHost.at]); M.model.rotation.y = PLACE.spawnHost.yaw;
-const RES = [M];
-if (withGuest) {
-  const Dn = await resident({ key: G.key, name: NAME[G.key], model: gd.scene, bodySpec: gspec, seed: G.key, outfitFor: GUEST[G.key], place: G.place });
-  Dn.model.position.copy(SPOTS.door); Dn.model.rotation.y = 0;
-  Dn.reflex.do({ type: 'walk_to', target: G.first });
-  RES.push(Dn);
+const RES = [];
+const WHERE_WORD = { 'marco-apartment': "at Marco's", 'dante-apartment': "at Dante's", 'the-bar': 'at the bar', out: 'out' };
+// bring someone in: the host appears where he'd be; anyone else comes through the door
+async function arrive(key, { model = null, atDoor = false } = {}) {
+  if (RES.some(R => R.key === key)) return RES.find(R => R.key === key);
+  const isHost = key === hostKey, spec = isHost ? hspec : gspec;
+  const m = model || (await loader.loadAsync('../assets/bodies/' + spec[tier])).scene;
+  const R = await resident({ key, name: NAME[key], model: m, bodySpec: spec, seed: key, outfitFor: isHost ? HOME[key] : GUEST[key], place: isHost ? null : G.place, isHost });
+  if (isHost && !atDoor) { R.model.position.copy(SPOTS[PLACE.spawnHost.at]); R.model.rotation.y = PLACE.spawnHost.yaw; }
+  else { R.model.position.copy(SPOTS.door); R.model.rotation.y = 0; R.reflex.do({ type: 'walk_to', target: isHost ? PLACE.spawnHost.at : G.first }); }
+  RES.push(R); return R;
 }
-const marco = M.model, reflex = M.reflex, mind = M.mind, anat = M.anat;
+// someone goes: walks out the door and is gone; the others see it
+function depart(R, why) {
+  R.leaving = true; R.reflex.clear(); R.reflex.hold = null; R.reflex.lookAt(null);
+  R.reflex._standThen(() => R.reflex.walkTo(SPOTS.door, () => {
+    say('sys', `${R.name} leaves${why ? ` (${why})` : ''}`); scene.remove(R.model); R.worn.forEach(w => w.remove()); RES.splice(RES.indexOf(R), 1);
+    for (const o of RES) talk({ event: 'someone_leaves', who_moved: R.name }, o);
+  }));
+}
+if (hostHere) await arrive(hostKey, { model: g.scene });
+if (guestHere) await arrive(G.key, { model: gd.scene, atDoor: true });
+const M = RES[0] || null;
+if (!hostHere) { const w = whereOf(hostKey); say('sys', `${NAME[hostKey]} isn't home${w ? ` - he's ${WHERE_WORD[w] || w}` : ''}${RES.length ? '' : '. The place is empty.'}`); }
+const marco = M?.model, reflex = M?.reflex, mind = M?.mind, anat = M?.anat;
+window.__ready = true;
 let bubbleUntil = 0, bubbleOf = M;
 function showBubble(R, text) { bubbleOf = R; bubble.textContent = text; bubble.style.display = text ? 'block' : 'none'; bubbleUntil = performance.now() + 1500 + text.length * 55; }
 const _hp = new THREE.Vector3();
@@ -239,13 +262,14 @@ function showMemories(R, d) {
   memLive.innerHTML = needsHtml + `<b>model</b> ${d.model || ''}${d.salvaged ? ' <i>(reply was cut short; line salvaged)</i>' : ''}<br><b>mood</b> ${JSON.stringify(d.mood)}<br><b>remembered now</b> ${d.memory && d.memory.content ? `(${d.memory.importance}) ${d.memory.content}` : '–'}<br><b>recalled</b><br>` + (d.recalled || []).map(m => `· ${m.content} <i>(${m.when})</i>`).join('<br>');
 }
 // one mind's turn; what it says, everyone else in the room hears
-async function talk(opts, R = M) {
+async function talk(opts, R = RES[0]) {
+  if (!R) return null;
   status.textContent = `${R.name} is thinking…`;
   try {
-    const { song, ...rest } = opts; const d = await R.mind.send({ ...rest, scene: { ...sceneState(R), ...(song ? { song } : {}) } });
+    const { song, who_moved, ...rest } = opts; const d = await R.mind.send({ ...rest, scene: { ...sceneState(R), ...(song ? { song } : {}), ...(who_moved ? { who_moved } : {}) } });
     if (!d) return null;
     R.reflex.clear(); if (R.reflex.posture === 'stand') R.reflex.lookAt(new THREE.Vector3(player.pos.x, EYE - 0.05, player.pos.z));
-    for (const a of d.actions || []) R.reflex.do(a);
+    for (const a of d.actions || []) { if (a.type === 'go') { setTimeout(() => depart(R, a.why), 2500 + (d.say ? d.say.length * 55 : 0)); continue; } R.reflex.do(a); }
     if (d.say) { say('him', `${R.name}: ${d.say}`); showBubble(R, d.say); bubbleUntil += 1e6; voice.speak(R.key, d.say, { onEnd: () => { bubbleUntil = performance.now() + 1200; } }); for (const o of RES) if (o !== R) o.mind.hear(R.name, d.say); }
     showMemories(R, d); status.textContent = `visit · ${R.mind.history.length} turns`;
     return d;
@@ -253,9 +277,9 @@ async function talk(opts, R = M) {
 }
 // you talk to whoever you're facing (or nearest): the other one hears you and may chime in
 function addressee() {
-  if (RES.length < 2) return M;
+  if (RES.length < 2) return RES[0] || null;
   const fwd = new THREE.Vector3(-Math.sin(player.yaw ?? 0), 0, -Math.cos(player.yaw ?? 0));
-  let best = M, bs = -1e9;
+  let best = RES[0], bs = -1e9;
   for (const R of RES) { const v = R.model.position.clone().sub(player.pos); v.y = 0; const d = v.length(); const s = v.normalize().dot(fwd) * 2 - d * 0.5; if (s > bs) { bs = s; best = R; } }
   return best;
 }
@@ -263,7 +287,7 @@ if (isPhone) document.getElementById('say').addEventListener('keydown', e => { i
 document.getElementById('form').addEventListener('submit', async e => {
   e.preventDefault(); const inp = document.getElementById('say'); const t = inp.value.trim(); if (!t || RES.some(R => R.mind.busy)) return;
   inp.value = ''; say('me', t);
-  const R = addressee(); for (const o of RES) if (o !== R) o.mind.hear('the visitor', t);
+  const R = addressee(); if (!R) { say('sys', 'nobody here to hear you'); return; } for (const o of RES) if (o !== R) o.mind.hear('the visitor', t);
   await talk({ text: t }, R);
   // the other one sometimes answers too (a third of the time, or if named)
   const O = RES.find(o => o !== R); if (O && (new RegExp(O.name, 'i').test(t) || Math.random() < 0.33)) await talk({ event: 'overheard' }, O);
@@ -325,7 +349,7 @@ document.getElementById('songplay').onclick = async () => {
   } catch (e) { songState.textContent = 'could not play that file'; }
 };
 document.getElementById('songstop').onclick = () => listener.cut();
-window.__world = { bassSound, listener, voice, nav, marco, reflex, mind, player, talk, SPOTS, SEATS, props, RES };
+window.__world = { bassSound, listener, voice, nav, get marco() { return RES[0]?.model; }, get reflex() { return RES[0]?.reflex; }, get mind() { return RES[0]?.mind; }, player, talk, SPOTS, SEATS, props, RES, arrive, depart, WORLD };
 const _f = new THREE.Vector3(), _s = new THREE.Vector3();
 // the bass in his lap: forward/side/up from his hips' spot, turned with him, tilted by roll
 function placeBass(o, m, P) { const y = m.rotation.y; _f.set(Math.sin(y), 0, Math.cos(y)); _s.set(Math.cos(y), 0, -Math.sin(y)); o.position.copy(m.position).addScaledVector(_f, P.fwd).addScaledVector(_s, P.side); o.position.y = P.y; o.rotation.set(0, y + P.yaw, P.roll, 'YXZ'); }
@@ -349,6 +373,17 @@ r.setAnimationLoop(now => {
   placeBubble();
   r.render(scene, cam);
 });
-if (!new URLSearchParams(location.search).has('quiet')) await talk({ event: 'arrive' });   // ?quiet=1: look around without waking him
+if (!Q.has('quiet')) for (const R of [...RES]) await talk({ event: 'arrive' }, R);   // ?quiet=1: look around without waking anyone
+// their lives go on while you're here: every two minutes, see if anyone has come or gone
+setInterval(async () => {
+  try {
+    const w = await (await fetch('https://qyphdwcjzhgobsfpeonh.supabase.co/functions/v1/life?who=1')).json();
+    for (const p of w.people || []) {
+      const key = KEYS[p.name]; if (!key || forced(key)) continue; const here = RES.find(R => R.key === key);
+      if (p.where === PLACE.location && !here && (key === hostKey || (G && key === G.key))) { const R = await arrive(key, { atDoor: true }); say('sys', `${R.name} comes in`); for (const o of RES) if (o !== R) talk({ event: 'someone_arrives', who_moved: R.name }, o); }
+      else if (p.where !== PLACE.location && here && !here.leaving && !here.mind.busy && Date.now() - new Date(p.since).getTime() < 3 * 60e3) depart(here, p.doing);
+    }
+  } catch (_) { /* offline */ }
+}, 120e3);
 </script>
 </body></html>

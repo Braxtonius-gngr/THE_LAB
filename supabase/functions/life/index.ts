@@ -18,6 +18,9 @@ const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SE
 const embedder = new Supabase.ai.Session("gte-small");
 const MODEL = Deno.env.get("MIND_MODEL") || "claude-opus-5-5";
 const PLAYER = "00000000-0000-4000-8000-000000000001";
+// the places that exist in the world: where a person can be at the end of a stretch
+const WHERE = ["marco-apartment", "dante-apartment", "the-bar", "out"];
+const whereWord: Record<string, string> = { "marco-apartment": "at Marco's apartment", "dante-apartment": "at Dante's apartment", "the-bar": "at the bar (work)", "out": "out somewhere else (the store, the river, family, errands)" };
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, apikey, content-type", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };
 const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { ...CORS, "Content-Type": "application/json" } });
@@ -64,6 +67,11 @@ Deno.serve(async (req) => {
         // 0 sessions -> 0.3 (fumbling), ~20 in three weeks -> 0.85 (clean, still human)
         return json({ skill: +Math.min(0.85, 0.3 + 0.0275 * (count || 0)).toFixed(3), sessions: count || 0 });
       }
+      // ?who=1: where everyone is right now, for the page to spawn only the people actually there
+      if (new URL(req.url).searchParams.get("who")) {
+        const [{ data: cs }, { data: ss }] = await Promise.all([db.from("characters").select("id,name,home_location").not("persona", "is", null), db.from("character_state").select("character_id,location,current_task,updated_at")]);
+        return json({ people: (cs || []).map((c) => { const st = (ss || []).find((x) => x.character_id === c.id); return { id: c.id, name: c.name, home: c.home_location, where: st?.location || c.home_location, doing: st?.current_task || null, since: st?.updated_at || null }; }) });
+      }
       const month = new Date(); month.setUTCDate(1); month.setUTCHours(0, 0, 0, 0);
       const [{ data }, { data: use }] = await Promise.all([
         db.from("life_ticks").select("at,hours,story").order("at", { ascending: false }).limit(6),
@@ -101,7 +109,7 @@ Deno.serve(async (req) => {
       const mine = (rels || []).filter((r) => r.owner_id === c.id).map((r) => `${r.target_id === PLAYER ? "the visitor (Brax)" : chars.find((x) => x.id === r.target_id)?.name || "someone"}: ${r.summary || "no take yet"} (affection ${(+r.affection).toFixed(2)}, trust ${(+r.trust).toFixed(2)})`);
       lines.push(`### ${c.name}
 ${c.persona}
-Mood now: ${JSON.stringify(st?.mood || {})}. Needs now (0-1; energy high = rested, the others high = pressing): ${JSON.stringify(st?.needs || {})}. Last doing: ${st?.current_task || "unknown"}.
+Where now: ${whereWord[st?.location || c.home_location] || st?.location}. Mood now: ${JSON.stringify(st?.mood || {})}. Needs now (0-1; energy high = rested, the others high = pressing): ${JSON.stringify(st?.needs || {})}. Last doing: ${st?.current_task || "unknown"}.
 How ${c.name} sees people: ${mine.join("; ") || "-"}
 ${c.name}'s latest memories, newest first:
 ${(mem || []).map((m) => `- ${local(new Date(m.created_at))}: ${m.content}`).join("\n") || "- none"}`);
@@ -112,7 +120,7 @@ ${(mem || []).map((m) => `- ${local(new Date(m.created_at))}: ${m.content}`).joi
 When their lives cross in this stretch (they work at the same bar; they're friends), write what passes between them: texts, a few words on a break, one coming over after close. Not every stretch - only if it fits the hours and how they feel about each other. If they talk, their history, banter and any tension carry on from their memories. They may mention the visitor (Brax) if he's on their mind, but he isn't there.${hasNumber.length ? ` ${hasNumber.join(" and ")} ${hasNumber.length > 1 ? "have" : "has"} Brax's number: one of them may text him during this stretch, in his own texting voice, if something in these hours would make him reach out or Brax has been on his mind (how they feel about him matters). Most stretches nobody does.` : ""}
 
 Respond ONLY with JSON:
-{"people": {"<name>": {"happened": [{"content": "first person, past tense, one thing that happened or that he did/felt, with when", "importance": 1-10}], "now": "what he's doing at the end of this stretch (asleep, at work, home on the sofa...)", "mood": {"valence": -1..1, "energy": 0..1}, "needs": {"energy": 0..1, "hunger": 0..1, "social": 0..1, "intimacy": 0..1}}},
+{"people": {"<name>": {"happened": [{"content": "first person, past tense, one thing that happened or that he did/felt, with when", "importance": 1-10}], "now": "what he's doing at the end of this stretch (asleep, at work, home on the sofa...)", "where": one of ${JSON.stringify(WHERE)} - where he physically is at the end of it (home means his own apartment; at the other's place only if he's actually there; the-bar during a shift), "mood": {"valence": -1..1, "energy": 0..1}, "needs": {"energy": 0..1, "hunger": 0..1, "social": 0..1, "intimacy": 0..1}}},
  "together": null | {"how": "texts" | "in person", "where": "...", "when": "...", "exchange": [{"who": "<name>", "text": "..."}], "takes": {"<name>": {"affection": -0.15..0.15, "trust": -0.15..0.15, "summary": "his one-line take on the other now"}}},
  "texts_to_brax": {"<name>": "the one text he sends Brax, short, or null"} - usually all null}
 2-4 "happened" items per person. An exchange of 2-10 lines. Needs: where they end up after these hours, given sleep, food and company.`;
@@ -134,7 +142,7 @@ Respond ONLY with JSON:
       for (const h of (P.happened || []).slice(0, 5)) if (h?.content) writes.push(mem(c.id, String(h.content), "action", h.importance, []));
       const st = states?.find((s) => s.character_id === c.id);
       const needs = { ...(st?.needs || {}) }; for (const n of ["energy", "hunger", "social", "intimacy"]) if (typeof P.needs?.[n] === "number") needs[n] = clamp(P.needs[n], 0, 1);
-      writes.push(db.from("character_state").upsert({ character_id: c.id, mood: P.mood || st?.mood, needs, needs_at: now.toISOString(), location: st?.location || c.home_location, current_task: String(P.now || "").slice(0, 120), updated_at: now.toISOString() }));
+      writes.push(db.from("character_state").upsert({ character_id: c.id, mood: P.mood || st?.mood, needs, needs_at: now.toISOString(), location: WHERE.includes(P.where) ? P.where : (st?.location || c.home_location), current_task: String(P.now || "").slice(0, 120), updated_at: now.toISOString() }));
     }
     const T = out.together;
     if (T && Array.isArray(T.exchange) && T.exchange.length) {
