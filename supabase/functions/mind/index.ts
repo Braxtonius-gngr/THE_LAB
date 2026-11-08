@@ -144,7 +144,7 @@ Deno.serve(async (req) => {
     if (!me || !player) return json({ error: "unknown character or player" }, 404);
     // others in the room (other characters): who they are to him
     const others = Array.isArray(scene.others) ? scene.others.slice(0, 4) : [];
-    const otherRels = others.length ? (await supabase.from("relationships").select("target_id,summary,affection,trust").eq("owner_id", character_id).in("target_id", others.map((o: { id: string }) => o.id))).data || [] : [];
+    const otherRels = others.length ? (await supabase.from("relationships").select("*").eq("owner_id", character_id).in("target_id", others.map((o: { id: string }) => o.id))).data || [] : [];
     const otherNames: string[] = others.map((o: { name: string }) => String(o.name));
     const other = otherNames[0] || null;   // (1-on-2 today: the one other person in the room)
     const othersLine = others.map((o: { id: string; name: string; wearing?: string; distance_m?: number }) => {
@@ -201,7 +201,8 @@ Respond ONLY with JSON, no prose around it:
  "mood": {"valence": -1..1, "energy": 0..1},
  "memory": {"content": "one thing worth remembering from this moment, in first person, or null", "importance": 1-10},
  "needs": {"energy": -0.3..0.3, "hunger": -1..0.2, "social": -0.3..0.3, "intimacy": -0.3..0.2} - how this moment changed them (eating drops hunger; good company drops social, wears it thin when you're peopled out; real warmth or affection eases intimacy),
- "relationship": {"affection": -0.2..0.2, "trust": -0.2..0.2, "familiarity": 0..0.1, "summary": "your one-line take on the visitor, now"}}
+ "relationship": {"affection": -0.2..0.2, "trust": -0.2..0.2, "familiarity": 0..0.1, "summary": "your one-line take on the visitor, now"},
+ "friend": null | {"affection": -0.1..0.1, "trust": -0.1..0.1, "summary": "your one-line take on the friend in the room, now"} - only when someone besides the visitor is here and this moment moved anything between you two; otherwise null}
 Be a person, not a helper. Don't ask how you can help. Reference memories naturally when they matter, not as a list. If this person wronged you, it shows. If it's the first meeting, you don't know their name unless they tell you.
 Don't end every line with a question; often just react, or say something of your own, or let a silence sit. You already know what time it is, so don't keep saying it. Wherever you are: every few exchanges do something physical (walk_to a spot, turn away and back) instead of standing at attention. Keep "say" to spoken words only.
 When a friend is in the room, you two have your own history; talk to him when you would (an aside, a jab, backing him up, disagreeing), not only to the visitor, and not every turn. "to" says who the line is for; look at or turn to the one you're talking to when it matters.
@@ -263,6 +264,20 @@ ${memLines ? `Things you remember (most relevant first):\n${memLines}` : "You ha
       knows_name: knowsName,
       updated_at: new Date().toISOString(),
     }));
+    // how this moment moved what he thinks of the friend in the room (small nudges; his life ticks do the rest)
+    const f = out.friend, friendId = others[0]?.id;
+    if (f && typeof f === "object" && friendId && !texting) {
+      const fr = otherRels.find((x: { target_id: string }) => x.target_id === friendId);
+      writes.push(supabase.from("relationships").upsert({
+        owner_id: character_id, target_id: friendId,
+        affection: clamp((fr?.affection || 0) + clamp(Number(f.affection) || 0, -0.1, 0.1), -1, 1),
+        trust: clamp((fr?.trust || 0) + clamp(Number(f.trust) || 0, -0.1, 0.1), -1, 1),
+        attraction: fr?.attraction || 0,
+        familiarity: clamp((fr?.familiarity || 0) + 0.01, 0, 1),
+        summary: f.summary ? String(f.summary).slice(0, 200) : fr?.summary || null,
+        knows_name: true, updated_at: new Date().toISOString(),
+      }));
+    }
     const mood = out.mood && typeof out.mood === "object" ? { valence: clamp(Number(out.mood.valence) || 0, -1, 1), energy: clamp(Number(out.mood.energy) || 0.5, 0, 1) } : state?.mood;
     const dn = out.needs && typeof out.needs === "object" ? out.needs : {};
     for (const k of Object.keys(NEED0) as (keyof Needs)[]) if (k !== "comfort") needs[k] = clamp(needs[k] + (Number(dn[k]) || 0), 0, 1);

@@ -38,6 +38,7 @@ export class Nav {
   ij(x, z) { return [Math.floor((x - this.x0) / this.cell), Math.floor((z - this.z0) / this.cell)]; }
   xz(i, j) { return [this.x0 + (i + 0.5) * this.cell, this.z0 + (j + 0.5) * this.cell]; }
   free(i, j) { return i >= 0 && j >= 0 && i < this.nx && j < this.nz && !this.block[j * this.nx + i]; }
+  freeAt(x, z) { const [i, j] = this.ij(x, z); return this.free(i, j); }
   // nearest free cell to (i, j), searching outward
   nearestFree(i, j) {
     if (this.free(i, j)) return [i, j];

@@ -142,6 +142,9 @@ export class Reflexes {
       m.position.lerpVectors(G.from, G.to, k); m.rotation.y = lerpAngle(G.fromYaw, G.toYaw, k);
       if (G.t >= G.dur) { this.glide = null; G.then?.(); }
     }
+    // --- personal space: someone standing right on top of him, he gives a half-step back (standing,
+    // not mid-walk, not leaning or playing, not more than once every few seconds) ---
+    else if (this.posture === 'stand' && !this.moveTarget && !this.clipAct && !this.hold && this.t - (this.spaceT ?? -9) > 4 && this._crowded()) { /* (moveTarget set) */ }
     // --- locomotion: move the body, face the way it goes, keep the clip playing ---
     else if (this.moveTarget) {
       _v.subVectors(this.moveTarget, m.position); _v.y = 0; const d = _v.length();
@@ -174,6 +177,20 @@ export class Reflexes {
     if (this.gestureName != null) this._gesture(dt);
   }
 
+  // the other person (or the visitor) closer than about half a metre: step back along the line
+  // between them, if the floor there is free. Returns true when a step was set.
+  _crowded() {
+    for (const p of [this.other, this.player]) {
+      if (!p) continue;
+      _v.subVectors(this.model.position, p); _v.y = 0; const d = _v.length();
+      if (d < 0.01 || d > 0.55) continue;
+      _w.copy(this.model.position).addScaledVector(_v.normalize(), 0.35);
+      if (this.nav && !this.nav.freeAt(_w.x, _w.z)) continue;
+      this.spaceT = this.t; this.waypoints = []; this.moveTarget = _w.clone(); this.onArrive = null;
+      return true;
+    }
+    return false;
+  }
   _startWalk() {
     if (this.walking) return;
     const clip = this.clips.Walking; if (!clip) return;
