@@ -3,3 +3,6 @@ node_modules/
 .env.*
 .DS_Store
 .work/
+
+# shape-transfer outputs (tools/face/transfer.mjs); copy a good one over assets/bodies/<id>/<tier>.glb by hand
+tools/face/out/

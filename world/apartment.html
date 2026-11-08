@@ -71,6 +71,7 @@ import { loadProps } from './props.mjs';
 import { PLACES } from './places.mjs';
 import { wear } from './garments.mjs';
 import { deriveSeats, seatWords } from './seats.mjs';
+import { Face } from './face.mjs';
 
 const isPhone = matchMedia('(pointer:coarse)').matches;
 const r = new THREE.WebGLRenderer({ antialias: true });
@@ -147,7 +148,9 @@ const hereNow = key => forced(key) || (!Q.has('alone') && (whereOf(key) === PLAC
 const hostHere = hereNow(hostKey), guestHere = !!G && hereNow(G.key);
 const hspec = bodies.find(b => b.id === BODY[hostKey]), gspec = G && bodies.find(b => b.id === BODY[G.key]);
 const tier = isPhone ? 'mobile' : 'desktop';
-const [g, pack, pack2, props, gd] = await Promise.all([hostHere ? loader.loadAsync('../assets/bodies/' + hspec[tier]) : null, loader.loadAsync('../assets/anims/meshy-pack-01.glb'), loader.loadAsync('../assets/anims/meshy-pack-02.glb'), loadProps(loader, PROPS, { tier }), guestHere ? loader.loadAsync('../assets/bodies/' + gspec[tier]) : null]);
+// ?faces=1: the bodies with real face shapes (bodies.json faceGlb, made by tools/face/transfer.mjs) - opt-in until signed off
+const bodyFile = spec => (Q.has('faces') && spec.faceGlb?.[tier]) || spec[tier];
+const [g, pack, pack2, props, gd] = await Promise.all([hostHere ? loader.loadAsync('../assets/bodies/' + bodyFile(hspec)) : null, loader.loadAsync('../assets/anims/meshy-pack-01.glb'), loader.loadAsync('../assets/anims/meshy-pack-02.glb'), loadProps(loader, PROPS, { tier }), guestHere ? loader.loadAsync('../assets/bodies/' + bodyFile(gspec)) : null]);
 for (const o of props) scene.add(o);
 // things that glow (the floor lamp, a candle)
 for (const P of PROPS) if (P.glow) props.filter(o => o.name === P.id).forEach(o => o.traverse(m => { if (m.isMesh) { m.material = m.material.clone(); m.material.emissive.set(P.glow); m.material.emissiveIntensity = 0.35; } }));
@@ -179,9 +182,11 @@ async function resident({ key, name, model, bodySpec, seed, outfitFor, place, is
   // (rest capture and the anatomy attach read the model at the origin; place him after)
   const reflex = new Reflexes(model, PACKS, { seats: SEATS });
   reflex.isTaken = k => RES.some(o => o.reflex !== reflex && o.reflex.seat === k);
+  // his face: mood, blinks, glances, his mouth when he talks (shapes when the body has them, head motion always)
+  const face = new Face(model, { skin: bodySpec.face, THREE }); reflex.headAdd = face.headAdd;
   const anat = attachAnatomy(model, bodySpec.anatomy, {}, { seed });
   reflex.nav = nav;
-  const R = { key, name, model, reflex, anat, mind: new Mind(CHARACTERS[key], { location: PLACE.location }), place, outfit: null, worn: [], dressing: 0, needs: null, head: reflex.bone('Head') };
+  const R = { key, name, model, reflex, anat, face, mind: new Mind(CHARACTERS[key], { location: PLACE.location }), place, outfit: null, worn: [], dressing: 0, needs: null, head: reflex.bone('Head') };
   R.OUTFITS = { Nude: [] };
   for (const o of wardrobe.outfits) if (o.items.every(id => (wardrobe.garments.find(g => g.id === id)?.bodies || []).includes(bodySpec.id))) R.OUTFITS[o.name] = o.items;
   R.comfort = () => Math.max(0, Math.min(1, Math.abs(WARM[R.outfit] ?? 0) / 3));
@@ -226,9 +231,16 @@ const WHERE_WORD = { 'marco-apartment': "at Marco's", 'dante-apartment': "at Dan
 async function arrive(key, { model = null, atDoor = false } = {}) {
   if (RES.some(R => R.key === key)) return RES.find(R => R.key === key);
   const isHost = key === hostKey, spec = isHost ? hspec : gspec;
-  const m = model || (await loader.loadAsync('../assets/bodies/' + spec[tier])).scene;
+  const m = model || (await loader.loadAsync('../assets/bodies/' + bodyFile(spec))).scene;
   const R = await resident({ key, name: NAME[key], model: m, bodySpec: spec, seed: key, outfitFor: isHost ? HOME[key] : GUEST[key], place: isHost ? null : G.place, isHost });
-  if (isHost && !atDoor) { R.model.position.copy(SPOTS[PLACE.spawnHost.at]); R.model.rotation.y = PLACE.spawnHost.yaw; }
+  // where his life left him: asleep in bed, out on the couch, at the stove - he's there when you walk in,
+  // not standing at attention (?doing_marco=asleep%20in%20bed to try it without the live world)
+  const doing = (Q.get('doing_' + key) || WORLD.people.find(p => KEYS[p.name] === key)?.doing || '').toLowerCase();
+  const asleep = /asleep|sleeping|out cold|crashed|dozed|dozing|napping|passed out/.test(doing), onSofa = /couch|sofa/.test(doing), inBed = /\bbed\b/.test(doing), inKitchen = /kitchen|stove|cook|fridge|dishes|coffee|counter/.test(doing);
+  const seatAt = (where, posture) => { const f = R.reflex.seatFor(where); if (!f) return false; const S = f[1]; R.model.position.copy(posture === 'lie' ? S.side : S.pos); R.model.rotation.y = S.yaw || 0; if (posture === 'lie') R.reflex.lie(); else R.reflex.sit(f[0]); return true; };
+  const placed = (asleep && !onSofa && isHost && seatAt('bed', 'lie')) || ((onSofa || (asleep && !isHost)) && seatAt('sofa', 'sit'));
+  if (placed) { R.model.userData.foundDoing = doing; }
+  else if (isHost && !atDoor) { R.model.position.copy(SPOTS[inKitchen && SPOTS.kitchen ? 'kitchen' : PLACE.spawnHost.at]); R.model.rotation.y = PLACE.spawnHost.yaw; }
   else { R.model.position.copy(SPOTS.door); R.model.rotation.y = 0; R.reflex.do({ type: 'walk_to', target: isHost ? PLACE.spawnHost.at : G.first }); }
   RES.push(R); return R;
 }
@@ -243,9 +255,13 @@ function depart(R, why) {
 if (hostHere) await arrive(hostKey, { model: g.scene });
 if (guestHere) await arrive(G.key, { model: gd.scene, atDoor: true });
 const M = RES[0] || null;
+// a sleeping house is dark: when the host's life has him asleep, the lamps are off and what's left is the
+// street through the window (the men still show; you're the one who walked in on him)
+const hostAsleep = RES.find(R => R.key === hostKey)?.model.userData.foundDoing && /asleep|sleeping|out cold|crashed|dozed|dozing|napping|passed out/.test(RES.find(R => R.key === hostKey).model.userData.foundDoing);
+if (hostAsleep) { scene.traverse(o => { if (o.isLight) o.intensity *= (o.isHemisphereLight || o.isAmbientLight) ? 0.3 : 0.08; }); scene.add(new THREE.HemisphereLight(0x5a6a9a, 0x0c0c12, 0.35)); say('sys', `${NAME[hostKey]} is asleep. The lights are off.`); }
 if (!hostHere) { const w = whereOf(hostKey); say('sys', `${NAME[hostKey]} isn't home${w ? ` - he's ${WHERE_WORD[w] || w}` : ''}${RES.length ? '' : '. The place is empty.'}`); }
 const marco = M?.model, reflex = M?.reflex, mind = M?.mind, anat = M?.anat;
-window.__ready = true;
+window.__ready = true; window.__lab = { RES, SPOTS, WORLD };   // (for the headless checks in tools/)
 let bubbleUntil = 0, bubbleOf = M;
 function showBubble(R, text) { bubbleOf = R; bubble.textContent = text; bubble.style.display = text ? 'block' : 'none'; bubbleUntil = performance.now() + 1500 + text.length * 55; }
 const _hp = new THREE.Vector3();
@@ -262,7 +278,7 @@ function sceneState(R) {
 }
 function showMemories(R, d) {
   if (!d) return;
-  R.needs = d.needs || R.needs; R.anat.setWarmth?.(R.warmth());
+  R.needs = d.needs || R.needs; R.anat.setWarmth?.(R.warmth()); R.face.setMood(d.mood);
   const bar = (k, v, inv) => { const x = inv ? 1 - v : v; return `<span style="display:inline-block;width:70px">${k}</span><span style="display:inline-block;width:90px;height:7px;background:#333;border-radius:4px;vertical-align:middle"><span style="display:block;height:7px;width:${Math.round(x * 90)}px;border-radius:4px;background:${x > 0.66 ? '#d9534f' : x > 0.4 ? '#d8b25a' : '#6c6'}"></span></span>`; };
   const needsHtml = d.needs ? `<b>${R.name}'s needs</b> <i>(bar = how pressing)</i><br>` + bar('tired', d.needs.energy, true) + '<br>' + bar('hunger', d.needs.hunger) + '<br>' + bar('company', d.needs.social) + '<br>' + bar('closeness', d.needs.intimacy) + '<br>' + bar('discomfort', d.needs.comfort) + '<br>' : '';
   memLive.innerHTML = needsHtml + `<b>model</b> ${d.model || ''}${d.salvaged ? ' <i>(reply was cut short; line salvaged)</i>' : ''}<br><b>mood</b> ${JSON.stringify(d.mood)}<br><b>remembered now</b> ${d.memory && d.memory.content ? `(${d.memory.importance}) ${d.memory.content}` : '–'}<br><b>recalled</b><br>` + (d.recalled || []).map(m => `· ${m.content} <i>(${m.when})</i>`).join('<br>');
@@ -401,9 +417,10 @@ r.setAnimationLoop(now => {
   for (const R of RES) {
     const rf = R.reflex;
     const other = RES.find(o => o !== R), otherHead = other ? other.head.getWorldPosition(R._oh || (R._oh = new THREE.Vector3())) : null;
-    if (R.lookHold && performance.now() < R.lookHold) { rf.update(dt, { player: eye, other: otherHead, spots: SPOTS }); R.anat.update(dt); continue; }
+    if (R.lookHold && performance.now() < R.lookHold) { rf.update(dt, { player: eye, other: otherHead, spots: SPOTS }); const sp0 = voice.spoken(); R.face.update(dt, { spoken: sp0 && sp0.key === R.key ? sp0 : null }); R.anat.update(dt); continue; }
     if (!rf.busy && rf.posture !== 'lie') rf.lookAt(player.pos.distanceTo(R.model.position) < 3.2 ? eye : otherHead);
     rf.update(dt, { player: eye, other: otherHead, spots: SPOTS });
+    const sp = voice.spoken(); R.face.listening = ears.listening; R.face.update(dt, { spoken: sp && sp.key === R.key ? sp : null });
     R.anat.update(dt);
     if (R.bassOn && bass) placeBass(bass, R.model, POSES.play_bass.prop);
   }

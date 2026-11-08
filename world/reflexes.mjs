@@ -179,6 +179,8 @@ export class Reflexes {
     if (this.holdW > 0.01) this._hold(this._lastHold = this.hold || this._lastHold, this.holdW);
     // --- gaze (not lying down), on top of whatever the body is doing ---
     if (this.posture !== 'lie') this._gaze(dt);
+    // --- the face's small head motion (world/face.mjs): talking rhythm, a listening tilt ---
+    if (this.headAdd) this._setRest('Head', this.headAdd.pitch || 0, this.headAdd.yaw || 0, this.headAdd.roll || 0, true);
     // --- the music: a nod on the beat (down quick, up slow) ---
     if (this.grooveAmt > 0 && this.beatT != null && this.beatT < 0.45) { this.beatT += dt; const k = this.beatT < 0.12 ? this.beatT / 0.12 : 1 - (this.beatT - 0.12) / 0.33; this._setRest('Head', 0.07 * this.grooveAmt * Math.max(0, k), 0, 0, true); this._setRest('neck', 0.03 * this.grooveAmt * Math.max(0, k), 0, 0, true); }
     // --- gesture, additive ---

@@ -1,6 +1,9 @@
 // THE_LAB · voice: real voices and real ears, through ElevenLabs.
 //
 // POST JSON { action: 'speak', character_id, text }       -> audio/mpeg (his voice saying it)
+// POST JSON { action: 'speak', character_id, text, timing: true }
+//      -> { audio (base64 mp3), alignment: { chars, start, end } } the same, with when each character
+//         is spoken (seconds), for the face's mouth (world/face.mjs)
 // POST JSON { action: 'models' }                           -> the TTS models on the account
 // POST JSON { action: 'voices' }                           -> the account's voices, for choosing
 // POST JSON { action: 'set_voice', character_id, voice_id } -> pin a voice to a character
@@ -78,6 +81,14 @@ Deno.serve(async (req) => {
     // speak
     const text = String(b.text || "").slice(0, 600).trim(); if (!text) return json({ error: "nothing to say" }, 400);
     const vid = await voiceFor(c), fit = FIT[c.name] || FIT.Marco;
+    if (b.timing) {
+      // with-timestamps: the audio plus when each character of the text is spoken
+      const r = await fetch(`${XI}/text-to-speech/${vid}/with-timestamps?output_format=mp3_44100_128`, { method: "POST", headers: { "xi-api-key": key(), "content-type": "application/json" },
+        body: JSON.stringify({ text, model_id: b.model || TTS_MODEL, voice_settings: fit.settings }) });
+      if (!r.ok) return json({ error: `speak ${r.status}: ${(await r.text()).slice(0, 200)}` }, r.status === 401 || r.status === 429 ? 402 : 502);
+      const d = await r.json(); const al = d.alignment || d.normalized_alignment || {};
+      return json({ audio: d.audio_base64, alignment: { chars: al.characters || [], start: al.character_start_times_seconds || [], end: al.character_end_times_seconds || [] } });
+    }
     const r = await fetch(`${XI}/text-to-speech/${vid}?output_format=mp3_44100_128`, { method: "POST", headers: { "xi-api-key": key(), "content-type": "application/json", accept: "audio/mpeg" },
       body: JSON.stringify({ text, model_id: b.model || TTS_MODEL, voice_settings: fit.settings }) });
     if (!r.ok) return json({ error: `speak ${r.status}: ${(await r.text()).slice(0, 200)}` }, r.status === 401 || r.status === 429 ? 402 : 502);
