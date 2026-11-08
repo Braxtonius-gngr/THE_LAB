@@ -7,7 +7,14 @@
 // (headAdd), which the reflexes add on top of the gaze, so he reads as alive and talking even
 // before his face can move.
 //
-//   const face = new Face(model);             // finds every mesh with morph targets
+// Until a body has shapes, the skin path does the eyes and brows on the fused head itself
+// (bodies.json `face`: the eye and brow anchors in the mesh's own vertex space, picked on
+// lab/face.html): a patch on the body's material slides a lid of skin over each painted eye
+// for blinks and heavy lids, lifts or lowers the brow vertices with the mood, and lets the
+// iris slide a few millimetres for glances. The mouth is left alone - there is no inner mouth
+// to show, and a mouth that moves wrong is worse than one that doesn't.
+//
+//   const face = new Face(model, { skin: spec.face });   // finds every mesh with morph targets; else the skin path
 //   face.setMood({ valence, energy });        // from the mind's reply
 //   face.listening = true | false;            // the visitor is talking to him
 //   face.update(dt, { spoken })               // spoken: voice.spoken() when it's him talking
@@ -27,11 +34,65 @@ const VIS = {
 const SH = { jawOpen: 0.2, mouthFunnel: 0.55 }, TH = { jawOpen: 0.18, mouthStretch: 0.1 };
 const lerp = (a, b, t) => a + (b - a) * t, clamp01 = v => Math.max(0, Math.min(1, v));
 
+// --- the skin path's shader pieces (spliced into the body's MeshStandardMaterial) ---
+const SKIN_PARS = `
+uniform float uFaceA; uniform vec3 uFaceUp, uFaceRight, uFaceFwd;
+uniform vec3 uEyeP[2]; uniform vec2 uEyeHalf, uBlink, uLook; uniform vec3 uLidCol[2];
+uniform vec3 uBrowP[6]; uniform float uBrowD[6]; uniform float uBrowR;
+`;
+// brows lift or lower round their anchors; on a blink the lids pinch toward each other a little (the silhouette)
+const SKIN_VERTEX = `
+vFaceP = transformed;
+{ float fa = uFaceA; vec3 fd = vec3(0.0);
+  for (int i = 0; i < 6; i++) { float r = distance(transformed, uBrowP[i]) / (uBrowR * fa); float f = max(0.0, 1.0 - r * r); fd += uFaceUp * (uBrowD[i] * fa * f * f); }
+  for (int i = 0; i < 2; i++) { vec3 q = transformed - uEyeP[i]; float x = dot(q, uFaceRight) / (uEyeHalf.x * fa * 1.3), y = dot(q, uFaceUp) / (uEyeHalf.y * fa * 2.2);
+    float f = max(0.0, 1.0 - x * x - y * y); fd += uFaceUp * (-sign(y) * 0.0012 * fa * f * uBlink[i]); }
+  transformed += fd; }
+`;
+// the eye: the iris slides with the glance (the texture lookup moves, through the screen-space
+// derivatives so it follows the texture island whichever way it lies); the lid comes down over
+// the painted eye as skin, with a lash line and a crease shadow at its edge
+const SKIN_MAP = `
+#ifdef USE_MAP
+  vec2 fUv = vMapUv; float lidMix = 0.0, lash = 0.0; vec3 lidCol = vec3(0.0);
+  vec3 fpx = dFdx(vFaceP), fpy = dFdy(vFaceP); vec2 fux = dFdx(vMapUv), fuy = dFdy(vMapUv);
+  { float fa = uFaceA;
+    for (int i = 0; i < 2; i++) {
+      vec3 q = vFaceP - uEyeP[i]; float dz = dot(q, uFaceFwd) / fa;
+      if (abs(dz) < 0.02) {
+        float x = dot(q, uFaceRight) / (uEyeHalf.x * fa), y = dot(q, uFaceUp) / (uEyeHalf.y * fa); float e = x * x + y * y;
+        float iris = smoothstep(1.0, 0.45, e);
+        if (iris > 0.0) {
+          vec3 dW = (uFaceRight * uLook.x + uFaceUp * uLook.y) * fa;
+          float a11 = dot(fpx, fpx), a12 = dot(fpx, fpy), a22 = dot(fpy, fpy), det = a11 * a22 - a12 * a12;
+          if (det > 1e-24) { float b1 = dot(dW, fpx), b2 = dot(dW, fpy); float s = (b1 * a22 - b2 * a12) / det, t = (a11 * b2 - a12 * b1) / det; fUv -= (fux * s + fuy * t) * iris; }
+        }
+        float b = uBlink[i];
+        if (b > 0.001) {
+          float yl = 1.3 - 2.5 * b, inside = smoothstep(1.7, 1.1, e);
+          float cover = smoothstep(yl - 0.12, yl + 0.12, y) * inside, edge = exp(-pow((y - yl) / 0.16, 2.0)) * inside;
+          lidMix = max(lidMix, cover); lidCol = uLidCol[i]; lash = max(lash, edge * b);
+        }
+      }
+    }
+  }
+  vec4 sampledDiffuseColor = texture2D(map, fUv);
+  #ifdef DECODE_VIDEO_TEXTURE
+    sampledDiffuseColor = sRGBTransferEOTF(sampledDiffuseColor);
+  #endif
+  sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, lidCol, lidMix);
+  sampledDiffuseColor.rgb *= 1.0 - 0.4 * lash;
+  diffuseColor *= sampledDiffuseColor;
+#endif
+`;
+
 export class Face {
-  constructor(model) {
+  constructor(model, { skin = null, THREE = null } = {}) {
     this.targets = {};   // shape name -> [{ mesh, index }]
     model.traverse(o => { if (o.isMesh && o.morphTargetDictionary) for (const [n, i] of Object.entries(o.morphTargetDictionary)) (this.targets[n] = this.targets[n] || []).push({ mesh: o, index: i }); });
     this.has = ARKIT.some(n => this.targets[n]);
+    this.skin = null; this.lookOverride = null; this.hold = {};   // hold: shape weights a tuning page pins (lab/face.html)
+    if (!this.has && skin && skin.eyeL && skin.eyeR) { try { this._skin(model, skin, THREE); } catch (e) { console.warn('face: skin path off', e); } }
     this.w = {}; this.goal = {};          // current and target weights, by shape
     this.mood = { valence: 0, energy: 0.5 }; this.listening = false;
     this.headAdd = { pitch: 0, yaw: 0, roll: 0 };
@@ -66,6 +127,7 @@ export class Face {
     const g = {};
     this._moodGoal(g);
     this._viseme(spoken, g);
+    Object.assign(g, this.hold);
     // blinks: every 2-6 s, quicker when wound up; a blink is ~120 ms down, ~160 ms up
     const e = this.mood.energy;
     if (this.blinkT < 0 && this.t >= this.nextBlink) { this.blinkT = 0; this.nextBlink = this.t + 2 + Math.random() * (e > 0.7 ? 2.5 : 4); }
@@ -92,6 +154,89 @@ export class Face {
     this.headAdd.pitch = lerp(this.headAdd.pitch, 0.06 * this.nod + sway * Math.sin(this.t * 1.3 + this.rnd), Math.min(1, dt * 6));
     this.headAdd.yaw = lerp(this.headAdd.yaw, sway * Math.sin(this.t * 0.7 + this.rnd * 2), Math.min(1, dt * 6));
     this.headAdd.roll = lerp(this.headAdd.roll, (this.listening ? 0.05 : 0) + sway * 0.6 * Math.sin(this.t * 0.9 + this.rnd * 3), Math.min(1, dt * 4));
+    if (this.skin) this._skinUpdate();
+  }
+  // ---- the skin path: eyes and brows on a body with no face shapes ----
+  _skin(model, spec, THREE) {
+    // THREE comes from the caller (the module keeps no import of its own so the vendored copy stays the only one)
+    if (!THREE) THREE = globalThis.THREE || null;
+    let mesh = null; model.traverse(o => { if (!mesh && o.isSkinnedMesh && o.material && o.material.map) mesh = o; });
+    if (!mesh || !THREE) return;
+    model.updateMatrixWorld(true);
+    // the mesh's vertex space -> the model's: its rotation gives up/right/forward in vertex space, its scale the unit
+    const M = new THREE.Matrix4().copy(model.matrixWorld).invert().multiply(mesh.matrixWorld);
+    const pos = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3(); M.decompose(pos, q, sc); const qi = q.clone().invert();
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(qi).normalize(), right = new THREE.Vector3(1, 0, 0).applyQuaternion(qi).normalize(), fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(qi).normalize();
+    const A = 1 / sc.x;   // vertex units per metre
+    const v3 = a => new THREE.Vector3().fromArray(a);
+    const brows = ['browLin', 'browL', 'browLout', 'browRin', 'browR', 'browRout'].map(k => spec[k] ? v3(spec[k]) : null);
+    for (let i = 0; i < 6; i++) if (!brows[i]) brows[i] = (i < 3 ? v3(spec.eyeL) : v3(spec.eyeR)).addScaledVector(up, 0.014 * A);   // a brow 14 mm above the eye if none was picked
+    const eye = spec.eye || { w: 0.0155, h: 0.0053 };
+    const u = {
+      uFaceA: { value: A }, uFaceUp: { value: up }, uFaceRight: { value: right }, uFaceFwd: { value: fwd },
+      uEyeP: { value: [v3(spec.eyeL), v3(spec.eyeR)] }, uEyeHalf: { value: new THREE.Vector2(eye.w, eye.h) },
+      uBlink: { value: new THREE.Vector2(0, 0) }, uLook: { value: new THREE.Vector2(0, 0) },
+      uLidCol: { value: [new THREE.Color(0.5, 0.35, 0.3), new THREE.Color(0.5, 0.35, 0.3)] },
+      uBrowP: { value: brows }, uBrowD: { value: [0, 0, 0, 0, 0, 0] }, uBrowR: { value: 0.013 },
+    };
+    this.skin = { mesh, u, A, up, right, fwd, THREE };
+    this._lidColours(mesh, spec, u, THREE);
+    const m = mesh.material; if (m.userData.faceSkin) return;
+    const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey;
+    m.onBeforeCompile = (sh, r) => {
+      if (prev) prev.call(m, sh, r);
+      Object.assign(sh.uniforms, u);
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\n' + SKIN_PARS + 'varying vec3 vFaceP;\n')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + SKIN_VERTEX);
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\n' + SKIN_PARS + 'varying vec3 vFaceP;\n')
+        .replace('#include <map_fragment>', SKIN_MAP);
+    };
+    m.customProgramCacheKey = () => (prevKey ? prevKey.call(m) : '') + '|face';
+    m.userData.faceSkin = true; m.needsUpdate = true;
+  }
+  // the colour of the lid that comes down: skin read off the body texture near the eye. Several
+  // spots are tried (the lid, the forehead above the brow); the brightest wins, since brow hair,
+  // lashes and the shadow painted round a deep-set eye are all darker than the skin itself.
+  _lidColours(mesh, spec, u, THREE) {
+    const img = mesh.material.map.image; if (!img || !img.width) return;
+    const g = mesh.geometry, pos = g.attributes.position, uv = g.attributes.uv; if (!uv) return;
+    const { A, up } = this.skin;
+    const W = img.width, H = img.height, flip = mesh.material.map.flipY;
+    let ctx = null; try { const c = document.createElement('canvas'); c.width = W; c.height = H; ctx = c.getContext('2d', { willReadFrequently: true }); ctx.drawImage(img, 0, 0); } catch (_) { return; }
+    const tone = new THREE.Color(spec.tone || '#c48b74');
+    const med = a => a.sort((x, y) => x - y)[a.length >> 1] / 255;
+    const sampleAt = t => {   // the median texel colour round the vertex nearest t (vertex space), or null
+      let best = -1, bd = Infinity;
+      for (let k = 0; k < pos.count; k++) { const dx = pos.getX(k) - t.x, dy = pos.getY(k) - t.y, dz = pos.getZ(k) - t.z, d = dx * dx + dy * dy + dz * dz; if (d < bd) { bd = d; best = k; } }
+      if (best < 0 || Math.sqrt(bd) > 0.006 * A) return null;
+      const px = Math.round(uv.getX(best) * W), py = Math.round((flip ? 1 - uv.getY(best) : uv.getY(best)) * H);
+      let d; try { d = ctx.getImageData(Math.max(0, px - 3), Math.max(0, py - 3), 7, 7).data; } catch (_) { return null; }
+      const ch = [[], [], []]; for (let k = 0; k < d.length; k += 4) { if (d[k + 3] < 128) continue; ch[0].push(d[k]); ch[1].push(d[k + 1]); ch[2].push(d[k + 2]); }
+      return ch[0].length ? [med(ch[0]), med(ch[1]), med(ch[2])] : null;
+    };
+    [[spec.eyeL, spec.browL], [spec.eyeR, spec.browR]].forEach(([e, b], i) => {
+      const E = new THREE.Vector3().fromArray(e), B = b ? new THREE.Vector3().fromArray(b) : E.clone().addScaledVector(up, 0.014 * A);
+      const spots = [[E, 0.007, 1], [E, 0.009, 1], [B, 0.010, 0.92], [B, 0.014, 0.92]];   // [from, metres up, dimming for the forehead]
+      let pick = null, lum = -1;
+      for (const [from, m, dim] of spots) { const c = sampleAt(from.clone().addScaledVector(up, m * A)); if (!c) continue; const l = 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2]; if (l > lum) { lum = l; pick = c.map(v => v * dim); } }
+      if (pick) u.uLidCol.value[i].setRGB(pick[0], pick[1], pick[2], THREE.SRGBColorSpace); else u.uLidCol.value[i].copy(tone);
+    });
+  }
+  _skinUpdate() {
+    const { u } = this.skin, w = this.w, W = n => w[n] || 0;
+    u.uBlink.value.set(W('eyeBlinkLeft'), W('eyeBlinkRight'));
+    // the iris slides a few millimetres: +x is his left
+    const lx = this.lookOverride ? this.lookOverride.x : (W('eyeLookOutLeft') + W('eyeLookInRight') - W('eyeLookInLeft') - W('eyeLookOutRight')) / 2;
+    const ly = this.lookOverride ? this.lookOverride.y : (W('eyeLookUpLeft') + W('eyeLookUpRight') - W('eyeLookDownLeft') - W('eyeLookDownRight')) / 2;
+    u.uLook.value.set(lx * 0.0035, ly * 0.002);
+    // brows, in metres of lift: inner, middle, outer, his left then his right
+    const inner = 0.005 * W('browInnerUp'), d = u.uBrowD.value;
+    for (const [s, L] of [[0, 'Left'], [3, 'Right']]) {
+      const down = W('browDown' + L), outer = W('browOuterUp' + L);
+      d[s] = inner - 0.004 * down; d[s + 1] = 0.35 * inner + 0.002 * outer - 0.0042 * down; d[s + 2] = 0.004 * outer - 0.0025 * down;
+    }
   }
   // for a tuning page: every shape this body has, with its weight now
   shapes() { return Object.keys(this.targets).sort().map(n => ({ name: n, arkit: ARKIT.includes(n), weight: this.w[n] || 0 })); }

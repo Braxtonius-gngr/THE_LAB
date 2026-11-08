@@ -14,6 +14,7 @@ The agent and world layer: the places, the people in them, and the ways to reach
 | `nav.mjs` | Pathfinding around the furniture. |
 | `garments.mjs` | Dresses a body in fitted Meshy garments (`assets/garments`), inner to outer. |
 | `attach-anatomy.mjs`, `retarget.mjs` | The body engine on a rigged model; animation clips carried onto any rig. |
+| `face.mjs` | His face: mood on it, blinks, glances, his mouth when he talks. ARKit blendshapes when a body has them; otherwise the skin path (lids, brows, iris on the fused head, from `bodies.json` `face` anchors) plus small head motion. Tuned on `lab/face.html`. |
 | `voice.mjs`, `listen.mjs` | ElevenLabs voices and ears (browser fallback); the turntable's ear for a song you play. |
 
 Server side (`supabase/functions`): `mind` thinks one turn (recall → Claude → say, actions, mood, memory, relationship), `life` lives the hours between visits every 2 h and reflects nightly, `voice` speaks, `push` keeps the phones that want a buzz. Schema in `db/migrations`.

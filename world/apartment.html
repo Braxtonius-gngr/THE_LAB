@@ -181,7 +181,7 @@ async function resident({ key, name, model, bodySpec, seed, outfitFor, place, is
   const reflex = new Reflexes(model, PACKS, { seats: SEATS });
   reflex.isTaken = k => RES.some(o => o.reflex !== reflex && o.reflex.seat === k);
   // his face: mood, blinks, glances, his mouth when he talks (shapes when the body has them, head motion always)
-  const face = new Face(model); reflex.headAdd = face.headAdd;
+  const face = new Face(model, { skin: bodySpec.face, THREE }); reflex.headAdd = face.headAdd;
   const anat = attachAnatomy(model, bodySpec.anatomy, {}, { seed });
   reflex.nav = nav;
   const R = { key, name, model, reflex, anat, face, mind: new Mind(CHARACTERS[key], { location: PLACE.location }), place, outfit: null, worn: [], dressing: 0, needs: null, head: reflex.bone('Head') };

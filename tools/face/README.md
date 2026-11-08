@@ -38,11 +38,18 @@ gains its shapes; they simply start moving. `lab/face.html` is the tuning page.
   rougher beat there.
 - Listening (the mic is open): brows up a touch, a slight head tilt.
 
-## Route 2 bridge (no assets): deferred
-Vertex-level brows and blinks on the fused head need the eye and brow regions found reliably on
-each mesh. Not done yet: a wrong-looking face is worse than a still one. If it's picked up, the
-plan is to render the head front-on, find landmarks on the image, and map them back through the
-UVs to vertex groups.
+## Route 2, the bridge (in): eyes and brows on the fused head
+Until a body has shapes, `world/face.mjs` runs its skin path on the body's own material: a lid
+of skin slides down over each painted eye (blinks, heavy lids), the brow vertices lift or lower
+with the mood, and the iris slides a few millimetres for glances (the texture lookup moves,
+following whichever way the texture island lies). The mouth is left alone on purpose. It needs
+only the `face` block in `bodies.json`: the two eye centres and six brow points in the mesh's own
+vertex space, plus the eye's half-sizes in metres. Marco and Dante have theirs. To place or
+correct them: `lab/face.html?body=<id>` → Landmarks → pick an anchor, **place**, click the spot
+on his face (his left is screen-right when he faces you), **apply** to see it, **JSON** to copy
+the block into `bodies.json`. The same anchors serve the phone mesh (`?tier=mobile` to check).
+The lid colour is read off the texture near the eye at load, so a re-textured body needs no
+change. When ARKit shapes land on a body the skin path steps aside by itself.
 
 ## Route 3: the Unreal era
 Rebuild the men on a face-first character base when the move to Unreal happens: Mesh to
