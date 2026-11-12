@@ -1,0 +1,70 @@
+{
+  "$comment": "FaceRig contract for THE_LAB. The 53 expression ids are ICT FaceKit's (FACS/ARKit-compatible names, MIT; see third_party/ict-facekit). Every face on every surface - browser (morph targets), Blender (shape keys), Unreal (morph targets) - is driven by a weight map { id: 0..1 } over exactly these ids. Nothing else may add, rename or renumber them; extend by adding a new id here first.",
+  "version": 1,
+  "source": { "name": "ICT FaceKit", "commit": "da5f95a607f5e6b37755b38d3385d7f2853732e5", "license": "MIT" },
+
+  "expressions": [
+    "browDown_L", "browDown_R", "browInnerUp_L", "browInnerUp_R", "browOuterUp_L", "browOuterUp_R",
+    "cheekPuff_L", "cheekPuff_R", "cheekSquint_L", "cheekSquint_R",
+    "eyeBlink_L", "eyeBlink_R", "eyeLookDown_L", "eyeLookDown_R", "eyeLookIn_L", "eyeLookIn_R",
+    "eyeLookOut_L", "eyeLookOut_R", "eyeLookUp_L", "eyeLookUp_R", "eyeSquint_L", "eyeSquint_R", "eyeWide_L", "eyeWide_R",
+    "jawForward", "jawLeft", "jawOpen", "jawRight",
+    "mouthClose", "mouthDimple_L", "mouthDimple_R", "mouthFrown_L", "mouthFrown_R", "mouthFunnel", "mouthLeft",
+    "mouthLowerDown_L", "mouthLowerDown_R", "mouthPress_L", "mouthPress_R", "mouthPucker", "mouthRight",
+    "mouthRollLower", "mouthRollUpper", "mouthShrugLower", "mouthShrugUpper", "mouthSmile_L", "mouthSmile_R",
+    "mouthStretch_L", "mouthStretch_R", "mouthUpperUp_L", "mouthUpperUp_R",
+    "noseSneer_L", "noseSneer_R"
+  ],
+
+  "groups": {
+    "brow":  ["browDown_L", "browDown_R", "browInnerUp_L", "browInnerUp_R", "browOuterUp_L", "browOuterUp_R"],
+    "eye":   ["eyeBlink_L", "eyeBlink_R", "eyeSquint_L", "eyeSquint_R", "eyeWide_L", "eyeWide_R"],
+    "gaze":  ["eyeLookDown_L", "eyeLookDown_R", "eyeLookIn_L", "eyeLookIn_R", "eyeLookOut_L", "eyeLookOut_R", "eyeLookUp_L", "eyeLookUp_R"],
+    "cheek": ["cheekPuff_L", "cheekPuff_R", "cheekSquint_L", "cheekSquint_R"],
+    "nose":  ["noseSneer_L", "noseSneer_R"],
+    "jaw":   ["jawForward", "jawLeft", "jawOpen", "jawRight"],
+    "mouth": ["mouthClose", "mouthDimple_L", "mouthDimple_R", "mouthFrown_L", "mouthFrown_R", "mouthFunnel", "mouthLeft", "mouthLowerDown_L", "mouthLowerDown_R", "mouthPress_L", "mouthPress_R", "mouthPucker", "mouthRight", "mouthRollLower", "mouthRollUpper", "mouthShrugLower", "mouthShrugUpper", "mouthSmile_L", "mouthSmile_R", "mouthStretch_L", "mouthStretch_R", "mouthUpperUp_L", "mouthUpperUp_R"]
+  },
+
+  "$tiers": "Which ids a body must carry to be considered face-rigged at that tier. 'core' is the first build target; 'full' is all 53.",
+  "tiers": {
+    "core": ["jawOpen", "mouthClose", "mouthSmile_L", "mouthSmile_R", "mouthFrown_L", "mouthFrown_R", "mouthPucker", "mouthFunnel",
+             "browInnerUp_L", "browInnerUp_R", "browDown_L", "browDown_R", "browOuterUp_L", "browOuterUp_R",
+             "eyeBlink_L", "eyeBlink_R", "eyeWide_L", "eyeWide_R", "eyeSquint_L", "eyeSquint_R", "cheekSquint_L", "cheekSquint_R", "noseSneer_L", "noseSneer_R"],
+    "full": "*"
+  },
+
+  "$visemes": "Speech mouth shapes as weight maps over the same ids (Oculus/Jali-style 15). world/face.mjs blends these from phoneme timing; nothing downstream needs to know about visemes.",
+  "visemes": {
+    "sil": {},
+    "PP":  { "mouthClose": 0.9, "mouthPress_L": 0.5, "mouthPress_R": 0.5 },
+    "FF":  { "mouthRollLower": 0.6, "mouthUpperUp_L": 0.2, "mouthUpperUp_R": 0.2, "jawOpen": 0.1 },
+    "TH":  { "jawOpen": 0.2, "mouthLowerDown_L": 0.3, "mouthLowerDown_R": 0.3 },
+    "DD":  { "jawOpen": 0.25, "mouthStretch_L": 0.2, "mouthStretch_R": 0.2 },
+    "kk":  { "jawOpen": 0.3, "mouthStretch_L": 0.15, "mouthStretch_R": 0.15 },
+    "CH":  { "jawOpen": 0.2, "mouthFunnel": 0.5, "mouthPucker": 0.3 },
+    "SS":  { "jawOpen": 0.1, "mouthStretch_L": 0.5, "mouthStretch_R": 0.5, "mouthPress_L": 0.2, "mouthPress_R": 0.2 },
+    "nn":  { "jawOpen": 0.15, "mouthClose": 0.3 },
+    "RR":  { "jawOpen": 0.2, "mouthFunnel": 0.4, "mouthPucker": 0.4 },
+    "aa":  { "jawOpen": 0.75, "mouthLowerDown_L": 0.2, "mouthLowerDown_R": 0.2 },
+    "E":   { "jawOpen": 0.4, "mouthStretch_L": 0.4, "mouthStretch_R": 0.4, "mouthSmile_L": 0.2, "mouthSmile_R": 0.2 },
+    "ih":  { "jawOpen": 0.3, "mouthStretch_L": 0.3, "mouthStretch_R": 0.3 },
+    "oh":  { "jawOpen": 0.5, "mouthFunnel": 0.6, "mouthPucker": 0.2 },
+    "ou":  { "jawOpen": 0.3, "mouthFunnel": 0.4, "mouthPucker": 0.8 }
+  },
+
+  "$moods": "Resting-face anchors for the mind's mood { valence: -1..1, energy: 0..1 }. world/face.mjs interpolates bilinearly between the four corners plus neutral; nobody authors per-mood faces elsewhere.",
+  "moods": {
+    "neutral":      {},
+    "warm_calm":    { "mouthSmile_L": 0.25, "mouthSmile_R": 0.22, "cheekSquint_L": 0.15, "cheekSquint_R": 0.15, "eyeSquint_L": 0.1, "eyeSquint_R": 0.1 },
+    "warm_lively":  { "mouthSmile_L": 0.55, "mouthSmile_R": 0.5, "cheekSquint_L": 0.35, "cheekSquint_R": 0.35, "browInnerUp_L": 0.15, "browInnerUp_R": 0.15, "eyeWide_L": 0.1, "eyeWide_R": 0.1, "mouthDimple_L": 0.2, "mouthDimple_R": 0.2 },
+    "low_calm":     { "mouthFrown_L": 0.2, "mouthFrown_R": 0.2, "browInnerUp_L": 0.3, "browInnerUp_R": 0.3, "eyeSquint_L": 0.15, "eyeSquint_R": 0.15, "mouthPress_L": 0.15, "mouthPress_R": 0.15 },
+    "low_lively":   { "browDown_L": 0.5, "browDown_R": 0.5, "noseSneer_L": 0.2, "noseSneer_R": 0.2, "mouthPress_L": 0.4, "mouthPress_R": 0.4, "eyeSquint_L": 0.3, "eyeSquint_R": 0.3, "jawForward": 0.1 }
+  },
+
+  "$blink": "Spontaneous blink timing. Not expressions, but part of the contract so every surface blinks alike.",
+  "blink": { "meanIntervalSec": 4.5, "jitterSec": 2.5, "closeSec": 0.08, "holdSec": 0.03, "openSec": 0.14 },
+
+  "$mirror": "Left/right pairs, for mirroring presets and for the Blender fitter's symmetry check.",
+  "mirror": { "_L": "_R" }
+}
