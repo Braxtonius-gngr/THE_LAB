@@ -32,14 +32,22 @@ export const voice = {
   // speak a line as `key`; resolves when it's done (or straight away when voice is off)
   // ElevenLabs first (supabase/functions/voice); the browser's voice if that fails (no credits, offline)
   engine: 'eleven',
+  // what is being said right now, for the face (world/face.mjs): { key, text, t0, alignment?, audio? }
+  // alignment = { chars, start, end } in seconds from the start of the audio; the browser's own
+  // voice gives word boundaries instead (bound: { char, at }), updated as it goes
+  current: null,
   async speak(key, text, opts = {}) {
     if (!this.on || !text) { opts.onEnd?.(); return; }
     if (this.engine === 'eleven' && CHARACTERS[key]) {
       try {
-        const r = await fetch(FN, { method: 'POST', headers: { ...AUTH, 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'speak', character_id: CHARACTERS[key], text }) });
+        const r = await fetch(FN, { method: 'POST', headers: { ...AUTH, 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'speak', character_id: CHARACTERS[key], text, timing: true }) });
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
-        const url = URL.createObjectURL(await r.blob()), a = this.audio = new Audio(url);
-        return await new Promise(res => { a.onplay = () => opts.onStart?.(); a.onended = a.onerror = () => { URL.revokeObjectURL(url); opts.onEnd?.(); res(); }; a.play().catch(() => { opts.onEnd?.(); res(); }); });
+        const d = await r.json(); if (!d.audio) throw new Error('no audio');
+        const bytes = Uint8Array.from(atob(d.audio), c => c.charCodeAt(0));
+        const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' })), a = this.audio = new Audio(url);
+        const cur = this.current = { key, text, audio: a, alignment: d.alignment && d.alignment.chars?.length ? d.alignment : null, t0: 0 };
+        const done = () => { if (this.current === cur) this.current = null; };
+        return await new Promise(res => { a.onplay = () => { cur.t0 = performance.now(); opts.onStart?.(); }; a.onended = a.onerror = () => { URL.revokeObjectURL(url); done(); opts.onEnd?.(); res(); }; a.play().catch(() => { done(); opts.onEnd?.(); res(); }); });
       } catch (e) { console.warn('voice: falling back to the browser -', e.message || e); }
     }
     return this._browser(key, text, opts);
@@ -50,9 +58,20 @@ export const voice = {
     const P = VOICES[key] || VOICES.marco, u = new SpeechSynthesisUtterance(text);
     const v = pick(key); if (v) u.voice = v;
     u.pitch = P.pitch; u.rate = P.rate; u.lang = v?.lang || 'en-US';
-    return new Promise(res => { u.onstart = () => onStart?.(); u.onend = u.onerror = () => { onEnd?.(); res(); }; synth.speak(u); });
+    const cur = this.current = { key, text, alignment: null, bound: null, t0: 0 };
+    const done = () => { if (this.current === cur) this.current = null; };
+    u.onboundary = e => { cur.bound = { char: e.charIndex || 0, at: performance.now() }; };
+    return new Promise(res => { u.onstart = () => { cur.t0 = performance.now(); onStart?.(); }; u.onend = u.onerror = () => { done(); onEnd?.(); res(); }; synth.speak(u); });
   },
-  stop() { synth?.cancel(); if (this.audio) { this.audio.pause(); this.audio = null; } },
+  // seconds into the current line, and the character being spoken (from the alignment, or the
+  // browser's last word boundary); null when nobody is talking
+  spoken() {
+    const c = this.current; if (!c) return null;
+    if (c.audio) { const t = c.audio.currentTime; const A = c.alignment; let i = -1; if (A) { let lo = 0, hi = A.start.length - 1; while (lo <= hi) { const m = (lo + hi) >> 1; if (A.start[m] <= t) { i = m; lo = m + 1; } else hi = m - 1; } if (i >= 0 && t > A.end[i] + 0.05) i = -1; } return { key: c.key, t, char: i >= 0 ? A.chars[i] : null, next: i >= 0 ? A.chars[i + 1] || '' : '', text: c.text, index: i }; }
+    const t = (performance.now() - c.t0) / 1000, b = c.bound; const i = b ? Math.min(c.text.length - 1, b.char + Math.floor((performance.now() - b.at) / 70)) : -1;
+    return { key: c.key, t, char: i >= 0 ? c.text[i] : null, next: i >= 0 ? c.text[i + 1] || '' : '', text: c.text, index: i };
+  },
+  stop() { synth?.cancel(); if (this.audio) { this.audio.pause(); this.audio = null; } this.current = null; },
 };
 
 // the mic: tap to start, tap again (or 20 s) to stop; the recording goes to ElevenLabs Scribe.

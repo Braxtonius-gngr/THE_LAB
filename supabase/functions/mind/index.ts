@@ -127,6 +127,24 @@ Deno.serve(async (req) => {
         supabase.from("outbox").select("id,text,created_at").eq("from_id", cid).eq("to_id", pid).is("seen_at", null).order("created_at"),
       ]);
       if (!c) return json({ error: "unknown character" }, 404);
+      // ?thread=1: the whole text thread as he remembers it (his texts and yours, plus texts he sent
+      // first), so a new phone or the tablet shows the same conversation as the phone it started on
+      if (u.searchParams.get("thread")) {
+        const { data: ss } = await supabase.from("sessions").select("id").eq("kind", "text").contains("attendees", [cid, pid]).order("started_at", { ascending: false }).limit(80);
+        const ids = (ss || []).map((x: { id: string }) => x.id);
+        const [{ data: mem }, { data: sent }] = await Promise.all([
+          ids.length ? supabase.from("memories").select("content,created_at").eq("owner_id", cid).eq("kind", "dialogue").in("session_id", ids).order("created_at", { ascending: false }).limit(160) : Promise.resolve({ data: [] as { content: string; created_at: string }[] }),
+          supabase.from("outbox").select("text,created_at").eq("from_id", cid).eq("to_id", pid).order("created_at", { ascending: false }).limit(80),
+        ]);
+        const lines: { who: string; text: string; at: string }[] = [];
+        for (const m of mem || []) {
+          const a = /^.+? texted me: "([\s\S]*)"$/.exec(m.content), b = /^I texted .+?: "([\s\S]*)"$/.exec(m.content);
+          if (a) lines.push({ who: "you", text: a[1], at: m.created_at }); else if (b) lines.push({ who: "him", text: b[1], at: m.created_at });
+        }
+        for (const o of sent || []) lines.push({ who: "him", text: o.text, at: o.created_at });
+        lines.sort((x, y) => (x.at < y.at ? -1 : x.at > y.at ? 1 : 0));
+        return json({ name: c.name, thread: lines.slice(-200) });
+      }
       if (inbox?.length) await supabase.from("outbox").update({ seen_at: new Date().toISOString() }).in("id", inbox.map((m: { id: number }) => m.id));
       return json({ name: c.name, now: doing(st?.current_task), since: st?.updated_at || null, inbox: inbox || [] });
     }
@@ -174,6 +192,7 @@ Deno.serve(async (req) => {
       ? `You're texting on your phone with ${who}${knowsName ? "" : " - a number you don't have saved"}. You're not together. Right now you're ${doing(state?.current_task) || `at home (${me.home_location || "your apartment"})`}. Time: ${scene.time || "evening"}.
 ${visits ? `${who} has been over ${visits} time${visits === 1 ? "" : "s"}.` : `You've never met ${who} in person.`}`
       : `You are ${scene.place || `in your ${scene.location || me.home_location || "apartment"}`}. Time: ${scene.time || "evening"}.${scene.wearing ? ` You're wearing: ${scene.wearing === "Nude" ? "nothing" : scene.wearing}. Clothes you could change into: ${(scene.wardrobe || []).join(", ")}.` : ""} ${who} is ${scene.player_distance_m != null ? `${Number(scene.player_distance_m).toFixed(1)} m away` : "here"}. Places you can go to there: ${(scene.spots || ["sofa", "kitchen", "window", "door"]).join(", ")}.${scene.seats?.sit?.length ? ` Seats here: ${scene.seats.sit.join(", ")}.` : ""}${scene.seats?.lie?.length ? ` You can lie down on the ${scene.seats.lie.join(", ")}.` : ""}${scene.seats?.lean?.length ? ` You can lean on the ${scene.seats.lean.join(", ")}.` : ""}
+${doing(state?.current_task) ? ` Just before this you were ${doing(state?.current_task)} - if that was sleeping, you've just been woken.` : ""}
 This is visit number ${visits || 1} from ${who}.`;
     // --- stable: who he is and how he answers (the same bytes every turn, so it caches) ---
     const stable = texting
